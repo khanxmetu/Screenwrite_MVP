@@ -1,0 +1,588 @@
+import React, { useRef, useEffect, useCallback, useState } from "react";
+import type { PlayerRef, CallbackListener } from "@remotion/player";
+import {
+  Moon,
+  Sun,
+  Play,
+  Pause,
+  Upload,
+  ChevronLeft,
+} from "lucide-react";
+
+// Custom video controls
+import { MuteButton, FullscreenButton } from "~/components/ui/video-controls";
+import { useTheme } from "next-themes";
+
+// Components
+import LeftPanel from "~/components/editor/LeftPanel";
+import { StandaloneVideoPlayer } from "~/video-compositions/StandalonePreview";
+import { DynamicVideoPlayer } from "~/video-compositions/DynamicComposition";
+import { RenderStatus } from "~/components/timeline/RenderStatus";
+import { Button } from "~/components/ui/button";
+import { Badge } from "~/components/ui/badge";
+import { Separator } from "~/components/ui/separator";
+import { Switch } from "~/components/ui/switch";
+import { Label } from "~/components/ui/label";
+import { Input } from "~/components/ui/input";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "~/components/ui/resizable";
+import { toast } from "sonner";
+
+// Hooks
+import { useMediaBin } from "~/hooks/useMediaBin";
+import { useRenderer } from "~/hooks/useRenderer";
+import { useStandalonePreview } from "~/hooks/useStandalonePreview";
+
+// Types and constants
+import { FPS, type Transition, type MediaBinItem } from "~/components/timeline/types";
+import { useNavigate } from "react-router";
+import { ChatBox } from "~/components/chat/ChatBox";
+
+interface Message {
+  id: string;
+  content: string;
+  isUser: boolean;
+  timestamp: Date;
+}
+
+export default function TimelineEditor() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<PlayerRef>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { theme, setTheme } = useTheme();
+
+  const navigate = useNavigate();
+
+  const [width, setWidth] = useState<number>(1920);
+  const [height, setHeight] = useState<number>(1080);
+  const [isAutoSize, setIsAutoSize] = useState<boolean>(false);
+  const [isChatMinimized, setIsChatMinimized] = useState<boolean>(true);
+
+  // Video playback state
+  const [currentFrame, setCurrentFrame] = useState<number>(0);
+  const [durationInFrames, setDurationInFrames] = useState<number>(300); // Default 10 seconds
+
+  const [chatMessages, setChatMessages] = useState<Message[]>([]);
+  const [mounted, setMounted] = useState(false)
+
+  const [selectedScrubberId, setSelectedScrubberId] = useState<string | null>(null);
+
+  // video player media selection state
+  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+
+  const {
+    mediaBinItems,
+    handleAddMediaToBin,
+    handleAddTextToBin,
+    contextMenu,
+    handleContextMenu,
+    handleDeleteFromContext,
+    handleSplitAudioFromContext,
+    handleCloseContextMenu
+  } = useMediaBin(() => {}); // Empty function since we don't need timeline integration
+
+  const { isRendering, renderStatus, handleRenderVideo } = useRenderer();
+
+  // Standalone preview hook
+  const {
+    previewContent,
+    generatedTsxCode,
+    previewSettings,
+    isGenerating,
+    lastAiExplanation,
+    addPreviewContent,
+    removePreviewContent,
+    updatePreviewContent,
+    clearPreviewContent,
+    generateAiContent,
+    loadSampleContent,
+    updatePreviewSettings,
+  } = useStandalonePreview(setDurationInFrames);
+
+  // Wrapper function for AI composition generation with media library context
+  // Function to explain composition changes
+  const handleGenerateAiComposition = useCallback(async (userRequest: string, mediaBinItems: MediaBinItem[]): Promise<boolean> => {
+    return await generateAiContent(userRequest, mediaBinItems);
+  }, [generateAiContent]);
+
+  // Event handlers
+  const handleAddMediaClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileInputChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        const fileArray = Array.from(files);
+        let successCount = 0;
+        let errorCount = 0;
+
+        // Process files sequentially to avoid overwhelming the system
+        for (const file of fileArray) {
+          try {
+            await handleAddMediaToBin(file);
+            successCount++;
+          } catch (error) {
+            errorCount++;
+            console.error(`Failed to add ${file.name}:`, error);
+          }
+        }
+
+        if (successCount > 0 && errorCount > 0) {
+          toast.warning(`Imported ${successCount} file${successCount > 1 ? 's' : ''}, ${errorCount} failed`);
+        } else if (errorCount > 0) {
+          toast.error(`Failed to import ${errorCount} file${errorCount > 1 ? 's' : ''}`);
+        }
+
+        e.target.value = "";
+      }
+    },
+    [handleAddMediaToBin]
+  );
+
+  const handleAutoSizeChange = useCallback((auto: boolean) => {
+    setIsAutoSize(auto);
+  }, []);
+
+  // Play/pause controls with Player sync
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const togglePlayback = useCallback(() => {
+    const player = playerRef.current;
+    if (player) {
+      if (player.isPlaying()) {
+        player.pause();
+        setIsPlaying(false);
+      } else {
+        player.play();
+        setIsPlaying(true);
+      }
+    }
+  }, []);
+
+  // Sync player state with controls - simplified for standalone mode
+  useEffect(() => {
+    const player = playerRef.current;
+    if (player) {
+      const handlePlay: CallbackListener<"play"> = () => setIsPlaying(true);
+      const handlePause: CallbackListener<"pause"> = () => setIsPlaying(false);
+      const handleFrameUpdate: CallbackListener<"frameupdate"> = (e) => {
+        setCurrentFrame(e.detail.frame);
+      };
+
+      player.addEventListener("play", handlePlay);
+      player.addEventListener("pause", handlePause);
+      player.addEventListener("frameupdate", handleFrameUpdate);
+
+      return () => {
+        player.removeEventListener("play", handlePlay);
+        player.removeEventListener("pause", handlePause);
+        player.removeEventListener("frameupdate", handleFrameUpdate);
+      };
+    }
+  }, []);
+
+  // Additional frame sync during playback to ensure scrubber updates
+  useEffect(() => {
+    if (!isPlaying) return;
+    
+    const interval = setInterval(() => {
+      const player = playerRef.current;
+      if (player) {
+        const frame = player.getCurrentFrame();
+        setCurrentFrame(frame);
+      }
+    }, 100); // Update every 100ms during playback
+
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
+  // Update duration when composition changes
+  useEffect(() => {
+    if (generatedTsxCode) {
+      // For generated TSX, duration is now handled by AI response callback
+      // Don't override the AI-determined duration here
+    } else if (previewContent && previewContent.length > 0) {
+      // Calculate duration from preview content
+      const maxDuration = previewContent.reduce((max, item) => {
+        return Math.max(max, item.duration || 3);
+      }, 0);
+      setDurationInFrames(Math.max(maxDuration * 30, 90)); // At least 3 seconds
+    } else {
+      setDurationInFrames(300); // Default 10 seconds
+    }
+  }, [previewContent]); // Removed generatedTsxCode dependency
+
+  // Global spacebar play/pause functionality - like original
+  useEffect(() => {
+    const handleGlobalKeyPress = (event: KeyboardEvent) => {
+      // Only handle spacebar when not focused on input elements
+      if (event.code === "Space") {
+        const target = event.target as HTMLElement;
+        const isInputElement =
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.contentEditable === "true" ||
+          target.isContentEditable;
+
+        // If user is typing in an input field, don't interfere
+        if (isInputElement) {
+          return;
+        }
+
+        // Prevent spacebar from scrolling the page
+        event.preventDefault();
+
+        const player = playerRef.current;
+        if (player) {
+          if (player.isPlaying()) {
+            player.pause();
+          } else {
+            player.play();
+          }
+        }
+      }
+    };
+
+    // Add event listener to document for global capture
+    document.addEventListener("keydown", handleGlobalKeyPress);
+
+    return () => {
+      document.removeEventListener("keydown", handleGlobalKeyPress);
+    };
+  }, []); // Empty dependency array since we're accessing playerRef.current directly
+
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) return null;
+
+  return (
+    <div className="h-screen flex flex-col bg-background text-foreground" onPointerDown={(e: React.PointerEvent) => {
+      if (e.button !== 0) {
+        return;
+      }
+      setSelectedItem(null);
+    }}>
+      {/* Ultra-minimal Top Bar */}
+      <header className="h-9 border-b border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between px-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-medium tracking-tight">Screenwrite</h1>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {/* Theme Toggle */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="h-7 w-7 p-0 hover:bg-muted"
+          >
+            {theme === "dark" ? (
+              <Sun className="h-3.5 w-3.5" />
+            ) : (
+              <Moon className="h-3.5 w-3.5" />
+            )}
+          </Button>
+
+          <Separator orientation="vertical" className="h-4 mx-1" />
+
+          {/* Import/Export */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleAddMediaClick}
+            className="h-7 px-2 text-xs"
+          >
+            <Upload className="h-3 w-3 mr-1" />
+            Import
+          </Button>
+        </div>
+      </header>
+
+      {/* Main content area with chat extending to bottom */}
+      <ResizablePanelGroup direction="horizontal" className="flex-1">
+        {/* Left section with media bin, video preview, and timeline */}
+        <ResizablePanel defaultSize={isChatMinimized ? 100 : 80}>
+          <ResizablePanelGroup direction="vertical">
+            {/* Top section with media bin and video preview */}
+            <ResizablePanel defaultSize={65} minSize={40}>
+              <ResizablePanelGroup direction="horizontal">
+                {/* Left Panel - Media Bin & Tools */}
+                <ResizablePanel defaultSize={25} minSize={15} maxSize={40}>
+                  <div className="h-full border-r border-border">
+                    <LeftPanel
+                      mediaBinItems={mediaBinItems}
+                      onAddMedia={handleAddMediaToBin}
+                      onAddText={handleAddTextToBin}
+                      contextMenu={contextMenu}
+                      handleContextMenu={handleContextMenu}
+                      handleDeleteFromContext={handleDeleteFromContext}
+                      handleSplitAudioFromContext={handleSplitAudioFromContext}
+                      handleCloseContextMenu={handleCloseContextMenu}
+                    />
+                  </div>
+                </ResizablePanel>
+
+                <ResizableHandle withHandle />
+
+                {/* Video Preview Area */}
+                <ResizablePanel defaultSize={75}>
+                  <div className="h-full flex flex-col bg-background">
+                    {/* Compact Top Bar */}
+                    <div className="h-8 border-b border-border/50 bg-muted/30 flex items-center justify-between px-3 shrink-0">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span>Resolution:</span>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            value={width}
+                            onChange={(e) =>
+                              setWidth(Number(e.target.value))
+                            }
+                            disabled={isAutoSize}
+                            className="h-5 w-14 text-xs px-1 border-0 bg-muted/50"
+                          />
+                          <span>×</span>
+                          <Input
+                            type="number"
+                            value={height}
+                            onChange={(e) =>
+                              setHeight(Number(e.target.value))
+                            }
+                            disabled={isAutoSize}
+                            className="h-5 w-14 text-xs px-1 border-0 bg-muted/50"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1">
+                          <Switch
+                            id="auto-size"
+                            checked={isAutoSize}
+                            onCheckedChange={handleAutoSizeChange}
+                            className="scale-75"
+                          />
+                          <Label htmlFor="auto-size" className="text-xs">
+                            Auto
+                          </Label>
+                        </div>
+
+                        {/* Preview Settings */}
+                        <div className="flex items-center gap-1 ml-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={clearPreviewContent}
+                            className="h-5 px-2 text-xs"
+                          >
+                            Clear
+                          </Button>
+                          <Input
+                            type="color"
+                            value={previewSettings.backgroundColor}
+                            onChange={(e) =>
+                              updatePreviewSettings({ backgroundColor: e.target.value })
+                            }
+                            className="h-5 w-8 p-0 border-0"
+                            title="Background Color"
+                          />
+                        </div>
+
+                        {/* Show chat toggle when minimized */}
+                        {isChatMinimized && (
+                          <>
+                            <Separator
+                              orientation="vertical"
+                              className="h-4 mx-1"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setIsChatMinimized(false)}
+                              className="h-6 px-2 text-xs"
+                              title="Show Chat"
+                            >
+                              <ChevronLeft className="h-3 w-3 mr-1" />
+                              Chat
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Video Preview */}
+                    <div
+                      className={`flex-1 ${theme === "dark" ? "bg-zinc-900" : "bg-zinc-200/70"
+                        } flex flex-col items-center justify-center p-3 border border-border/50 rounded-lg overflow-hidden shadow-2xl relative`}
+                    >
+                      {/* Sample Content Button */}
+                      <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            console.log("Loading sample content");
+                            loadSampleContent();
+                          }}
+                          className="text-xs h-6"
+                        >
+                          Load Sample
+                        </Button>
+                      </div>
+
+                      <div className="flex-1 flex items-center justify-center w-full">
+                        {/* Debug console log */}
+                        {(() => {
+                          console.log("=== RENDER DEBUG ===");
+                          console.log("Generated TSX code:", generatedTsxCode?.slice(0, 100) + "...");
+                          console.log("Preview content:", previewContent);
+                          console.log("Preview settings:", previewSettings);
+                          console.log("==================");
+                          return null;
+                        })()}
+                        {generatedTsxCode ? (
+                          <DynamicVideoPlayer
+                            tsxCode={generatedTsxCode}
+                            compositionWidth={previewSettings.width}
+                            compositionHeight={previewSettings.height}
+                            backgroundColor={previewSettings.backgroundColor}
+                            playerRef={playerRef}
+                            durationInFrames={durationInFrames}
+                          />
+                        ) : (
+                          <StandaloneVideoPlayer
+                            content={previewContent}
+                            compositionWidth={previewSettings.width}
+                            compositionHeight={previewSettings.height}
+                            backgroundColor={previewSettings.backgroundColor}
+                            playerRef={playerRef}
+                            durationInFrames={durationInFrames}
+                          />
+                        )}
+                      </div>
+
+                      {/* Timeline Scrubber */}
+                      <div className="w-full mt-3 px-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {Math.floor(currentFrame / FPS / 60)}:{String(Math.floor((currentFrame / FPS) % 60)).padStart(2, '0')}
+                          </span>
+                          <div className="flex-1 relative">
+                            <div className="h-2 bg-muted rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-primary transition-all duration-100"
+                                style={{ width: `${(currentFrame / durationInFrames) * 100}%` }}
+                              />
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max={durationInFrames}
+                              value={currentFrame}
+                              onChange={(e) => {
+                                const frame = parseInt(e.target.value);
+                                setCurrentFrame(frame);
+                                if (playerRef.current) {
+                                  playerRef.current.seekTo(frame);
+                                }
+                              }}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {Math.floor(durationInFrames / FPS / 60)}:{String(Math.floor((durationInFrames / FPS) % 60)).padStart(2, '0')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Custom Video Controls - Below Timeline */}
+                      <div className="w-full flex items-center justify-center gap-2 px-4">
+                        {/* Left side controls */}
+                        <div className="flex items-center gap-1">
+                          <MuteButton playerRef={playerRef} />
+                        </div>
+
+                        {/* Center play/pause button */}
+                        <div className="flex items-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={togglePlayback}
+                            className="h-6 w-6 p-0"
+                          >
+                            {isPlaying ? (
+                              <Pause className="h-3 w-3" />
+                            ) : (
+                              <Play className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </div>
+
+                        {/* Right side controls */}
+                        <div className="flex items-center gap-1">
+                          <FullscreenButton playerRef={playerRef} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </ResizablePanel>
+
+        {/* Conditionally render chat panel - extends full height */}
+        {!isChatMinimized && (
+          <>
+            <ResizableHandle withHandle />
+
+            {/* Right Panel - Chat (full height) */}
+            <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
+              <div className="h-full border-l border-border">
+                <ChatBox
+                  mediaBinItems={mediaBinItems}
+                  handleDropOnTrack={() => {}} // No-op since we don't have timeline
+                  isMinimized={false}
+                  onToggleMinimize={() => setIsChatMinimized(true)}
+                  messages={chatMessages}
+                  onMessagesChange={setChatMessages}
+                  timelineState={{ tracks: [] }} // Empty timeline since we don't have timeline
+                  isStandalonePreview={true}
+                  onGenerateComposition={handleGenerateAiComposition}
+                  isGeneratingComposition={isGenerating}
+                  currentComposition={generatedTsxCode}
+                />
+              </div>
+            </ResizablePanel>
+          </>
+        )}
+      </ResizablePanelGroup>
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/*,image/*,audio/*"
+        multiple
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
+      {/* Render Status as Toast */}
+      {renderStatus && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <RenderStatus renderStatus={renderStatus} />
+        </div>
+      )}
+    </div>
+  );
+}
