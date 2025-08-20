@@ -470,11 +470,23 @@ User Request: "{request.get('user_request', '')}"
             if conversation_history and len(conversation_history) > 0:
                 history_context = "\nCONVERSATION HISTORY (for context):\n"
                 for i, msg in enumerate(conversation_history[-5:]):  # Only include last 5 messages to avoid token limits
+                    # Handle both dict and Pydantic model formats
+                    if hasattr(msg, 'user_request'):  # Pydantic model
+                        user_req = msg.user_request
+                        ai_resp = msg.ai_response
+                        gen_code = msg.generated_code
+                        timestamp = msg.timestamp
+                    else:  # Dictionary format
+                        user_req = msg.get('user_request', '')
+                        ai_resp = msg.get('ai_response', '')
+                        gen_code = msg.get('generated_code', '')
+                        timestamp = msg.get('timestamp', '')
+                    
                     history_context += f"""
-{i+1}. User asked: "{msg.get('user_request', '')}"
-   AI responded: "{msg.get('ai_response', '')}"
-   Generated code summary: {msg.get('generated_code', '')[:200]}{'...' if len(msg.get('generated_code', '')) > 200 else ''}
-   Time: {msg.get('timestamp', '')}
+{i+1}. User asked: "{user_req}"
+   AI responded: "{ai_resp}"
+   Generated code summary: {gen_code[:200]}{'...' if len(gen_code) > 200 else ''}
+   Time: {timestamp}
 """
                 history_context += "\nUse this history to understand the user's intent and build upon previous work.\n"
 

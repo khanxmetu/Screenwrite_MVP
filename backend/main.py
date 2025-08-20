@@ -16,6 +16,8 @@ from typing import List, Dict, Any, Optional
 
 # Import code generation functionality
 from code_generator import generate_composition_with_validation
+from synth import synthesize_request
+from analyzer import analyze_content
 
 load_dotenv()
 
@@ -69,6 +71,7 @@ class CompositionRequest(BaseModel):
     media_library: Optional[List[Dict[str, Any]]] = []  # Available media files in library
     current_generated_code: Optional[str] = None  # Current AI-generated TSX code for context
     conversation_history: Optional[List[ConversationMessage]] = []  # Past requests and responses for context
+    preview_frame: Optional[str] = None  # Base64 encoded screenshot of current frame
 
 
 class GeneratedComposition(BaseModel):
@@ -89,22 +92,66 @@ class CompositionResponse(BaseModel):
 
 @app.post("/ai/generate-composition")
 async def generate_composition(request: CompositionRequest) -> CompositionResponse:
-    """Generate a new Remotion composition based on user request and current context with validation."""
-    # Convert request to dict for the code generator module
-    request_dict = {
-        "user_request": request.user_request,
+    """Generate a new Remotion composition using the new Synth-Analyzer-Generator architecture."""
+    
+    print(f"🎬 Main: Processing request: '{request.user_request}'")
+    
+    # Step 1: Synth - Enhance the request with context analysis
+    synth_result = await synthesize_request(
+        user_request=request.user_request,
+        conversation_history=request.conversation_history,
+        current_composition=request.current_generated_code,
+        preview_frame=request.preview_frame,
+        media_library=request.media_library,
+        preview_settings=request.preview_settings,
+        gemini_api=gemini_api
+    )
+    
+    print(f"🧠 Main: Synth completed - Enhanced: '{synth_result.enhanced_request[:100]}...'")
+    print(f"📊 Main: Analysis needed: {synth_result.needs_analysis}")
+    
+    # Step 2: Route based on Synth decision
+    if synth_result.needs_analysis:
+        # Route through Analyzer for content analysis
+        print(f"🔍 Main: Routing through Analyzer for content analysis")
+        
+        analysis_result = await analyze_content(
+            enhanced_request=synth_result.enhanced_request,
+            media_for_analysis=synth_result.media_for_analysis,
+            media_library=request.media_library or [],
+            preview_frame=request.preview_frame,
+            gemini_api=gemini_api
+        )
+        
+        # Use the further enhanced request from Analyzer
+        final_enhanced_request = analysis_result.enhanced_request
+        print(f"🔍 Main: Analyzer completed - Final request: '{final_enhanced_request[:100]}...'")
+        
+    else:
+        # Direct to generation without additional analysis
+        print(f"⚡ Main: Routing directly to generation")
+        final_enhanced_request = synth_result.enhanced_request
+    
+    # Step 3: Generate composition using enhanced request
+    print(f"⚙️ Main: Generating composition with enhanced request")
+    
+    # Convert to dict format expected by code generator
+    enhanced_request_dict = {
+        "user_request": final_enhanced_request,  # Use enhanced request instead of original
         "preview_settings": request.preview_settings,
         "media_library": request.media_library,
         "current_generated_code": request.current_generated_code,
         "conversation_history": request.conversation_history
     }
     
-    # Call the code generation module with the appropriate parameters
+    # Call the existing code generation module
     result = await generate_composition_with_validation(
-        request_dict, 
+        enhanced_request_dict, 
         gemini_api,
         USE_VERTEX_AI or GOOGLE_GENAI_USE_VERTEXAI
     )
+    
+    print(f"✅ Main: Generation completed - Success: {result['success']}")
     
     # Convert result back to the response model
     return CompositionResponse(
