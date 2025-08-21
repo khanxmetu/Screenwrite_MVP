@@ -450,6 +450,7 @@ def build_edit_prompt(request: Dict[str, Any]) -> str:
 2. interpolate() outputRange MUST contain ONLY NUMBERS - never strings, booleans, or other types
 3. CSS properties in React must be camelCase (backgroundColor, fontSize, fontWeight)
 4. spring() config uses 'damping' not 'dampening'
+5. **DOM LAYERING**: Elements rendered LATER appear ON TOP. For overlays (text, UI) to be visible over background content (video, images), place them AFTER background elements in the React.createElement sequence.
 
 CORRECT interpolate examples:
 - interpolate(frame, [0, 30, 60], [0, 1, 0])  ✅ inputRange: 0 < 30 < 60 (strictly increasing)
@@ -457,6 +458,7 @@ CORRECT interpolate examples:
 - interpolate(frame, [0, 30], [0, 1])  ✅ Numbers only in outputRange
 - interpolate(frame, [0, 30], ['hidden', 'visible'])  ❌ WRONG - strings not allowed in outputRange
 - interpolate(frame, [30, 20, 60], [0, 1, 0])  ❌ WRONG - inputRange not increasing (30 > 20)
+
 
 CSS POSITIONING SYSTEM:
 Screen coordinates: (0,0) is TOP-LEFT corner. Y-axis goes DOWN (top: 100px = 100px DOWN from top).
