@@ -260,6 +260,8 @@ def _build_synthesis_prompt(context: Dict[str, Any]) -> str:
     
     prompt = f"""You are a request disambiguation engine. Your job is to create ONE comprehensive enhanced request that maximizes the likelihood of successful Remotion generation and accomplishment of the user's intent.
 
+⚠️ CRITICAL: Never output clarifying questions. Fill missing details with reasonable assumptions. Always provide executable instructions for the code generator. Your response goes to another AI, not a human.
+
 USER REQUEST: "{user_request}"
 
 CONTEXT:
@@ -269,15 +271,12 @@ CONTEXT:
 - Conversation History: {context.get('conversation_history', 'None')}
 - Available Media Assets: {context.get('available_assets', {})}
 
-YOUR PROCESS to create the enhanced request:
-1. UNDERSTAND USER INTENT: Determine what the user actually wants by analyzing their vague language, conversation history, and current composition state
-2. TECHNICAL SPECIFICATION: Translate that intent into specific Remotion parameters (timing, positioning, assets, animations, styling)
-3. EXECUTABLE FORMULATION: Structure the request so the Remotion LLM can execute it without confusion or failure
+Transform the user request into a specific instruction that includes all necessary details for implementation.
 
 REQUIREMENTS for the enhanced request:
 - Unequivocally states what the user wants to achieve
 - Includes exact parameters (timing in seconds/frames, positions in pixels/percentages)
-- References specific media assets by name
+- References specific media assets by name when available
 - Is actionable and executable by the downstream Remotion generator
 - Eliminates ambiguity that could cause generation failure
 - Maximizes probability of accomplishing the user's actual intent
