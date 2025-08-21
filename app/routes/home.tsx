@@ -262,6 +262,94 @@ export default function TimelineEditor() {
     setMounted(true)
   }, [])
 
+  // Sync player frame with React state to prevent desynchronization
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+
+    const frameUpdateListener = (e: { detail: { frame: number } }) => {
+      const playerFrame = e.detail.frame;
+      // Only update if there's a significant difference to prevent infinite loops
+      if (Math.abs(currentFrame - playerFrame) > 1) {
+        setCurrentFrame(playerFrame);
+      }
+    };
+
+    // Listen for frame updates from the player
+    player.addEventListener('frameupdate', frameUpdateListener);
+
+    return () => {
+      player.removeEventListener('frameupdate', frameUpdateListener);
+    };
+  }, [currentFrame]); // Re-run when currentFrame changes
+
+  // Simple debounce utility
+  const debounce = useCallback((func: Function, delay: number) => {
+    let timeoutId: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func.apply(null, args), delay);
+    };
+  }, []);
+
+  // Debounced seek function to prevent rapid seeking issues
+  const debouncedSeek = useCallback(
+    debounce((frame: number) => {
+      const player = playerRef.current;
+      if (player) {
+        try {
+          console.log(`🎯 Seeking to frame: ${frame}`);
+          player.seekTo(frame);
+        } catch (error) {
+          console.error('❌ Seek error:', error);
+          // If seek fails, try again after a short delay
+          setTimeout(() => {
+            try {
+              player.seekTo(frame);
+            } catch (retryError) {
+              console.error('❌ Seek retry failed:', retryError);
+            }
+          }, 100);
+        }
+      }
+    }, 50), // 50ms debounce
+    [debounce]
+  );
+  useEffect(() => {
+    let lastFrameCheck = currentFrame;
+    let frozenCount = 0;
+    
+    const checkFrozenState = setInterval(() => {
+      const player = playerRef.current;
+      if (!player || !player.isPlaying()) return;
+      
+      // If frame hasn't changed while playing, increment frozen counter
+      if (currentFrame === lastFrameCheck) {
+        frozenCount++;
+        
+        // If frozen for more than 3 seconds, try to recover
+        if (frozenCount > 6) { // 6 * 500ms = 3 seconds
+          console.warn('🔄 Video appears frozen, attempting recovery...');
+          
+          // Pause and resume to unstick the player
+          player.pause();
+          setTimeout(() => {
+            if (player) {
+              player.play();
+            }
+          }, 100);
+          
+          frozenCount = 0; // Reset counter
+        }
+      } else {
+        frozenCount = 0; // Reset if frame is updating
+        lastFrameCheck = currentFrame;
+      }
+    }, 500); // Check every 500ms
+    
+    return () => clearInterval(checkFrozenState);
+  }, [currentFrame]);
+
   if (!mounted) return null;
 
   return (
@@ -491,9 +579,7 @@ export default function TimelineEditor() {
                               onChange={(e) => {
                                 const frame = parseInt(e.target.value);
                                 setCurrentFrame(frame);
-                                if (playerRef.current) {
-                                  playerRef.current.seekTo(frame);
-                                }
+                                debouncedSeek(frame);
                               }}
                               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                             />
