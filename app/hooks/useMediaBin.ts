@@ -179,6 +179,7 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
         uploadProgress: 0,
         left_transition_id: null,
         right_transition_id: null,
+        gemini_file_id: null, // Will be set after Gemini upload
       };
       setMediaBinItems(prev => [...prev, newItem]);
 
@@ -207,6 +208,42 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
       const uploadResult = uploadResponse.data;
       console.log("Upload successful:", uploadResult);
 
+      // Upload to Gemini Files API for analysis (required for media analysis)
+      console.log("Uploading to Gemini for analysis...");
+      const geminiFormData = new FormData();
+      geminiFormData.append('file', file);
+      
+      let geminiFileId: string;
+      try {
+        const geminiResponse = await axios.post(apiUrl('/upload-to-gemini', true), geminiFormData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+        
+        if (!geminiResponse.data.success) {
+          throw new Error(`Server connection error: ${geminiResponse.data.error_message || 'Failed to connect to AI analysis service'}`);
+        }
+        
+        geminiFileId = geminiResponse.data.gemini_file_id;
+        console.log("Gemini upload successful:", geminiFileId);
+      } catch (geminiError) {
+        if (geminiError instanceof Error && geminiError.message.includes("Server connection error")) {
+          throw geminiError; // Re-throw our custom error
+        }
+        // Handle axios/network errors
+        if (axios.isAxiosError(geminiError)) {
+          if (geminiError.code === 'ECONNREFUSED' || geminiError.message.includes('ECONNREFUSED')) {
+            throw new Error('Server connection error: AI analysis service is not available. Please contact support.');
+          } else if (geminiError.response?.status === 500) {
+            throw new Error('Server connection error: AI analysis service encountered an internal error. Please try again later.');
+          } else if (geminiError.response?.status === 404) {
+            throw new Error('Server connection error: AI analysis service endpoint not found. Please contact support.');
+          }
+        }
+        throw new Error(`Server connection error: Unable to connect to AI analysis service. Please try again later.`);
+      }
+
       // Update item with successful upload result and remove progress tracking
       setMediaBinItems(prev =>
         prev.map(item =>
@@ -215,7 +252,8 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
               ...item,
               mediaUrlRemote: uploadResult.fullUrl,
               isUploading: false,
-              uploadProgress: null
+              uploadProgress: null,
+              gemini_file_id: geminiFileId
             }
             : item
         )
@@ -223,12 +261,27 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
 
     } catch (error) {
       console.error("Error adding media to bin:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      
+      // Provide user-friendly error messages
+      let errorMessage: string;
+      if (error instanceof Error) {
+        if (error.message.includes("Server connection error")) {
+          errorMessage = error.message; // Use the specific server error message
+        } else if (error.message.includes("Network Error") || error.message.includes("ERR_NETWORK")) {
+          errorMessage = "Network connection error. Please check your internet connection and try again.";
+        } else if (error.message.includes("timeout")) {
+          errorMessage = "Upload timeout. Please try again with a smaller file or check your connection.";
+        } else {
+          errorMessage = `Upload failed: ${error.message}`;
+        }
+      } else {
+        errorMessage = "Upload failed due to an unknown error. Please try again.";
+      }
 
       // Remove the failed item from media bin
       setMediaBinItems(prev => prev.filter(item => item.id !== id));
 
-      throw new Error(`Failed to add media: ${errorMessage}`);
+      throw new Error(errorMessage);
     }
   }, []);
 
@@ -261,6 +314,7 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
       uploadProgress: null,
       left_transition_id: null,
       right_transition_id: null,
+      gemini_file_id: null, // Text items don't need Gemini upload
     };
     setMediaBinItems(prev => [...prev, newItem]);
   }, []);
@@ -356,6 +410,7 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
         uploadProgress: null,
         left_transition_id: null,
         right_transition_id: null,
+        gemini_file_id: null, // TODO: Audio could also be uploaded to Gemini for analysis
       };
 
       // Add the audio item to the media bin

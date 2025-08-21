@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +25,7 @@ class BaseScrubber(BaseModel):
 class MediaBinItem(BaseScrubber):
     name: str = Field(description="Display name for the media item")
     durationInSeconds: float = Field(description="Duration of the media in seconds")
+    gemini_file_id: Optional[str] = Field(description="Gemini Files API file ID for analysis", default=None)
 
 
 class ScrubberState(MediaBinItem):

@@ -41,6 +41,9 @@ export interface MediaBinItem extends BaseScrubber {
   // Upload tracking properties
   uploadProgress: number | null; // 0-100, null when upload complete
   isUploading: boolean; // True while upload is in progress
+  
+  // Gemini file reference for analysis
+  gemini_file_id: string | null; // Gemini Files API file ID, null if upload failed
 }
 
 // state of the scrubber in the timeline

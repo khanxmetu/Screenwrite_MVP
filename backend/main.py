@@ -7,7 +7,7 @@ import re
 import shutil
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from google.genai import types
@@ -88,6 +88,64 @@ class CompositionResponse(BaseModel):
     duration: float  # Duration in seconds
     success: bool
     error_message: Optional[str] = None
+
+
+class GeminiUploadResponse(BaseModel):
+    success: bool
+    gemini_file_id: Optional[str] = None
+    file_name: Optional[str] = None
+    mime_type: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+@app.post("/upload-to-gemini")
+async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse:
+    """Upload a file to Gemini Files API for later analysis."""
+    
+    try:
+        print(f"📤 Gemini Upload: Uploading {file.filename} ({file.content_type})")
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Create temporary file for Gemini upload
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as tmp_file:
+            tmp_file.write(file_content)
+            tmp_file.flush()
+            
+            # Upload to Gemini Files API with correct method signature
+            uploaded_file = gemini_api.files.upload(file=tmp_file.name)
+            
+            # Clean up temporary file
+            os.unlink(tmp_file.name)
+        
+        print(f"✅ Gemini Upload: Success - File ID: {uploaded_file.name}")
+        
+        return GeminiUploadResponse(
+            success=True,
+            gemini_file_id=uploaded_file.name,
+            file_name=file.filename,
+            mime_type=file.content_type
+        )
+        
+    except Exception as e:
+        print(f"❌ Gemini Upload: Failed - {str(e)}")
+        
+        # Provide user-friendly error messages
+        error_msg = str(e)
+        if "API key" in error_msg.lower():
+            user_error = "AI service authentication failed. Please check server configuration."
+        elif "network" in error_msg.lower() or "connection" in error_msg.lower():
+            user_error = "Network connection error. Please check your internet connection and try again."
+        elif "quota" in error_msg.lower() or "limit" in error_msg.lower():
+            user_error = "AI service quota exceeded. Please try again later."
+        else:
+            user_error = "AI analysis service is temporarily unavailable. Please try again later."
+        
+        return GeminiUploadResponse(
+            success=False,
+            error_message=user_error
+        )
 
 
 @app.post("/ai/generate-composition")
