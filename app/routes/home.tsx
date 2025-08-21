@@ -64,7 +64,7 @@ export default function TimelineEditor() {
 
   // Video playback state
   const [currentFrame, setCurrentFrame] = useState<number>(0);
-  const [durationInFrames, setDurationInFrames] = useState<number>(300); // Default 10 seconds
+  const [durationInFrames, setDurationInFrames] = useState<number>(1); // Minimal duration - gets updated by AI
 
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)

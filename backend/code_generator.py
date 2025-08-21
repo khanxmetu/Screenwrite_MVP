@@ -411,226 +411,47 @@ def estimate_duration_from_code(code: str) -> float:
         return 8.0  # Conservative fallback
 
 
-async def generate_composition_with_validation(
-    request: Dict[str, Any], 
-    gemini_api: Any,
-    use_vertex_ai: bool = False,
-    max_retries: int = 2
-) -> Dict[str, Any]:
-    """
-    Generate a composition with compilation validation and retry logic.
-    """
-    last_error = None
-    last_failed_code = None  # Track the code that failed validation
+def build_edit_prompt(request: Dict[str, Any]) -> str:
+    """Build prompt for first attempt - has everything needed to modify composition"""
     
-    for attempt in range(max_retries + 1):
-        try:
-            print(f"Generation attempt {attempt + 1}/{max_retries + 1}")
+    # Get media assets
+    media_library = request.get('media_library', [])
+    media_section = ""
+    if media_library and len(media_library) > 0:
+        media_section = "\nAVAILABLE MEDIA ASSETS:\n"
+        for media in media_library:
+            name = media.get('name', 'unnamed')
+            media_type = media.get('mediaType', 'unknown')
+            duration = media.get('durationInSeconds', 0)
             
-            # Create context about current composition
-            current_context = f"""
-Preview Settings: {request.get('preview_settings', {})}
-Current Generated Code: {request.get('current_generated_code') if request.get('current_generated_code') else "None - this is a new composition"}
-User Request: "{request.get('user_request', '')}"
-"""
+            if media_type == 'video':
+                media_section += f"- {name}: Video ({duration}s)\n"
+            elif media_type == 'image':
+                media_section += f"- {name}: Image\n"
+            elif media_type == 'audio':
+                media_section += f"- {name}: Audio ({duration}s)\n"
+        media_section += "Use exact URLs in Video/Img/Audio components.\n"
+    else:
+        media_section = "\nNo media assets available. Create compositions using text, shapes, and animations.\n"
+    
+    return f"""You are a world-class Remotion developer. Update the composition based on user requests.
 
-            # Add media library context with metadata
-            media_context = ""
-            media_library = request.get('media_library', [])
-            if media_library and len(media_library) > 0:
-                media_context = "\nAVAILABLE MEDIA ASSETS:\n"
-                for media in media_library:
-                    media_type = media.get('mediaType', 'unknown')
-                    name = media.get('name', 'unnamed')
-                    duration = media.get('durationInSeconds', 0)
-                    width = media.get('media_width', 0)
-                    height = media.get('media_height', 0)
-                    local_url = media.get('mediaUrlLocal', '')
-                    remote_url = media.get('mediaUrlRemote', '')
-                    
-                    # Use the appropriate URL (prefer local for development)
-                    media_url = local_url if local_url else remote_url
-                    
-                    if media_type == 'video':
-                        media_context += f"- {name}: {width}x{height}px, {duration:.1f}s, URL: {media_url}\n"
-                    elif media_type == 'image':
-                        media_context += f"- {name}: {width}x{height}px, URL: {media_url}\n"
-                    elif media_type == 'audio':
-                        media_context += f"- {name}: {duration:.1f}s, URL: {media_url}\n"
-                    elif media_type == 'text':
-                        media_context += f"- {name}: Text element\n"
-                
-                media_context += "Use exact URLs in Video/Img/Audio components.\n"
-            else:
-                media_context = "\nNo media assets available. Create compositions using text, shapes, and animations.\n"
-
-            # Add conversation history context
-            history_context = ""
-            conversation_history = request.get('conversation_history', [])
-            if conversation_history and len(conversation_history) > 0:
-                history_context = "\nCONVERSATION HISTORY (for context):\n"
-                for i, msg in enumerate(conversation_history[-5:]):  # Only include last 5 messages to avoid token limits
-                    # Handle both dict and Pydantic model formats
-                    if hasattr(msg, 'user_request'):  # Pydantic model
-                        user_req = msg.user_request
-                        ai_resp = msg.ai_response
-                        gen_code = msg.generated_code
-                        timestamp = msg.timestamp
-                    else:  # Dictionary format
-                        user_req = msg.get('user_request', '')
-                        ai_resp = msg.get('ai_response', '')
-                        gen_code = msg.get('generated_code', '')
-                        timestamp = msg.get('timestamp', '')
-                    
-                    history_context += f"""
-{i+1}. User asked: "{user_req}"
-   AI responded: "{ai_resp}"
-   Generated code summary: {gen_code[:200]}{'...' if len(gen_code) > 200 else ''}
-   Time: {timestamp}
-"""
-                history_context += "\nUse this history to understand the user's intent and build upon previous work.\n"
-
-            # Add error context for retries
-            error_context = ""
-            if last_error and attempt > 0:
-                # For retries, focus on fixing the broken code, not the original working code
-                retry_context = f"""
-RETRY ATTEMPT {attempt + 1}/{max_retries + 1}
-
-YOUR PREVIOUS CODE FAILED VALIDATION:
-{last_failed_code or 'No previous code available'}
-
-VALIDATION ERROR:
-{last_error}
-
-Fix the above code to resolve the validation error. Do NOT start over - fix the specific issues in the failed code.
-"""
-                
-                error_context = retry_context
-                
-                # DEBUG: Log the exact retry prompt context being sent to AI
-                print(f"🔍 DEBUG - Retry prompt being constructed for attempt {attempt + 1}")
-                print(f"🔍 DEBUG - last_error exists: {last_error is not None}")
-                print(f"🔍 DEBUG - last_failed_code length: {len(last_failed_code) if last_failed_code else 0}")
-                print(f"🔍 DEBUG - Error context length: {len(error_context)} characters")
-                print(f"🔍 DEBUG - Full error context preview:")
-                print(f"{'='*50}")
-                print(error_context[:1000] + "..." if len(error_context) > 1000 else error_context)
-                print(f"{'='*50}")
-                    
-                # Override ALL context to focus purely on fixing the broken code
-                current_context = ""
-                media_context = ""
-                history_context = ""
-            else:
-                # First attempt - use original context
-                current_context = f"""
-Preview Settings: {request.get('preview_settings', {})}
-Current Generated Code: {request.get('current_generated_code') if request.get('current_generated_code') else "None - this is a new composition"}
-User Request: "{request.get('user_request', '')}"
-"""
-
-            prompt = f"""You are a world-class Remotion developer. Create and modify video compositions.
-
-⚠️ **CRITICAL** MODIFICATION RULES - READ THIS FIRST:
-
-If there is existing code, you MUST:
-1. **PRESERVE the existing working parts** - don't rewrite what's already working
-2. **ADD your changes incrementally** - only modify what the user specifically requested  
-3. **MAINTAIN the same structure** - don't wrap existing code in new Sequences unless absolutely necessary
-4. **KEEP existing animations unchanged** - don't alter timing, positioning, or styling of existing elements
-
-EXAMPLES OF CORRECT INCREMENTAL CHANGES:
-- User says "add a video after the text" → ADD the video Sequence, KEEP text exactly as is
-- User says "change text color" → ONLY change the color property, KEEP everything else
-- User says "make it bigger" → ONLY change size properties, KEEP positioning and animations
-
-❌ WRONG: Rewriting the entire composition when user asks for one small change
-✅ RIGHT: Adding/modifying only the specific requested element
-
-If there is existing code, UPDATE/MODIFY it according to the user's request.
-If there is conversation history, understand the user's evolving intent and build upon previous interactions.
+⚠️ **CRITICAL**: Only change/add what the user specifically asks for. Keep EVERYTHING else UNCHANGED.
             
+⚠️ **CRITICAL**: All Sequence components use children: in the props object for Remotion 4.0.329+!
 
-⚠️ **CRITICAL** SYNTAX - USE EXACTLY THESE PATTERNS:
-
-VIDEO COMPOSITION EXAMPLES - Study these patterns:
-
-EXAMPLE 1: Video with text overlay
-React.createElement(AbsoluteFill, {{}},
-  // Background video
-  React.createElement(Sequence, {{
-    from: 0,
-    durationInFrames: 300,
-    children: React.createElement(Video, {{
-      src: 'https://example.com/video.mp4',
-      style: {{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover'
-      }}
-    }})
-  }}),
-  
-  // Text overlay
-  React.createElement(Sequence, {{
-    from: 30,
-    durationInFrames: 200,
-    children: React.createElement(AbsoluteFill, {{
-      style: {{
-        justifyContent: 'center',
-        alignItems: 'center'
-      }}
-    }},
-      React.createElement('h1', {{
-        style: {{
-          color: 'white',
-          fontSize: 60,
-          textAlign: 'center'
-        }}
-      }}, 'Title Text')
-    )
-  }})
-);
-
-EXAMPLE 2: Multiple videos in sequence
-React.createElement(AbsoluteFill, {{}},
-  // First video clip
-  React.createElement(Sequence, {{
-    from: 0,
-    durationInFrames: 150,
-    children: React.createElement(Video, {{
-      src: 'https://example.com/clip1.mp4',
-      style: {{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover'
-      }}
-    }})
-  }}),
-  
-  // Second video clip
-  React.createElement(Sequence, {{
-    from: 150,
-    durationInFrames: 180,
-    children: React.createElement(Video, {{
-      src: 'https://example.com/clip2.mp4',
-      style: {{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover'
-      }}
-    }})
-  }})
-);
-
-⚠️ NOTICE: All Sequence components use children: in the props object for Remotion 4.0.329+!
-
-**CRITICAL** REMOTION RULES:
+⚠️ **CRITICAL** REMOTION RULES:
 1. interpolate() inputRange MUST be strictly monotonically increasing (each value must be larger than the previous one)
 2. interpolate() outputRange MUST contain ONLY NUMBERS - never strings, booleans, or other types
 3. CSS properties in React must be camelCase (backgroundColor, fontSize, fontWeight)
 4. spring() config uses 'damping' not 'dampening'
+
+CORRECT interpolate examples:
+- interpolate(frame, [0, 30, 60], [0, 1, 0])  ✅ inputRange: 0 < 30 < 60 (strictly increasing)
+- interpolate(frame, [10, 20, 50], [0, 100, 0])  ✅ inputRange: 10 < 20 < 50 (strictly increasing)
+- interpolate(frame, [0, 30], [0, 1])  ✅ Numbers only in outputRange
+- interpolate(frame, [0, 30], ['hidden', 'visible'])  ❌ WRONG - strings not allowed in outputRange
+- interpolate(frame, [30, 20, 60], [0, 1, 0])  ❌ WRONG - inputRange not increasing (30 > 20)
 
 CSS POSITIONING SYSTEM:
 Screen coordinates: (0,0) is TOP-LEFT corner. Y-axis goes DOWN (top: 100px = 100px DOWN from top).
@@ -655,13 +476,6 @@ style: {{
   bottom: '40px'
 }}
 
-USER LANGUAGE TRANSLATION:
-- "center" = top: '50%', left: '50%', transform: 'translate(-50%, -50%)'
-- "move right" = increase left value
-- "move left" = decrease left value  
-- "move down" = increase top value
-- "move up" = decrease top value
-
 FORBIDDEN:
 ❌ Never use objectFit for positioning (objectFit only controls scaling)
 ❌ Never use margin for positioning with position: 'absolute'
@@ -671,112 +485,213 @@ DURATION: [number in seconds based on composition content and timing]
 CODE:
 [raw JavaScript code - no markdown blocks]
 
-Analyze the composition content, animations, transitions, user intent, and available media assets to determine the appropriate duration. Consider:
-- Natural timing needed for animations to complete
-- Text readability duration
-- Media asset durations (use video/audio durations as guidance)
-- Overall pacing that makes sense for the content
-- If using media assets, factor their native durations into your composition timing
+# Complete Remotion Composition Template
 
-CORRECT interpolate examples:
-- interpolate(frame, [0, 30, 60], [0, 1, 0])  ✅ inputRange: 0 < 30 < 60 (strictly increasing)
-- interpolate(frame, [10, 20, 50], [0, 100, 0])  ✅ inputRange: 10 < 20 < 50 (strictly increasing)
-- interpolate(frame, [0, 30], [0, 1])  ✅ Numbers only in outputRange
-- interpolate(frame, [0, 30], ['hidden', 'visible'])  ❌ WRONG - strings not allowed in outputRange
-- interpolate(frame, [30, 20, 60], [0, 1, 0])  ❌ WRONG - inputRange not increasing (30 > 20)
-
-EXAMPLE RESPONSE:
-DURATION: 12
+## EXAMPLE RESPONSE:
+DURATION: 8
 CODE:
 
 const frame = useCurrentFrame();
 const {{ width, height, fps }} = useVideoConfig();
 
-// Create elements using standard JavaScript for loops and arrays
-const elements = [];
-for (let y = 50; y < height - 50; y += 50) {{
-  for (let x = 50; x < width - 50; x += 50) {{
-    const distance = Math.sqrt(Math.pow(x - width/2, 2) + Math.pow(y - height/2, 2));
-    const delay = distance / 5;
-    const startFrame = 20 + delay;
-    
-    const scale = spring({{
-      frame: frame - startFrame,
-      fps: fps,
-      config: {{ damping: 5, stiffness: 40 }}
-    }});
-    
-    const opacity = interpolate(
-      frame,
-      [startFrame, startFrame + 10, startFrame + 60, startFrame + 70],
-      [0, 1, 1, 0]
-    );
-    
-    elements.push(React.createElement('div', {{
-      key: x + '-' + y,
-      style: {{
-        position: 'absolute',
-        top: y,
-        left: x,
-        width: 4,
-        height: 4,
-        borderRadius: '50%',
-        backgroundColor: '#FF6600',
-        opacity: opacity,
-        transform: 'scale(' + scale + ')'
-      }}
-    }}));
-  }}
-}}
+// Basic interpolation animation
+const textOpacity = interpolate(
+  frame,
+  [0, 30, 180, 210],
+  [0, 1, 1, 0]
+);
 
-const titleScale = spring({{
-  frame: frame - 120,
+const textScale = interpolate(
+  frame,
+  [0, 40],
+  [0.5, 1]
+);
+
+// Spring animation
+const logoScale = spring({{
+  frame: frame - 60,
   fps: fps,
-  config: {{ damping: 15, stiffness: 120 }}
+  config: {{ damping: 10, stiffness: 100 }}
 }});
 
-const titleOpacity = interpolate(frame, [120, 140], [0, 1]);
+// Movement animation
+const slideX = interpolate(
+  frame,
+  [90, 150],
+  [-200, 0]
+);
 
-return React.createElement(AbsoluteFill, {{
-  style: {{
-    backgroundColor: '#202022',
-    justifyContent: 'center',
-    alignItems: 'center',
-    fontFamily: 'Inter, sans-serif'
-  }}
-}}, 
-  ...elements,
-  React.createElement('div', {{
-    style: {{ textAlign: 'center' }}
-  }},
-    React.createElement('h1', {{
+return React.createElement(AbsoluteFill, {{}},
+  // Video clip 1: Play from 5-15 seconds of source video
+  React.createElement(Sequence, {{
+    from: 0,
+    durationInFrames: 90,
+    children: React.createElement(Video, {{
+      src: 'https://example.com/video1.mp4',
+      startFrom: 150, // Start from frame 150 (5 seconds at 30fps)
+      endAt: 450,     // End at frame 450 (15 seconds at 30fps)
       style: {{
-        fontSize: 72,
-        fontWeight: '900',
-        color: '#FF6600',
-        margin: '0 0 10px 0',
-        letterSpacing: '-2px',
-        transform: 'scale(' + titleScale + ')',
-        opacity: titleOpacity
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover'
       }}
-    }}, 'screenwrite')
-  )
+    }})
+  }}),
+
+  // Video clip 2: Different section of same or different video
+  React.createElement(Sequence, {{
+    from: 90,
+    durationInFrames: 60,
+    children: React.createElement(Video, {{
+      src: 'https://example.com/video2.mp4',
+      startFrom: 300, // Start from frame 300 (10 seconds at 30fps)
+      endAt: 600,     // End at frame 600 (20 seconds at 30fps)
+      style: {{
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover'
+      }}
+    }})
+  }}),
+
+  // Background video for remaining duration
+  React.createElement(Sequence, {{
+    from: 150,
+    durationInFrames: 90,
+    children: React.createElement(Video, {{
+      src: 'https://example.com/background.mp3',
+      style: {{
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        opacity: 0.5
+      }}
+    }})
+  }}),
+
+  // Background audio
+  React.createElement(Audio, {{
+    src: 'https://example.com/audio.mp3'
+  }}),
+
+  // Main text element with animations
+  React.createElement(Sequence, {{
+    from: 0,
+    durationInFrames: 210,
+    children: React.createElement(AbsoluteFill, {{
+      style: {{
+        justifyContent: 'center',
+        alignItems: 'center'
+      }}
+    }},
+      React.createElement('h1', {{
+        style: {{
+          color: 'white',
+          fontSize: 80,
+          textAlign: 'center',
+          fontFamily: 'Arial, sans-serif',
+          fontWeight: 'bold',
+          opacity: textOpacity,
+          transform: `scale(${{textScale}})`,
+          textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)'
+        }}
+      }}, 'Main Title')
+    )
+  }}),
+
+  // Logo with spring animation
+  React.createElement(Sequence, {{
+    from: 60,
+    durationInFrames: 180,
+    children: React.createElement('div', {{
+      style: {{
+        position: 'absolute',
+        top: 100,
+        left: '50%',
+        transform: `translateX(-50%) scale(${{logoScale}})`
+      }}
+    }},
+      React.createElement(Img, {{
+        src: 'https://example.com/logo.png',
+        style: {{
+          width: 120,
+          height: 120,
+          objectFit: 'contain'
+        }}
+      }})
+    )
+  }}),
+
+  // Sliding subtitle
+  React.createElement(Sequence, {{
+    from: 90,
+    durationInFrames: 150,
+    children: React.createElement('h2', {{
+      style: {{
+        position: 'absolute',
+        bottom: 150,
+        left: '50%',
+        transform: `translateX(-50%) translateX(${{slideX}}px)`,
+        color: 'yellow',
+        fontSize: 36,
+        textAlign: 'center',
+        fontFamily: 'Arial, sans-serif'
+      }}
+    }}, 'Subtitle Text')
+  }})
 );
 
 **CRITICAL**: DO NOT include any import statements in your code. All necessary imports (React, useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, etc.) are already provided. Start your code directly with variable declarations and function calls.
 
 ---
 
-CURRENT REQUEST CONTEXT:
-{current_context}{media_context}{history_context}{error_context}"""
+CURRENT COMPOSITION CODE:
+{request.get('current_generated_code', '')}
 
-            # DEBUG: Log the complete prompt being sent to AI for retry attempts
+USER REQUEST: {request.get('user_request', '')}
+{media_section}"""
+
+
+def build_retry_prompt(failed_code: str, error_message: str) -> str:
+    """Build prompt for retry attempts - just fix the error"""
+    
+    return f"""Fix the validation error in this code:
+
+BROKEN CODE:
+{failed_code}
+
+ERROR MESSAGE:
+{error_message}
+
+Return the corrected code in this format:
+DURATION: [seconds]
+CODE:
+[fixed code]"""
+
+
+async def generate_composition_with_validation(
+    request: Dict[str, Any], 
+    gemini_api: Any,
+    use_vertex_ai: bool = False,
+    max_retries: int = 2
+) -> Dict[str, Any]:
+    """
+    Generate a composition with compilation validation and retry logic.
+    """
+    last_error = None
+    last_failed_code = None  # Track the code that failed validation
+    
+    for attempt in range(max_retries + 1):
+        try:
+            print(f"Generation attempt {attempt + 1}/{max_retries + 1}")
+            
+            # Build the appropriate prompt based on attempt type
             if attempt > 0:
-                print(f"🔍 DEBUG - Complete prompt being sent to AI on retry attempt {attempt + 1}:")
-                print(f"🔍 DEBUG - Prompt length: {len(prompt)} characters")
-                print(f"{'='*60}")
-                print(prompt[:2000] + "..." if len(prompt) > 2000 else prompt)
-                print(f"{'='*60}")
+                # Retry attempt - just fix the error
+                prompt = build_retry_prompt(last_failed_code, last_error)
+            else:
+                # First attempt - full edit prompt
+                prompt = build_edit_prompt(request)
 
             # Generate code with AI
             if use_vertex_ai:

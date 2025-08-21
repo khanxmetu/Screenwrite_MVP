@@ -9,10 +9,22 @@ export interface PreviewSettings {
   fps: number;
 }
 
+// Default boilerplate Remotion composition - matches AI output format
+const BOILERPLATE_COMPOSITION = `const frame = useCurrentFrame();
+const { fps } = useVideoConfig();
+
+return React.createElement(AbsoluteFill, {
+  style: {
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center'
+  }
+});`;
+
 // Hook to manage standalone preview content
 export function useStandalonePreview(onDurationUpdate?: (durationInFrames: number) => void) {
   const [previewContent, setPreviewContent] = useState<PreviewContent[]>([]);
-  const [generatedTsxCode, setGeneratedTsxCode] = useState<string>("");
+  const [generatedTsxCode, setGeneratedTsxCode] = useState<string>(BOILERPLATE_COMPOSITION);
   const [previewSettings, setPreviewSettings] = useState<PreviewSettings>({
     width: 1920,
     height: 1080,
@@ -45,7 +57,7 @@ export function useStandalonePreview(onDurationUpdate?: (durationInFrames: numbe
   // Clear all content
   const clearPreviewContent = useCallback(() => {
     setPreviewContent([]);
-    setGeneratedTsxCode("");
+    setGeneratedTsxCode(BOILERPLATE_COMPOSITION);
     setLastAiExplanation("");
     setConversationHistory([]); // Clear conversation history too
   }, []);
