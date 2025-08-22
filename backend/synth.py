@@ -281,10 +281,11 @@ REQUIREMENTS for the enhanced request:
 - Eliminates ambiguity that could cause generation failure
 - Maximizes probability of accomplishing the user's actual intent
 
-ANALYSIS DECISION: Determine if understanding the user's intent requires content analysis of available media files:
-- Does the request involve understanding video content, extracting colors/styles, scene analysis, or content matching?
-- Does the user reference visual elements that need to be analyzed ("match the style", "extract colors", "based on what you see")?
-- If analysis is needed, specify which exact media files from the available assets require analysis
+ANALYSIS DECISION: Determine if understanding the user's intent requires examining the actual content inside media files:
+- Set needs_analysis to true ONLY if the request requires knowledge of what is visually or audibly happening within the media
+- Does the request depend on understanding scenes, objects, colors, styles, moods, or other content that exists inside the video/image/audio?
+- Simple file operations (adding, removing, moving, trimming, resizing, positioning) do NOT require content analysis
+- If content examination is needed, specify which exact media files from the available assets require analysis
 
 OUTPUT: Return ONLY a JSON object with these exact fields:
 {{

@@ -178,6 +178,7 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
             media_for_analysis=synth_result.media_for_analysis,
             media_library=request.media_library or [],
             preview_frame=request.preview_frame,
+            current_composition=request.current_generated_code,
             gemini_api=gemini_api
         )
         
