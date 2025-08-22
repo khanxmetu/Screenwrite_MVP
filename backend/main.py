@@ -17,7 +17,7 @@ from typing import List, Dict, Any, Optional
 # Import code generation functionality
 from code_generator import generate_composition_with_validation
 from synth import synthesize_request
-from analyzer import analyze_content
+from media_checker import check_media_relevance
 
 load_dotenv()
 
@@ -150,53 +150,39 @@ async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse
 
 @app.post("/ai/generate-composition")
 async def generate_composition(request: CompositionRequest) -> CompositionResponse:
-    """Generate a new Remotion composition using the new Synth-Analyzer-Generator architecture."""
+    """Generate a new Remotion composition using the new streamlined Synth-MediaChecker-Generator architecture."""
     
     print(f"🎬 Main: Processing request: '{request.user_request}'")
     
-    # Step 1: Synth - Enhance the request with context analysis
-    synth_result = await synthesize_request(
+    # Step 1: Media Checker - Determine which media files are relevant
+    relevant_media_files = await check_media_relevance(
+        user_request=request.user_request,
+        current_composition=request.current_generated_code,
+        media_library=request.media_library or [],
+        gemini_api=gemini_api
+    )
+    
+    print(f"📋 Main: Media Checker found {len(relevant_media_files)} relevant files")
+    
+    # Step 2: Enhanced Synth - Transform request with media analysis capabilities
+    enhanced_request = await synthesize_request(
         user_request=request.user_request,
         conversation_history=request.conversation_history,
         current_composition=request.current_generated_code,
-        preview_frame=request.preview_frame,
+        relevant_media_files=relevant_media_files,
         media_library=request.media_library,
         preview_settings=request.preview_settings,
         gemini_api=gemini_api
     )
     
-    print(f"🧠 Main: Synth completed - Enhanced: '{synth_result.enhanced_request[:100]}...'")
-    print(f"📊 Main: Analysis needed: {synth_result.needs_analysis}")
-    
-    # Step 2: Route based on Synth decision
-    if synth_result.needs_analysis:
-        # Route through Analyzer for content analysis
-        print(f"🔍 Main: Routing through Analyzer for content analysis")
-        
-        analysis_result = await analyze_content(
-            enhanced_request=synth_result.enhanced_request,
-            media_for_analysis=synth_result.media_for_analysis,
-            media_library=request.media_library or [],
-            preview_frame=request.preview_frame,
-            current_composition=request.current_generated_code,
-            gemini_api=gemini_api
-        )
-        
-        # Use the further enhanced request from Analyzer
-        final_enhanced_request = analysis_result.enhanced_request
-        print(f"🔍 Main: Analyzer completed - Final request: '{final_enhanced_request[:100]}...'")
-        
-    else:
-        # Direct to generation without additional analysis
-        print(f"⚡ Main: Routing directly to generation")
-        final_enhanced_request = synth_result.enhanced_request
+    print(f"🧠 Main: Enhanced Synth completed - Final request: '{enhanced_request[:150]}...'")
     
     # Step 3: Generate composition using enhanced request
     print(f"⚙️ Main: Generating composition with enhanced request")
     
     # Convert to dict format expected by code generator
     enhanced_request_dict = {
-        "user_request": final_enhanced_request,  # Use enhanced request instead of original
+        "user_request": enhanced_request,  # Use enhanced request instead of original
         "preview_settings": request.preview_settings,
         "media_library": request.media_library,
         "current_generated_code": request.current_generated_code,

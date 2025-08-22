@@ -452,33 +452,12 @@ def build_edit_prompt(request: Dict[str, Any]) -> str:
 4. spring() config uses 'damping' not 'dampening'
 5. **DOM LAYERING**: Elements rendered LATER appear ON TOP. For overlays (text, UI) to be visible over background content (video, images), place them AFTER background elements in the React.createElement sequence.
 
-🚨 **INTERPOLATE FUNCTION CRITICAL RULES** 🚨
-❌ NEVER USE STRINGS IN outputRange - interpolate ONLY works with NUMBERS
-❌ NEVER USE DECREASING VALUES in inputRange - must always increase: [0, 10, 20] ✅ NOT [0, 20, 10] ❌
-
-CORRECT interpolate examples:
-✅ interpolate(frame, [0, 30, 60], [0, 1, 0])  // inputRange: 0 < 30 < 60 (strictly increasing)
-✅ interpolate(frame, [10, 20, 50], [0, 100, 0])  // inputRange: 10 < 20 < 50 (strictly increasing)
-✅ interpolate(frame, [0, 30], [0, 1])  // Numbers only in outputRange
-✅ interpolate(frame, [0, 15, 30], [0, 0.5, 1])  // Smooth fade in
-✅ interpolate(frame, [60, 90, 120], [1, 1, 0])  // Hold then fade out
-
-❌ WRONG EXAMPLES - NEVER DO THESE:
-❌ interpolate(frame, [0, 30], ['hidden', 'visible'])  // STRINGS NOT ALLOWED
-❌ interpolate(frame, [30, 20, 60], [0, 1, 0])  // inputRange NOT INCREASING (30 > 20)
-❌ interpolate(frame, [0, 15, 15, 30], [0, 1, 1, 0])  // DUPLICATE VALUES (15, 15)
-❌ interpolate(frame, [40, 20], [0, 1])  // DECREASING (40 > 20)
-
-FOR VISIBILITY/OPACITY ANIMATIONS - USE THESE PATTERNS:
-✅ opacity: interpolate(frame, [0, 30], [0, 1])  // Fade in from 0 to 1
-✅ opacity: interpolate(frame, [90, 120], [1, 0])  // Fade out from 1 to 0
-✅ opacity: interpolate(frame, [0, 30, 90, 120], [0, 1, 1, 0])  // Fade in, hold, fade out
-
-FOR SCALE ANIMATIONS - USE THESE PATTERNS:
-✅ transform: `scale(${interpolate(frame, [0, 30], [0.5, 1])})`  // Scale up
-✅ transform: `scale(${interpolate(frame, [0, 20, 40], [1, 1.2, 1])})`  // Bounce effect
-
-REMEMBER: interpolate() inputRange values must ALWAYS be in ASCENDING ORDER: [small, medium, large]
+CORRECT interpolate examples (ONLY STRICTLY INCREASING NUMBERS ARE ALLOWED):
+- interpolate(frame, [0, 30, 60], [0, 1, 0])  ✅ inputRange: 0 < 30 < 60 (MUST BE STRICTLY INCREASING)
+- interpolate(frame, [10, 20, 50], [0, 100, 0])  ✅ inputRange: 10 < 20 < 50 (MUST BE STRICTLY INCREASING)
+- interpolate(frame, [0, 30], [0, 1])  ✅ Numbers only in outputRange
+- interpolate(frame, [0, 30], ['hidden', 'visible'])  ❌ WRONG - strings not allowed in outputRange
+- interpolate(frame, [30, 20, 60], [0, 1, 0])  ❌ WRONG - inputRange not increasing (30 > 20)
 
 
 CSS POSITIONING SYSTEM:
@@ -514,11 +493,6 @@ CODE:
 [raw JavaScript code - no markdown blocks]
 
 # Complete Remotion Composition Template
-
-⚠️ **INTERPOLATE SAFETY CHECKLIST** - Verify EVERY interpolate call:
-1. ✅ inputRange values are in ASCENDING order (e.g., [0, 30, 60] NOT [30, 0, 60])
-2. ✅ outputRange contains ONLY NUMBERS (e.g., [0, 1, 0] NOT ['hidden', 'visible'])
-3. ✅ No duplicate values in inputRange (e.g., [0, 30, 60] NOT [0, 30, 30])
 
 ## EXAMPLE RESPONSE:
 DURATION: 8
