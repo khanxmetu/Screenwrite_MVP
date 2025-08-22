@@ -75,18 +75,12 @@ async def enhance_without_media(
     
     context_text = "\n".join(context_parts)
 
-    prompt = f"""You are a request disambiguation engine. Your job is to ONLY create ONE comprehensive enhanced request that maximizes the likelihood of successful Remotion generation and accomplishment of the user's intent by ANOTHER AI model.
+    # System instruction for role definition
+    system_instruction = """You are a request disambiguation engine. Your job is to ONLY create ONE comprehensive enhanced request that maximizes the likelihood of successful Remotion generation and accomplishment of the user's intent by ANOTHER AI model.
+
 ⚠️ CRITICAL: Never output clarifying questions. Fill missing details with reasonable assumptions. Always provide executable instructions for the code generator. Your response goes to another AI, not a human.
 
-USER REQUEST: "{user_request}"
-
-CONTEXT:
-- Current Composition Code: {current_composition or "No current composition"}
-- Conversation History: {context_text}
-
 ⚠️ CRITICAL MEDIA FILE NAMING: When referencing media files in your enhanced request, you MUST use the exact file names from the user's context or media library. DO NOT use generic names like "myVideo.mp4" or "video.mp4". Use the actual file names that are available in the composition or conversation context.
-
-Transform the user request into a specific instruction that includes all necessary details for implementation.
 
 REQUIREMENTS for the enhanced request:
 - Unequivocally states what the user wants to achieve
@@ -98,10 +92,18 @@ REQUIREMENTS for the enhanced request:
 
 Return ONLY the enhanced request - no explanations, no questions."""
 
+    # User prompt with context
+    prompt = f"""USER REQUEST: "{user_request}"
+
+CONTEXT:
+- Current Composition Code: {current_composition or "No current composition"}
+- Conversation History: {context_text}"""
+
     try:
         response = gemini_api.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
+            system_instruction=system_instruction,
             config=types.GenerateContentConfig(temperature=0.3)
         )
         
@@ -176,20 +178,12 @@ async def enhance_with_media(
     
     context_text = "\n".join(context_parts)
     
-    prompt = f"""You are a request disambiguation engine. Your job is to create ONE comprehensive enhanced request that maximizes the likelihood of successful Remotion generation and accomplishment of the user's intent.
+    # System instruction with role, requirements and examples
+    system_instruction = """You are a request disambiguation engine. Your job is to create ONE comprehensive enhanced request that maximizes the likelihood of successful Remotion generation and accomplishment of the user's intent.
 
 ⚠️ CRITICAL: Never output clarifying questions. Fill missing details with reasonable assumptions. Always provide executable instructions for the code generator. Your response goes to another AI, not a human.
 
-USER REQUEST: "{user_request}"
-
-CONTEXT:
-- Current Composition Code: {current_composition or "No current composition"}
-- Conversation History: {context_text}
-- Relevant Media Files: {len(relevant_media_files)} files for analysis
-
-⚠️ CRITICAL MEDIA FILE NAMING: When referencing media files in your enhanced request, you MUST use the exact file names provided in the "Relevant media files" section above. DO NOT use generic names like "myVideo.mp4" or "video.mp4". Use the actual file names shown in the media library context.
-
-Transform the user request into a specific instruction that includes all necessary details for implementation.
+⚠️ CRITICAL MEDIA FILE NAMING: When referencing media files in your enhanced request, you MUST use the exact file names provided in the "Relevant media files" section. DO NOT use generic names like "myVideo.mp4" or "video.mp4". Use the actual file names shown in the media library context.
 
 REQUIREMENTS for the enhanced request:
 - Unequivocally states what the user wants to achieve
@@ -399,6 +393,14 @@ Output: "Add text overlay with content 'Golden Hour Magic', fontSize 56px, fontF
 
 Return ONLY the enhanced request as a single, comprehensive instruction."""
 
+    # User prompt with specific request and context
+    prompt = f"""USER REQUEST: "{user_request}"
+
+CONTEXT:
+- Current Composition Code: {current_composition or "No current composition"}
+- Conversation History: {context_text}
+- Relevant Media Files: {len(relevant_media_files)} files for analysis"""
+
     try:
         # Prepare content for Gemini (text + media files)
         content_parts = [prompt]
@@ -418,6 +420,7 @@ Return ONLY the enhanced request as a single, comprehensive instruction."""
         response = gemini_api.models.generate_content(
             model="gemini-2.5-flash",
             contents=content_parts,
+            system_instruction=system_instruction,
             config=types.GenerateContentConfig(temperature=0.4)
         )
         

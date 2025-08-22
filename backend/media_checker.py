@@ -56,18 +56,10 @@ async def check_media_relevance(
     if current_composition:
         comp_context = f"Current composition:\n{current_composition}"
 
-    # Build simplified content analysis prompt
-    prompt = f"""You are a media content analysis detector for a video editing system.
+    # System instruction for role definition
+    system_instruction = """You are a media content analysis detector for a video editing system.
 
 CONTEXT: The user has a video composition (React/Remotion code) with available media files. They've made a request that will be forwarded to the code generator LLM. Your ONLY job is to figure out which specific media files the code generator should analyze to fulfill the user's request. You are NOT generating code or making changes - just selecting which files are necessary.
-
-USER REQUEST: "{user_request}"
-
-CURRENT COMPOSITION:
-{comp_context}
-
-AVAILABLE MEDIA FILES:
-{chr(10).join(media_list)}
 
 YOUR ONLY TASK: Determine which files need analysis. Nothing else.
 
@@ -78,7 +70,16 @@ Use the composition to resolve references like "first clip", "main video", then 
 
 Return JSON with exact file names that need content examination, or empty array if none.
 
-{{"files_needing_analysis": ["filename.mp4"], "reasoning": "Brief explanation"}}"""
+{"files_needing_analysis": ["filename.mp4"], "reasoning": "Brief explanation"}"""
+
+    # User prompt with context  
+    prompt = f"""USER REQUEST: "{user_request}"
+
+CURRENT COMPOSITION:
+{comp_context}
+
+AVAILABLE MEDIA FILES:
+{chr(10).join(media_list)}"""
 
     # Define structured output schema
     response_schema = {
@@ -104,6 +105,7 @@ Return JSON with exact file names that need content examination, or empty array 
         response = gemini_api.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
+            system_instruction=system_instruction,
             config=types.GenerateContentConfig(
                 temperature=0.2,  # Low temperature for consistent relevance detection
                 response_mime_type="application/json",

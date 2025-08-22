@@ -411,8 +411,8 @@ def estimate_duration_from_code(code: str) -> float:
         return 8.0  # Conservative fallback
 
 
-def build_edit_prompt(request: Dict[str, Any]) -> str:
-    """Build prompt for first attempt - has everything needed to modify composition"""
+def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
+    """Build system instruction and user prompt for first attempt"""
     
     # Get media assets
     media_library = request.get('media_library', [])
@@ -439,7 +439,8 @@ def build_edit_prompt(request: Dict[str, Any]) -> str:
     else:
         media_section = "\nNo media assets available. Create compositions using text, shapes, and animations.\n"
     
-    return f"""You are a world-class Remotion developer. Update the composition based on user requests.
+    # System instruction with role and rules
+    system_instruction = """You are a world-class Remotion developer. Update the composition based on user requests.
 
 ⚠️ **CRITICAL**: Only change/add what the user specifically asks for. Keep EVERYTHING else UNCHANGED.
             
@@ -578,32 +579,43 @@ return React.createElement(AbsoluteFill, {{}},
 
   // Background audio
   React.createElement(Audio, {{
-    src: 'https://example.com/audio.mp3'
+    src: 'https://example.com/audio.mp3',
+    startFrom: 0,
+    endAt: 240
   }}),
 
-  // Main text element with animations
+  // Video with timing
   React.createElement(Sequence, {{
     from: 0,
-    durationInFrames: 210,
-    children: React.createElement(AbsoluteFill, {{
+    durationInFrames: 120,
+    children: React.createElement(Video, {{
+      src: 'https://example.com/clip.mp4',
       style: {{
-        justifyContent: 'center',
-        alignItems: 'center'
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover'
       }}
-    }},
-      React.createElement('h1', {{
-        style: {{
-          color: 'white',
-          fontSize: 80,
-          textAlign: 'center',
-          fontFamily: 'Arial, sans-serif',
-          fontWeight: 'bold',
-          opacity: textOpacity,
-          transform: `scale(${{textScale}})`,
-          textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)'
-        }}
-      }}, 'Main Title')
-    )
+    }})
+  }}),
+
+  // Text overlay appearing on top
+  React.createElement(Sequence, {{
+    from: 30,
+    durationInFrames: 120,
+    children: React.createElement('div', {{
+      style: {{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        fontSize: '60px',
+        fontWeight: 'bold',
+        color: '#FFFFFF',
+        textAlign: 'center',
+        opacity: textOpacity,
+        transform: `translate(-50%, -50%) scale(${{textScale}})`
+      }}
+    }}, 'Your Text Here')
   }}),
 
   // Logo with spring animation
@@ -613,50 +625,44 @@ return React.createElement(AbsoluteFill, {{}},
     children: React.createElement('div', {{
       style: {{
         position: 'absolute',
-        top: 100,
-        left: '50%',
-        transform: `translateX(-50%) scale(${{logoScale}})`
+        top: '20px',
+        right: '20px',
+        width: '100px',
+        height: '100px',
+        backgroundColor: '#FF6B6B',
+        borderRadius: '50%',
+        transform: `scale(${{logoScale}})`
       }}
-    }},
-      React.createElement(Img, {{
-        src: 'https://example.com/logo.png',
-        style: {{
-          width: 120,
-          height: 120,
-          objectFit: 'contain'
-        }}
-      }})
-    )
+    }})
   }}),
 
-  // Sliding subtitle
+  // Sliding element
   React.createElement(Sequence, {{
     from: 90,
-    durationInFrames: 150,
-    children: React.createElement('h2', {{
+    durationInFrames: 90,
+    children: React.createElement('div', {{
       style: {{
         position: 'absolute',
-        bottom: 150,
+        top: '50%',
         left: '50%',
-        transform: `translateX(-50%) translateX(${{slideX}}px)`,
-        color: 'yellow',
-        fontSize: 36,
-        textAlign: 'center',
-        fontFamily: 'Arial, sans-serif'
+        transform: `translate(${{slideX}}px, -50%)`,
+        fontSize: '40px',
+        color: '#4ECDC4'
       }}
-    }}, 'Subtitle Text')
+    }}, 'Sliding Text')
   }})
 );
 
-**CRITICAL**: DO NOT include any import statements in your code. All necessary imports (React, useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, etc.) are already provided. Start your code directly with variable declarations and function calls.
+**CRITICAL**: DO NOT include any import statements in your code. All necessary imports (React, useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, etc.) are already provided. Start your code directly with variable declarations and function calls."""
 
----
-
-CURRENT COMPOSITION CODE:
+    # User prompt with specific context
+    user_prompt = f"""CURRENT COMPOSITION CODE:
 {request.get('current_generated_code', '')}
 
 USER REQUEST: {request.get('user_request', '')}
 {media_section}"""
+
+    return system_instruction, user_prompt
 
 
 def build_retry_prompt(failed_code: str, error_message: str) -> str:
@@ -695,16 +701,18 @@ async def generate_composition_with_validation(
             # Build the appropriate prompt based on attempt type
             if attempt > 0:
                 # Retry attempt - just fix the error
-                prompt = build_retry_prompt(last_failed_code, last_error)
+                system_instruction = "You are a world-class Remotion developer. Fix the validation error in the provided code while maintaining all existing functionality."
+                user_prompt = build_retry_prompt(last_failed_code, last_error)
             else:
                 # First attempt - full edit prompt
-                prompt = build_edit_prompt(request)
+                system_instruction, user_prompt = build_edit_prompt(request)
 
             # Generate code with AI
             if use_vertex_ai:
                 response = gemini_api.models.generate_content(
                     model="gemini-2.5-flash",
-                    contents=prompt,
+                    contents=user_prompt,
+                    system_instruction=system_instruction,
                     config=types.GenerateContentConfig(
                         temperature=0.7
                     )
@@ -712,7 +720,8 @@ async def generate_composition_with_validation(
             else:
                 response = gemini_api.models.generate_content(
                     model="gemini-2.5-flash",
-                    contents=prompt,
+                    contents=user_prompt,
+                    system_instruction=system_instruction,
                     config={
                         "temperature": 0.7,
                     },
