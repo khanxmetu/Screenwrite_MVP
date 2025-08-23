@@ -8,6 +8,8 @@ for the code generator by analyzing visual and audio content in media files.
 
 import re
 from typing import Dict, Any, List, Optional
+from google import genai
+from google.genai import types
 
 
 def extract_composition_state(tsx_code: Optional[str]) -> Dict[str, Any]:
@@ -212,12 +214,13 @@ async def analyze_content(
         )
     
     try:
+        # System instruction for the analyzer role
+        system_instruction = """You are a content-based request enhancement engine. Your ONLY job is to resolve ambiguities that require understanding what's actually happening inside the media content.
+
+⚠️ CRITICAL: Your output goes directly to a code generator. You only handle requests that depend on visual/audio content analysis."""
+
         # Build analysis prompt with composition context
-        analysis_prompt = f"""You are a content-based request enhancement engine. Your ONLY job is to resolve ambiguities that require understanding what's actually happening inside the media content.
-
-⚠️ CRITICAL: Your output goes directly to a code generator. You only handle requests that depend on visual/audio content analysis.
-
-USER REQUEST: "{enhanced_request}"
+        analysis_prompt = f"""USER REQUEST: "{enhanced_request}"
 
 COMPOSITION CONTEXT:
 - Total composition duration: {total_duration} seconds  
@@ -445,7 +448,11 @@ Return ONLY the enhanced request as a single, comprehensive instruction."""
             contents=[
                 *[gemini_api.files.get(name=file_ref['gemini_file_id']) for file_ref in gemini_file_refs],
                 analysis_prompt
-            ]
+            ],
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.4
+            )
         )
         
         enhanced_final_request = response.text.strip()

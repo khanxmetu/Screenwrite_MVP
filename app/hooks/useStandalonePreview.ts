@@ -225,5 +225,6 @@ export function useStandalonePreview(onDurationUpdate?: (durationInFrames: numbe
     updatePreviewSettings,
     setPreviewContent,
     setPreviewSettings,
+    setGeneratedTsxCode, // Export function to update generated TSX code
   };
 }

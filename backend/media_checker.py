@@ -105,8 +105,8 @@ AVAILABLE MEDIA FILES:
         response = gemini_api.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            system_instruction=system_instruction,
             config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
                 temperature=0.2,  # Low temperature for consistent relevance detection
                 response_mime_type="application/json",
                 response_schema=response_schema

@@ -48,6 +48,23 @@ export interface CompositionResponse {
   error_message?: string;
 }
 
+// Error correction interfaces
+export interface CodeFixRequest {
+  broken_code: string;
+  error_message: string;
+  error_stack?: string;
+  user_request: string;
+  media_library?: any[];
+}
+
+export interface CodeFixResponse {
+  corrected_code: string;
+  explanation: string;
+  duration: number;
+  success: boolean;
+  error_message?: string;
+}
+
 // Function to generate composition via AI
 export async function generateComposition(request: CompositionRequest): Promise<CompositionResponse> {
   try {
@@ -71,6 +88,34 @@ export async function generateComposition(request: CompositionRequest): Promise<
       content_data: [],
       explanation: "Failed to generate composition",
       duration: 0,
+      success: false,
+      error_message: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+// Function to fix broken code via AI
+export async function fixCode(request: CodeFixRequest): Promise<CodeFixResponse> {
+  try {
+    const response = await fetch(apiUrl("/ai/fix-code", true), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error fixing code:", error);
+    return {
+      corrected_code: request.broken_code, // Return original as fallback
+      explanation: "Failed to fix code",
+      duration: 10.0,
       success: false,
       error_message: error instanceof Error ? error.message : "Unknown error",
     };

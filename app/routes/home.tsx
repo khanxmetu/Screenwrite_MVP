@@ -101,6 +101,7 @@ export default function TimelineEditor() {
     generateAiContent,
     loadSampleContent,
     updatePreviewSettings,
+    setGeneratedTsxCode,
   } = useStandalonePreview(setDurationInFrames);
 
   // Wrapper function for AI composition generation with media library context
@@ -545,6 +546,10 @@ export default function TimelineEditor() {
                             backgroundColor={previewSettings.backgroundColor}
                             playerRef={playerRef}
                             durationInFrames={durationInFrames}
+                            onCodeFixed={(fixedCode) => {
+                              console.log('🔧 Code automatically fixed, updating state...');
+                              setGeneratedTsxCode(fixedCode);
+                            }}
                           />
                         ) : (
                           <StandaloneVideoPlayer
