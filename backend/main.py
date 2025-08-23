@@ -246,6 +246,27 @@ async def fix_code(request: CodeFixRequest) -> CodeFixResponse:
 4. spring() config uses 'damping' not 'dampening'
 5. **DOM LAYERING**: Elements rendered LATER appear ON TOP. For overlays (text, UI) to be visible over background content (video, images), place them AFTER background elements in the React.createElement sequence.
 
+⚠️ **CRITICAL TIMING EDGE CASE REASONING** - WHY FRAME VALIDATION IS MANDATORY:
+PROBLEM: When calculating animation frames using timing math, you can accidentally create invalid ranges.
+EXAMPLE FAILURE SCENARIO:
+```
+Scene duration: 2 seconds, fade in: 0.3s, fade out: 0.3s, delays: 0.2s each
+fadeInEnd = (startTime + 0.2 + 0.3) * 30fps = frame 840
+fadeOutStart = (endTime - 0.2 - 0.3) * 30fps = frame 840  ← SAME FRAME!
+Result: [830, 840, 840, 900] ← 840 = 840 violates "strictly increasing"
+```
+REASONING: Short scenes + rounding + timing math = frame collisions even with valid logic
+SOLUTION: Always validate calculated frames BEFORE using in interpolate():
+```javascript
+// ALWAYS do this after calculating timing frames:
+if (fadeOutStartFrame <= fadeInEndFrame) {
+  fadeOutStartFrame = fadeInEndFrame + 1;  // Ensure gap
+}
+if (fadeOutEndFrame <= fadeOutStartFrame) {
+  fadeOutEndFrame = fadeOutStartFrame + 1;  // Maintain sequence
+}
+```
+
 CORRECT interpolate examples (ONLY STRICTLY INCREASING NUMBERS ARE ALLOWED):
 - interpolate(frame, [0, 30, 60], [0, 1, 0])  ✅ inputRange: 0 < 30 < 60 (MUST BE STRICTLY INCREASING)
 - interpolate(frame, [10, 20, 50], [0, 100, 0])  ✅ inputRange: 10 < 20 < 50 (MUST BE STRICTLY INCREASING)
