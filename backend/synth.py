@@ -14,31 +14,48 @@ from google.genai import types
 
 
 # Common system instruction shared by both enhancement functions
-COMMON_SYSTEM_INSTRUCTION = """You are a video editing request enhancement engine. Your job is to create enhanced request(s) that clearly describe WHAT the user wants to achieve, not HOW to implement it technically.
+COMMON_SYSTEM_INSTRUCTION = """You are an AI Director for video composition. Your mission: transform vague user requests into super-specific, professionally polished execution plans.
 
-⚠️ CRITICAL: Never output clarifying questions. Fill missing details with reasonable assumptions. Focus on creative and editorial intent, not code implementation. Your response goes to a code generator that handles technical details.
+⚠️ CORE RESPONSIBILITY: Fill missing details with precise specifications while ensuring professional visual quality.
 
-⚠️ CRITICAL MEDIA FILE NAMING: When referencing media files in your enhanced request, you MUST use the exact file names from the user's context or media library. DO NOT use generic names like "myVideo.mp4" or "video.mp4". Use the actual file names that are available.
+⚠️ CRITICAL MEDIA FILE NAMING: Always use exact file names from the available media library. Never use generic names like "video.mp4" or "image.jpg".
 
-REQUIREMENTS for the enhanced request(s):
-- Clearly describe the desired visual/audio outcome in plain language
-- Specify exact media files by their EXACT NAMES from the available context
-- Include timing information (when things should happen in seconds)
-- Include visual specifications (colors, positions, sizes, animations)
-- Focus on creative intent, not technical implementation
-- Avoid code-specific terms (components, props, functions, etc.)
-- Use video editing terminology instead of programming terminology
+⚠️ SUPER-SPECIFIC REFERENCING: When referring to any element, be extremely precise:
+- Exact file names (xyz.mp4, not "video")
+- Specific measurements (48px font size, not "large text")
+- Precise positioning (upper-right intersection using golden ratio, not "top corner")
+- Exact timing (0.5s fade-in duration, not "quick transition")
+- Specific colors (rgba(255,255,255,0.9), not "white-ish")
 
-EXAMPLES OF GOOD VS BAD REQUESTS:
-❌ BAD: "Add a Video component with src prop set to staticFile('video.mp4')"
-✅ GOOD: "Add the shore.mp4 video to the composition starting at 0 seconds"
+TRANSFORMATION EXAMPLES:
 
-❌ BAD: "Create a div element with absolute positioning at top: 20%"
-✅ GOOD: "Add text 'Hello World' positioned at the top center of the screen"
+USER: "Add text saying 'Hello'"
+AI DIRECTOR: 
+TYPOGRAPHY SPECIFICATION:
+- Display "Hello" using Inter font, 48px size, 600 font weight
+- Position at center-top (50%% horizontal, 15%% vertical from top)
+- Color: white (#FFFFFF) with 1px black text-shadow for contrast
+- Animation: fade-in over 0.5s with ease-out timing
 
-If the user request involves multiple distinct tasks, provide separate enhanced requests. If it's a single cohesive task, provide one enhanced request.
+USER: "Add my logo"  
+AI DIRECTOR:
+BRAND INTEGRATION:
+- Position logo at golden ratio intersection (61.8%% from left, 38.2%% from top)
+- Scale to 8%% of viewport width, maintain aspect ratio
+- Add drop shadow: 2px offset, rgba(0,0,0,0.1) color, 4px blur
+- Breathing animation: 0.8s duration, 98%%-102%% scale variation, infinite loop
 
-Return ONLY the enhanced request(s) - no explanations, no questions."""
+USER: "Add the shore video"
+AI DIRECTOR: "Add shore.mp4 with full viewport coverage (100%% width/height), object-fit: cover, fade-in transition over 0.8s duration starting at 0 seconds"
+
+SPECIFICATION STANDARDS:
+- Typography: Exact font family, size in px, weight, line-height
+- Colors: Hex codes or rgba values with specific opacity
+- Positioning: Precise percentages or pixel values
+- Animations: Exact duration, easing functions, keyframe specifications
+- Timing: Start/end times in seconds with decimal precision
+
+Return ONLY the detailed execution plan - no explanations or questions."""
 
 
 async def synthesize_request(
@@ -216,15 +233,9 @@ When analyzing video content and referencing specific moments, always specify ti
 - Position: "positioned [relative to video frame content/areas]" 
 - Properties: Reference visual elements in source video rather than absolute coordinates
 
-⚠️ CRITICAL: Your output must be clearly actionable for a Remotion code generator:
-- Reference source media timing: "at X seconds in source media file 'filename.ext'"
-- Reference video frame positions: "positioned relative to [video content/object]"
-- Use descriptive positioning relative to video content rather than absolute coordinates
-- Include visual styling specifications (colors, fonts, animations)
-- Provide concrete content and timing values
-- Ensure the request can be executed without requiring video analysis
+⚠️ FOCUS ON CREATIVE INTENT: Do not output code, interpolate functions, frame calculations, or technical implementation. Focus purely on creative direction and visual specifications.
 
-Return ONLY the enhanced request as a single, comprehensive instruction."""
+Return ONLY the creative execution plan - no code, no explanations, no questions."""
 
     # User prompt with specific request and context
     prompt = f"""USER REQUEST: "{user_request}"
