@@ -13,6 +13,24 @@ from google import genai
 from google.genai import types
 
 
+# Common system instruction shared by both enhancement functions
+COMMON_SYSTEM_INSTRUCTION = """You are a request disambiguation engine. Your job is to create ONE comprehensive enhanced request that maximizes the likelihood of successful Remotion generation and accomplishment of the user's intent.
+
+⚠️ CRITICAL: Never output clarifying questions. Fill missing details with reasonable assumptions. Always provide executable instructions for the code generator. Your response goes to another AI, not a human.
+
+⚠️ CRITICAL MEDIA FILE NAMING: When referencing media files in your enhanced request, you MUST use the exact file names from the user's context or media library. DO NOT use generic names like "myVideo.mp4" or "video.mp4". Use the actual file names that are available in the composition or conversation context.
+
+REQUIREMENTS for the enhanced request:
+- Unequivocally states what the user wants to achieve
+- Includes exact parameters (timing in seconds/frames, positions in pixels/percentages)
+- References specific media assets by their EXACT NAMES from the available context (never use generic placeholders)
+- Is actionable and executable by the downstream Remotion generator
+- Eliminates ambiguity that could cause generation failure
+- Maximizes probability of accomplishing the user's actual intent
+
+Return ONLY the enhanced request - no explanations, no questions."""
+
+
 async def synthesize_request(
     user_request: str,
     conversation_history: Optional[List[Dict[str, Any]]],
@@ -75,22 +93,8 @@ async def enhance_without_media(
     
     context_text = "\n".join(context_parts)
 
-    # System instruction for role definition
-    system_instruction = """You are a request disambiguation engine. Your job is to ONLY create ONE comprehensive enhanced request that maximizes the likelihood of successful Remotion generation and accomplishment of the user's intent by ANOTHER AI model.
-
-⚠️ CRITICAL: Never output clarifying questions. Fill missing details with reasonable assumptions. Always provide executable instructions for the code generator. Your response goes to another AI, not a human.
-
-⚠️ CRITICAL MEDIA FILE NAMING: When referencing media files in your enhanced request, you MUST use the exact file names from the user's context or media library. DO NOT use generic names like "myVideo.mp4" or "video.mp4". Use the actual file names that are available in the composition or conversation context.
-
-REQUIREMENTS for the enhanced request:
-- Unequivocally states what the user wants to achieve
-- Includes exact parameters (timing in seconds/frames, positions in pixels/percentages)
-- References specific media assets by their EXACT NAMES from the available context (never use generic placeholders)
-- Is actionable and executable by the downstream Remotion generator
-- Eliminates ambiguity that could cause generation failure
-- Maximizes probability of accomplishing the user's actual intent
-
-Return ONLY the enhanced request - no explanations, no questions."""
+    # Use common system instruction
+    system_instruction = COMMON_SYSTEM_INSTRUCTION
 
     # User prompt with context
     prompt = f"""USER REQUEST: "{user_request}"
@@ -179,21 +183,12 @@ async def enhance_with_media(
     context_text = "\n".join(context_parts)
     
     # System instruction with role, requirements and examples
-    system_instruction = """You are a request disambiguation engine. Your job is to create ONE comprehensive enhanced request that maximizes the likelihood of successful Remotion generation and accomplishment of the user's intent.
-
-⚠️ CRITICAL: Never output clarifying questions. Fill missing details with reasonable assumptions. Always provide executable instructions for the code generator. Your response goes to another AI, not a human.
-
-⚠️ CRITICAL MEDIA FILE NAMING: When referencing media files in your enhanced request, you MUST use the exact file names provided in the "Relevant media files" section. DO NOT use generic names like "myVideo.mp4" or "video.mp4". Use the actual file names shown in the media library context.
-
-REQUIREMENTS for the enhanced request:
-- Unequivocally states what the user wants to achieve
-- Includes exact parameters (timing in seconds/frames, positions in pixels/percentages)
-- References specific media assets by their EXACT NAMES from the media library (never use generic placeholders)
-- Is actionable and executable by the downstream Remotion generator
-- Eliminates ambiguity that could cause generation failure
-- Maximizes probability of accomplishing the user's actual intent
+    system_instruction = COMMON_SYSTEM_INSTRUCTION + """
 
 CRITICAL: VIDEO-TO-COMPOSITION TIMING CONVERSION
+Follow these exact reasoning patterns when analyzing video content and converting timing to composition coordinates.
+
+⚠️ REASONING INSTRUCTION: Use the step-by-step Q&A format shown below. Break down each problem systematically, check video segment ranges, and calculate precise timing offsets. This is exactly how you should reason through timing conversions.
 Follow these exact reasoning patterns when analyzing video content and converting timing to composition coordinates.
 
 ⚠️ REASONING INSTRUCTION: Use the step-by-step Q&A format shown below. Break down each problem systematically, check video segment ranges, and calculate precise timing offsets. This is exactly how you should reason through timing conversions.
