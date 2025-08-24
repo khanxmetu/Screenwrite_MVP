@@ -125,6 +125,14 @@ export function DynamicComposition({
     const videoConfig = useVideoConfig();
     const currentScale = useCurrentScale();
 
+    // Apply safeInterpolate wrapper to prevent monotonic errors
+    const safeCode = currentCode.replace(/\binterpolate\b/g, 'safeInterpolate');
+    
+    // Log if we're applying safe interpolation
+    if (safeCode !== currentCode) {
+      console.log('🛡️ Applied safeInterpolate wrapper to prevent monotonic errors');
+    }
+
     // Create a function that evaluates the JavaScript code that returns JSX
     const executeCode = new Function(
       'React',
@@ -154,13 +162,53 @@ export function DynamicComposition({
       // Destructure transitions
       const { fade, iris, wipe, flip, slide } = Transitions;
       
+      // Safe interpolate wrapper that sorts inputRange and removes duplicates
+      const safeInterpolate = (frame, inputRange, outputRange, options = {}) => {
+        // Create paired array of [input, output] to maintain correspondence
+        const paired = inputRange.map((input, index) => ({
+          input: input,
+          output: outputRange[index] !== undefined ? outputRange[index] : outputRange[outputRange.length - 1]
+        }));
+        
+        // Remove duplicates based on input values
+        const uniquePaired = [];
+        const seenInputs = new Set();
+        
+        for (const pair of paired) {
+          if (!seenInputs.has(pair.input)) {
+            seenInputs.add(pair.input);
+            uniquePaired.push(pair);
+          }
+        }
+        
+        // Sort by input values
+        uniquePaired.sort((a, b) => a.input - b.input);
+        
+        // If we only have one unique value, create a minimal valid range
+        if (uniquePaired.length === 1) {
+          const singleValue = uniquePaired[0];
+          return interpolate(
+            frame,
+            [singleValue.input, singleValue.input + 1],
+            [singleValue.output, singleValue.output],
+            options
+          );
+        }
+        
+        // Extract sorted arrays
+        const safeInputRange = uniquePaired.map(pair => pair.input);
+        const safeOutputRange = uniquePaired.map(pair => pair.output);
+        
+        return interpolate(frame, safeInputRange, safeOutputRange, options);
+      };
+      
       // Create helper functions that use the passed values
       const useCurrentFrame = () => currentFrameValue;
       const useVideoConfig = () => videoConfigValue;
       const useCurrentScale = () => currentScaleValue;
       
-      // Execute the AI-generated code directly
-      ${currentCode}
+      // Execute the AI-generated code with safe interpolation
+      ${safeCode}
       `
     );
 

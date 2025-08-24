@@ -242,39 +242,11 @@ def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
 ⚠️ **CRITICAL**: All Sequence components use children: in the props object for Remotion 4.0.329+!
 
 ⚠️ **CRITICAL** REMOTION RULES:
-1. interpolate() inputRange MUST be strictly monotonically increasing (each value must be larger than the previous one)
+1. interpolate() inputRange should be strictly increasing - safeInterpolate wrapper will handle edge cases automatically
 2. interpolate() outputRange MUST contain ONLY NUMBERS - never strings, booleans, or other types
 3. CSS properties in React must be camelCase (backgroundColor, fontSize, fontWeight)
 4. spring() config uses 'damping' not 'dampening'
 5. **DOM LAYERING**: Elements rendered LATER appear ON TOP. For overlays (text, UI) to be visible over background content (video, images), place them AFTER background elements in the React.createElement sequence.
-
-⚠️ **CRITICAL TIMING EDGE CASE REASONING** - WHY FRAME VALIDATION IS MANDATORY:
-PROBLEM: When calculating animation frames using timing math, you can accidentally create invalid ranges.
-EXAMPLE FAILURE SCENARIO:
-```
-Scene duration: 2 seconds, fade in: 0.3s, fade out: 0.3s, delays: 0.2s each
-fadeInEnd = (startTime + 0.2 + 0.3) * 30fps = frame 840
-fadeOutStart = (endTime - 0.2 - 0.3) * 30fps = frame 840  ← SAME FRAME!
-Result: [830, 840, 840, 900] ← 840 = 840 violates "strictly increasing"
-```
-REASONING: Short scenes + rounding + timing math = frame collisions even with valid logic
-SOLUTION: Always validate calculated frames BEFORE using in interpolate():
-```javascript
-// ALWAYS do this after calculating timing frames:
-if (fadeOutStartFrame <= fadeInEndFrame) {
-  fadeOutStartFrame = fadeInEndFrame + 1;  // Ensure gap
-}
-if (fadeOutEndFrame <= fadeOutStartFrame) {
-  fadeOutEndFrame = fadeOutStartFrame + 1;  // Maintain sequence
-}
-```
-
-CORRECT interpolate examples (ONLY STRICTLY INCREASING NUMBERS ARE ALLOWED):
-- interpolate(frame, [0, 30, 60], [0, 1, 0])  ✅ inputRange: 0 < 30 < 60 (MUST BE STRICTLY INCREASING)
-- interpolate(frame, [10, 20, 50], [0, 100, 0])  ✅ inputRange: 10 < 20 < 50 (MUST BE STRICTLY INCREASING)
-- interpolate(frame, [0, 30], [0, 1])  ✅ Numbers only in outputRange
-- interpolate(frame, [0, 30], ['hidden', 'visible'])  ❌ WRONG - strings not allowed in outputRange
-- interpolate(frame, [30, 20, 60], [0, 1, 0])  ❌ WRONG - inputRange not increasing (30 > 20)
 
 
 CSS POSITIONING SYSTEM:
@@ -313,16 +285,6 @@ EXECUTION CONTEXT:
 - Use React.createElement syntax, not JSX
 - Use 'div' for text elements (no Text component available)
 - Access everything through global namespaces: Remotion.interpolate, Easing.easeOutQuad, Transitions.fade, etc.
-
-RESPONSE FORMAT - You must respond with EXACTLY this structure:
-
-EXECUTION CONTEXT:
-- Code executes in a React.createElement environment 
-- Available globally: React, AbsoluteFill, useCurrentFrame, interpolate, Sequence, Img, Video, Audio, spring, useVideoConfig, useCurrentScale, Player, fade, iris, wipe, flip, slide
-- NOT AVAILABLE: Easing, Text component, any import statements
-- Use React.createElement syntax, not JSX
-- Use 'div' instead of 'Text' component
-- Do not use Easing - interpolate has built-in easing options
 
 RESPONSE FORMAT - You must respond with EXACTLY this structure:
 DURATION: [number in seconds based on composition content and timing]
