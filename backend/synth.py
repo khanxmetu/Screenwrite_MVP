@@ -315,8 +315,13 @@ CONTEXT:
                 if media_item and media_item.get('gemini_file_id'):
                     try:
                         gemini_file = gemini_api.files.get(name=media_item['gemini_file_id'])
-                        content_parts.append(gemini_file)
-                        print(f"🧠 Synth: Added {media_name} for analysis")
+                        
+                        # Check if file is in ACTIVE state
+                        if gemini_file.state.name == 'ACTIVE':
+                            content_parts.append(gemini_file)
+                            print(f"🧠 Synth: Added {media_name} for analysis")
+                        else:
+                            print(f"⚠️ Synth: {media_name} not ready (state: {gemini_file.state.name}), skipping analysis")
                     except Exception as e:
                         print(f"⚠️ Synth: Failed to load {media_name}: {e}")
         

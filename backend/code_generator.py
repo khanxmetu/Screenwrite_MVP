@@ -209,6 +209,32 @@ def estimate_duration_from_code(code: str) -> float:
 def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
     """Build system instruction and user prompt for first attempt"""
     
+    # Get media assets
+    media_library = request.get('media_library', [])
+    media_section = ""
+    if media_library and len(media_library) > 0:
+        media_section = "\nAVAILABLE MEDIA ASSETS:\n"
+        for media in media_library:
+            name = media.get('name', 'unnamed')
+            media_type = media.get('mediaType', 'unknown')
+            duration = media.get('durationInSeconds', 0)
+            media_url_local = media.get('mediaUrlLocal', '')
+            media_url_remote = media.get('mediaUrlRemote', '')
+            
+            # Determine which URL to use (prefer local, fallback to remote)
+            actual_url = media_url_local if media_url_local else media_url_remote
+            
+            if media_type == 'video':
+                media_section += f"- {name}: Video ({duration}s) - URL: {actual_url}\n"
+            elif media_type == 'image':
+                media_section += f"- {name}: Image - URL: {actual_url}\n"
+            elif media_type == 'audio':
+                media_section += f"- {name}: Audio ({duration}s) - URL: {actual_url}\n"
+        media_section += "\n⚠️ CRITICAL: Use the EXACT URLs provided above in Video/Img/Audio src props. Never use filenames like 'video.mp4' - always use the full URL.\n"
+        media_section += "⚠️ EXAMPLE: src: 'https://example.com/file.mp4' NOT src: 'filename.mp4'\n"
+    else:
+        media_section = "\nNo media assets available. Create compositions using text, shapes, and animations.\n"
+    
     # System instruction with role and rules
     system_instruction = """You are a world-class Remotion developer. Update the composition based on user requests.
 
@@ -226,6 +252,13 @@ def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
 • Video: {src: string, trimBefore?: number, trimAfter?: number, volume?: number, playbackRate?: number, muted?: boolean, style?: object}
 • Audio: {src: string, trimBefore?: number, trimAfter?: number, volume?: number, playbackRate?: number, muted?: boolean}
 • Img: {src: string, style?: object, placeholder?: string}
+
+⚠️ CRITICAL MEDIA RULE: When using Video/Audio/Img components, ALWAYS use the exact URL from the AVAILABLE MEDIA ASSETS section above. 
+NEVER use just the filename - always use the full URL provided in the "URL:" field.
+
+EXAMPLE CORRECT USAGE:
+- If media shows "video.mp4 - URL: https://example.com/video.mp4", use src: "https://example.com/video.mp4"
+- NOT src: "video.mp4"
 
 **TRANSITION EFFECTS (from @remotion/transitions):**
 • fade(): Simple opacity transition
@@ -927,7 +960,8 @@ return React.createElement(AbsoluteFill, {{}},
     user_prompt = f"""CURRENT COMPOSITION CODE:
 {request.get('current_generated_code', '')}
 
-USER REQUEST: {request.get('user_request', '')}"""
+USER REQUEST: {request.get('user_request', '')}
+{media_section}"""
 
     return system_instruction, user_prompt
 
