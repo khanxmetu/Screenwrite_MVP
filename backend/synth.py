@@ -64,28 +64,78 @@ async def synthesize_request(
     user_request: str,
     conversation_history: Optional[List[Dict[str, Any]]],
     current_composition: Optional[str],
-    relevant_media_files: List[str],
     media_library: Optional[List[Dict[str, Any]]],
     preview_settings: Dict[str, Any],
     gemini_api: Any
 ) -> str:
     """
-    Enhanced Synth: Route to appropriate enhancement function based on media availability
+    Enhanced Synth: Route to appropriate enhancement function based on @ syntax detection
     """
     
-    print(f"🧠 Synth: Processing request with {len(relevant_media_files)} relevant media files")
+    # Detect @filename patterns in user request (handles spaces and extensions)
+    import re
+    # Pattern handles: @filename.ext, @"filename with spaces.ext", @filename (no extension)
+    at_mentioned_files = []
     
-    if not relevant_media_files:
-        # No media analysis needed - use basic enhancement
+    # Pattern 1: @"quoted filename with spaces.ext" (remove quotes from result)
+    quoted_pattern = r'@"([^"]+)"'
+    quoted_matches = re.findall(quoted_pattern, user_request)
+    at_mentioned_files.extend(quoted_matches)
+    
+    # Remove quoted sections from text to avoid double-matching
+    text_without_quotes = re.sub(quoted_pattern, '', user_request)
+    
+    # Pattern 2: @filename.ext (with common extensions, allowing spaces until punctuation/whitespace)
+    extension_pattern = r'@([^\s@"]+(?:\s+[^\s@"]+)*\.(?:mp4|mov|avi|mkv|webm|jpg|jpeg|png|gif|webp|mp3|wav|flac|aac|m4a))'
+    extension_matches = re.findall(extension_pattern, text_without_quotes, re.IGNORECASE)
+    at_mentioned_files.extend(extension_matches)
+    
+    # Pattern 3: @filename (no extension, stops at whitespace/punctuation)
+    simple_pattern = r'@([^\s@"]+)'
+    simple_matches = re.findall(simple_pattern, text_without_quotes)
+    # Only add if not already captured by extension pattern
+    for match in simple_matches:
+        if match not in at_mentioned_files and not any(match in ext_match for ext_match in extension_matches):
+            at_mentioned_files.append(match)
+    
+    # Remove duplicates while preserving order
+    at_mentioned_files = list(dict.fromkeys(at_mentioned_files))
+    
+    # Validate that @-mentioned files exist in media library
+    valid_files = []
+    invalid_files = []
+    
+    if media_library:
+        available_files = [media.get('name', '') for media in media_library]
+        for mentioned_file in at_mentioned_files:
+            if mentioned_file in available_files:
+                valid_files.append(mentioned_file)
+            else:
+                invalid_files.append(mentioned_file)
+    else:
+        # No media library provided - all mentions are invalid
+        invalid_files = at_mentioned_files.copy()
+    
+    # Log validation results
+    if invalid_files:
+        print(f"⚠️ Synth: Invalid @-mentioned files (not found): {invalid_files}")
+        if media_library:
+            available_names = [media.get('name', 'unnamed') for media in media_library]
+            print(f"📁 Synth: Available files: {available_names}")
+    
+    print(f"🧠 Synth: Processing request with {len(valid_files)} valid @-mentioned files: {valid_files}")
+    
+    if not valid_files:
+        # No valid @filename mentions - use basic enhancement
         return await enhance_without_media(
             user_request, conversation_history, current_composition, 
             media_library, preview_settings, gemini_api
         )
     else:
-        # Media analysis needed - use enhanced enhancement
+        # Valid @filename mentions found - use enhanced enhancement with media analysis
         return await enhance_with_media(
             user_request, conversation_history, current_composition,
-            relevant_media_files, media_library, gemini_api
+            valid_files, media_library, gemini_api
         )
 
 
@@ -209,17 +259,26 @@ async def enhance_with_media(
     
     # Add media file info
     context_parts.append("Relevant media files:")
+    found_files = []
+    missing_files = []
+    
     for media_name in relevant_media_files:
         if media_library:
             media_item = next((m for m in media_library if m.get('name') == media_name), None)
             if media_item:
+                found_files.append(media_name)
                 media_type = media_item.get('mediaType', 'unknown')
                 media_duration = media_item.get('durationInSeconds', 0)
                 if media_type == 'video' and media_duration:
                     context_parts.append(f"- {media_name}: {media_type} ({media_duration}s)")
                 else:
                     context_parts.append(f"- {media_name}: {media_type}")
+            else:
+                missing_files.append(media_name)
     
+    if missing_files:
+        print(f"⚠️ Synth: Media files not found in library: {missing_files}")
+        context_parts.append(f"Note: Files not found in media library: {missing_files}")
     context_text = "\n".join(context_parts)
     
     # System instruction with role, requirements and examples

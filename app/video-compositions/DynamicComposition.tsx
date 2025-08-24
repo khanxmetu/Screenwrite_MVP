@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import * as Remotion from "remotion";
 import { Player, type PlayerRef } from "@remotion/player";
 import * as Transitions from "@remotion/transitions";
+import { getSampleCode } from "~/utils/sampleCodeLoader";
 
 // Destructure commonly used components for convenience
 const { 
@@ -20,6 +21,7 @@ const {
 
 export interface DynamicCompositionProps {
   tsxCode: string;
+  useSampleCode?: boolean; // When true, load from test file
   backgroundColor?: string;
   fps?: number;
 }
@@ -27,15 +29,65 @@ export interface DynamicCompositionProps {
 // Dynamic composition that executes AI-generated TSX code
 export function DynamicComposition({
   tsxCode,
+  useSampleCode = false,
   backgroundColor = "#000000",
 }: DynamicCompositionProps) {
   const frame = useCurrentFrame();
   const [currentCode, setCurrentCode] = useState(tsxCode);
+  const [sampleCode, setSampleCode] = useState<string>('');
 
-  // Update current code when tsxCode prop changes
+  // Load sample code from test file when needed
   useEffect(() => {
-    setCurrentCode(tsxCode);
-  }, [tsxCode]);
+    if (useSampleCode && !sampleCode) {
+      try {
+        const loadedCode = getSampleCode();
+        console.log('📁 Loaded sample code from file system');
+        setSampleCode(loadedCode);
+      } catch (error) {
+        console.error('❌ Failed to load sample code:', error);
+        // Fallback to embedded simple code
+        setSampleCode(`
+const frame = currentFrameValue;
+const { width, height, fps } = videoConfigValue;
+
+const opacity = interpolate(frame, [0, 30, 270, 300], [0, 1, 1, 0]);
+const scale = interpolate(frame, [0, 60, 240, 300], [0.5, 1.2, 1.2, 0.5]);
+const rotation = interpolate(frame, [0, 300], [0, 360]);
+
+return React.createElement(AbsoluteFill, {
+  style: {
+    backgroundColor: '#2563eb',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: opacity
+  }
+}, React.createElement('div', {
+  style: {
+    transform: 'scale(' + scale + ') rotate(' + rotation + 'deg)',
+    color: 'white',
+    fontSize: '48px',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    padding: '20px',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: '16px',
+    border: '2px solid rgba(255, 255, 255, 0.3)'
+  }
+}, 'Sample Mode Active'));
+        `);
+      }
+    }
+  }, [useSampleCode, sampleCode]);
+
+  // Update current code when tsxCode prop changes or sample mode changes
+  useEffect(() => {
+    if (useSampleCode && sampleCode) {
+      setCurrentCode(sampleCode);
+    } else {
+      setCurrentCode(tsxCode);
+    }
+  }, [tsxCode, useSampleCode, sampleCode]);
 
   // If no TSX code, show placeholder
   if (!currentCode) {
@@ -54,9 +106,12 @@ export function DynamicComposition({
           }}
         >
           <div style={{ textAlign: "center" }}>
-            <p>AI Composition Mode</p>
+            <p>{useSampleCode ? "🧪 Sample Mode" : "🤖 AI Composition Mode"}</p>
             <p style={{ fontSize: "16px", opacity: 0.7, marginTop: "10px" }}>
-              Describe what you want to see and AI will generate Remotion code
+              {useSampleCode 
+                ? "Loading structured animation patterns..." 
+                : "Describe what you want to see and AI will generate Remotion code"
+              }
             </p>
           </div>
         </div>
@@ -79,6 +134,16 @@ export function DynamicComposition({
     // Log if we're applying safe interpolation
     if (safeCode !== currentCode) {
       console.log('🛡️ Applied safeInterpolate wrapper to prevent monotonic errors');
+    }
+
+    // Debug: Log the code being executed
+    console.log('🔍 Code to execute (first 500 chars):', safeCode.substring(0, 500));
+    console.log('🔍 Code contains "<":', safeCode.includes('<'));
+    
+    if (safeCode.includes('<')) {
+      console.error('❌ Found "<" character in code at positions:', 
+        [...safeCode.matchAll(/</g)].map(match => match.index)
+      );
     }
 
     // Create a function that evaluates the JavaScript code that returns JSX
@@ -244,6 +309,7 @@ export function DynamicComposition({
 // Props for the dynamic video player
 export interface DynamicVideoPlayerProps {
   tsxCode: string;
+  useSampleCode?: boolean; // When true, load from test file instead of tsxCode
   compositionWidth: number;
   compositionHeight: number;
   backgroundColor?: string;
@@ -255,6 +321,7 @@ export interface DynamicVideoPlayerProps {
 // The dynamic video player component
 export function DynamicVideoPlayer({
   tsxCode,
+  useSampleCode = false,
   compositionWidth,
   compositionHeight,
   backgroundColor = "#000000",
@@ -263,6 +330,7 @@ export function DynamicVideoPlayer({
   onCodeFixed,
 }: DynamicVideoPlayerProps) {
   console.log("DynamicVideoPlayer - TSX Code length:", tsxCode?.length || 0);
+  console.log("DynamicVideoPlayer - Use Sample Code:", useSampleCode);
 
   return (
     <Player
@@ -270,6 +338,7 @@ export function DynamicVideoPlayer({
       component={DynamicComposition}
       inputProps={{
         tsxCode,
+        useSampleCode,
         backgroundColor,
         onCodeFixed,
       }}

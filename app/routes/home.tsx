@@ -66,6 +66,9 @@ export default function TimelineEditor() {
   const [currentFrame, setCurrentFrame] = useState<number>(0);
   const [durationInFrames, setDurationInFrames] = useState<number>(1); // Minimal duration - gets updated by AI
 
+  // Sample code toggle state
+  const [useSampleCode, setUseSampleCode] = useState<boolean>(false);
+
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
 
@@ -516,15 +519,19 @@ export default function TimelineEditor() {
                       {/* Sample Content Button */}
                       <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
                         <Button
-                          variant="outline"
+                          variant={useSampleCode ? "default" : "outline"}
                           size="sm"
                           onClick={() => {
-                            console.log("Loading sample content");
-                            loadSampleContent();
+                            console.log("Toggling sample mode:", !useSampleCode);
+                            setUseSampleCode(!useSampleCode);
+                            if (!useSampleCode) {
+                              // When enabling sample mode, set duration for structured test (12 seconds = 360 frames)
+                              setDurationInFrames(360);
+                            }
                           }}
                           className="text-xs h-6"
                         >
-                          Load Sample
+                          {useSampleCode ? "✓ Sample" : "Load Sample"}
                         </Button>
                       </div>
 
@@ -538,9 +545,10 @@ export default function TimelineEditor() {
                           console.log("==================");
                           return null;
                         })()}
-                        {generatedTsxCode ? (
+                        {generatedTsxCode || useSampleCode ? (
                           <DynamicVideoPlayer
                             tsxCode={generatedTsxCode}
+                            useSampleCode={useSampleCode}
                             compositionWidth={previewSettings.width}
                             compositionHeight={previewSettings.height}
                             backgroundColor={previewSettings.backgroundColor}

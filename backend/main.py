@@ -18,7 +18,6 @@ from typing import List, Dict, Any, Optional
 import code_generator
 from code_generator import generate_composition_with_validation
 from synth import synthesize_request
-from media_checker import check_media_relevance
 
 load_dotenv()
 
@@ -167,26 +166,15 @@ async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse
 
 @app.post("/ai/generate-composition")
 async def generate_composition(request: CompositionRequest) -> CompositionResponse:
-    """Generate a new Remotion composition using the new streamlined Synth-MediaChecker-Generator architecture."""
+    """Generate a new Remotion composition using @ syntax for media file selection."""
     
     print(f"🎬 Main: Processing request: '{request.user_request}'")
     
-    # Step 1: Media Checker - Determine which media files are relevant
-    relevant_media_files = await check_media_relevance(
-        user_request=request.user_request,
-        current_composition=request.current_generated_code,
-        media_library=request.media_library or [],
-        gemini_api=gemini_api
-    )
-    
-    print(f"📋 Main: Media Checker found {len(relevant_media_files)} relevant files")
-    
-    # Step 2: Enhanced Synth - Transform request with media analysis capabilities
+    # Step 1: Enhanced Synth - Transform request with @ syntax-based media analysis
     enhanced_request = await synthesize_request(
         user_request=request.user_request,
         conversation_history=request.conversation_history,
         current_composition=request.current_generated_code,
-        relevant_media_files=relevant_media_files,
         media_library=request.media_library,
         preview_settings=request.preview_settings,
         gemini_api=gemini_api
@@ -194,7 +182,7 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
     
     print(f"🧠 Main: Enhanced Synth completed - Final request: '{enhanced_request[:150]}...'")
     
-    # Step 3: Generate composition using enhanced request
+    # Step 2: Generate composition using enhanced request
     print(f"⚙️ Main: Generating composition with enhanced request")
     
     # Convert to dict format expected by code generator
