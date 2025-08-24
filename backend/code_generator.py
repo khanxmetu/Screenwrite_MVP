@@ -236,54 +236,78 @@ def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
     
     # System instruction with role and rules
     system_instruction = """You are a world-class Remotion developer. Update the composition based on user requests.
-EXECUTION CONTEXT:
-- Code executes in a React.createElement environment with Function() constructor
-- ALL REMOTION COMPONENTS AVAILABLE: Complete Remotion namespace destructured (AbsoluteFill, Sequence, Img, Video, Audio, Player, Composition, Still, Folder, Loop, Series, etc.)
-- ALL REMOTION FUNCTIONS AVAILABLE: useCurrentFrame, interpolate, spring, useVideoConfig, useCurrentScale, continueRender, delayRender, getAudioData, getVideoMetadata, random, etc.
-- ALL REMOTION UTILITIES: Complete Easing namespace, animation utilities, layout components
-- TRANSITION EFFECTS: fade, iris, wipe, flip, slide (destructured from Transitions)
-- Full namespaces available: Remotion.* and Transitions.* for any additional functionality
+
+🎯 **CURATED API REFERENCE** - Use ONLY these verified components:
+
+**CORE ANIMATION:**
+• AbsoluteFill: Main container component for layouts
+• Sequence: Timeline control with {{from: number, durationInFrames: number, children: ReactNode}}
+• useCurrentFrame(): Returns current frame number (call at component level)
+• useVideoConfig(): Returns {width, height, fps, durationInFrames}
+• interpolate(frame, inputRange, outputRange, options?): Animate numeric values
+• spring({frame, fps, config}): Physics-based animations with {damping: number, stiffness: number}
+
+**MEDIA COMPONENTS:**
+• Video: {src: string, trimBefore?: number, trimAfter?: number, volume?: number, playbackRate?: number, muted?: boolean, style?: object}
+• Audio: {src: string, trimBefore?: number, trimAfter?: number, volume?: number, playbackRate?: number, muted?: boolean}
+• Img: {src: string, style?: object, placeholder?: string}
+
+**TRANSITION EFFECTS (from @remotion/transitions):**
+• fade(): Simple opacity transition
+• slide({direction}): direction = "from-left" | "from-right" | "from-top" | "from-bottom"
+• wipe(): Slide overlay transition
+• flip(): 3D rotation transition
+• iris(): Circular reveal transition
+• clockWipe(): Circular wipe transition
+
+**EASING FUNCTIONS** - Use EXACT syntax:
+✅ CORRECT: easing: Easing.linear, easing: Easing.ease, easing: Easing.quad, easing: Easing.cubic
+✅ CORRECT: easing: Easing.sin, easing: Easing.circle, easing: Easing.exp, easing: Easing.bounce
+✅ CORRECT: easing: Easing.in(Easing.quad), easing: Easing.out(Easing.quad), easing: Easing.inOut(Easing.quad)
+✅ CORRECT: easing: Easing.bezier(0.4, 0.0, 0.2, 1)
+❌ WRONG: easing: 'ease-in-out', easing: 'easeInOut', easing: 'linear'
+
+**EXECUTION CONTEXT:**
+- Code executes in React.createElement environment with Function() constructor
 - Use React.createElement syntax, not JSX
-- Use 'div' for text elements (no Text component in Remotion)
+- Use 'div' elements for text (no Text component in Remotion)
+
+⚠️ **CRITICAL RULES:**
+
+1. **interpolate() OUTPUT TYPES:**
+   ✅ CORRECT: interpolate(frame, [0, 100], [0, 1, 0.5]) // Numbers only
+   ❌ WRONG: interpolate(frame, [0, 100], ['hidden', 'visible']) // No strings
+   ❌ WRONG: interpolate(frame, [0, 100], [true, false]) // No booleans
+   → For strings: Use conditionals instead: opacity > 0.5 ? 'block' : 'none'
+
+2. **EASING SYNTAX:**
+   ✅ CORRECT: {easing: Easing.inOut(Easing.quad)}
+   ❌ WRONG: {easing: 'ease-in-out'}
+
+3. **CSS PROPERTIES:**
+   ✅ CORRECT: backgroundColor, fontSize, fontWeight, borderRadius
+   ❌ WRONG: background-color, font-size, font-weight, border-radius
+
+4. **SPRING CONFIG:**
+   ✅ CORRECT: {damping: 12, stiffness: 80}
+   ❌ WRONG: {dampening: 12, stiffness: 80}
+
+5. **SEQUENCE CHILDREN:**
+   ✅ CORRECT: React.createElement(Sequence, {from: 0, durationInFrames: 60, children: content})
+
+6. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
+
+⚠️ **COMMON MISTAKES TO AVOID:**
+❌ display: interpolate(frame, [0, 60], ['none', 'block']) 
+✅ display: interpolate(frame, [0, 60], [0, 1]) > 0.5 ? 'block' : 'none'
+
+❌ backgroundColor: interpolate(frame, [0, 60], ['red', 'blue'])
+✅ backgroundColor: frame < 30 ? '#ff0000' : '#0000ff'
+
+❌ transform: interpolate(frame, [0, 60], ['scale(0)', 'scale(1)'])
+✅ transform: `scale(${interpolate(frame, [0, 60], [0, 1])})`
 
 ⚠️ **CRITICAL**: Only change/add what the user specifically asks for. Keep EVERYTHING else UNCHANGED.
-            
-⚠️ **CRITICAL**: All Sequence components use children: in the props object for Remotion 4.0.329+!
-
-⚠️ **CRITICAL** REMOTION RULES:
-1. interpolate() inputRange should be strictly increasing - safeInterpolate wrapper will handle edge cases automatically
-2. interpolate() outputRange MUST contain ONLY NUMBERS - never strings, booleans, or other types
-3. CSS properties in React must be camelCase (backgroundColor, fontSize, fontWeight)
-4. spring() config uses 'damping' not 'dampening'
-5. **DOM LAYERING**: Elements rendered LATER appear ON TOP. For overlays (text, UI) to be visible over background content (video, images), place them AFTER background elements in the React.createElement sequence.
-
-
-CSS POSITIONING SYSTEM:
-Screen coordinates: (0,0) is TOP-LEFT corner. Y-axis goes DOWN (top: 100px = 100px DOWN from top).
-
-POSITIONING PATTERNS - Use these exact patterns:
-CENTER ELEMENT:
-style: {{
-  position: 'absolute',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: 'desired-width',
-  height: 'desired-height'
-}}
-
-FILL WITH PADDING:
-style: {{
-  position: 'absolute',
-  top: '40px',
-  left: '40px',
-  right: '40px',
-  bottom: '40px'
-}}
-
-FORBIDDEN:
-❌ Never use objectFit for positioning (objectFit only controls scaling)
-❌ Never use margin for positioning with position: 'absolute'
 
 RESPONSE FORMAT - You must respond with EXACTLY this structure:
 DURATION: [number in seconds based on composition content and timing]
@@ -293,83 +317,178 @@ CODE:
 # Complete Remotion Composition Template
 
 ## EXAMPLE RESPONSE:
-DURATION: 8
+DURATION: 12
 CODE:
 
 const frame = useCurrentFrame();
 const {{ width, height, fps }} = useVideoConfig();
 
-// Basic interpolation animation
-const textOpacity = interpolate(
+// TIMING CONSTANTS - Standard durations for consistency
+const FADE_DURATION = 20;          // Standard fade in/out
+const QUICK_TRANSITION = 10;       // Fast transitions
+const CROSS_FADE_OVERLAP = 15;     // Overlap between sequences
+const SPRING_DELAY = 30;           // Delay before spring animations
+
+// CONTAINER CONSTANTS - Prevent size jumping
+const TITLE_CONTAINER_HEIGHT = 120;
+const SUBTITLE_CONTAINER_HEIGHT = 80;
+const SAFE_ZONE_PADDING = 60;     // Safe area padding
+const CARD_PADDING = 40;          // Internal card padding
+
+// Z-INDEX LAYERS - Visual hierarchy
+const Z_BACKGROUND = 1;
+const Z_CONTENT = 2;
+const Z_OVERLAY = 3;
+const Z_UI = 4;
+
+// SPRING CONFIG - Consistent easing
+const STANDARD_SPRING = {{ damping: 12, stiffness: 80 }};
+const GENTLE_SPRING = {{ damping: 15, stiffness: 60 }};
+const BOUNCY_SPRING = {{ damping: 8, stiffness: 100 }};
+
+// === BACKGROUND VIDEO SEQUENCES WITH CROSS-FADES ===
+
+// Video clip 1 with fade in - strictly increasing: [0, 20, 75, 90]
+const clip1Opacity = interpolate(
   frame,
-  [0, 30, 180, 210],
+  [0, FADE_DURATION, 75, 90],
   [0, 1, 1, 0]
 );
 
-const textScale = interpolate(
+// Video clip 2 with cross-fade from clip 1 - strictly increasing: [75, 90, 165, 180]
+const clip2Opacity = interpolate(
   frame,
-  [0, 40],
-  [0.5, 1]
+  [75, 90, 165, 180],
+  [0, 1, 1, 0]
 );
 
-// Spring animation
-const logoScale = spring({{
-  frame: frame - 60,
+// Background video for remaining duration with fade in - strictly increasing: [165, 180]
+const backgroundOpacity = interpolate(
+  frame,
+  [165, 180],
+  [0, 0.6]
+);
+
+// === CONTAINER-BASED TEXT ANIMATIONS ===
+
+// Title animation with fixed container - no size jumping - strictly increasing: [30, 50]
+const titleOpacity = interpolate(
+  frame,
+  [SPRING_DELAY, SPRING_DELAY + FADE_DURATION],
+  [0, 1]
+);
+
+const titleScale = spring({{
+  frame: frame - SPRING_DELAY,
   fps: fps,
-  config: {{ damping: 10, stiffness: 100 }}
+  config: STANDARD_SPRING
 }});
 
-// Movement animation
-const slideX = interpolate(
+// Typing effect with stable container - strictly increasing: [60, 120]
+const typingProgress = interpolate(
   frame,
-  [90, 150],
-  [-200, 0]
+  [60, 120],
+  [0, 1],
+  {{ extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }}
+);
+
+// Subtitle slide-in with proper timing - strictly increasing: [90, 110]
+const subtitleY = interpolate(
+  frame,
+  [90, 110],
+  [40, 0],
+  {{ easing: Easing.inOut(Easing.quad) }}  // CORRECT EASING SYNTAX
+);
+
+const subtitleOpacity = interpolate(
+  frame,
+  [90, 110],
+  [0, 1],
+  {{ easing: Easing.ease }}  // CORRECT EASING SYNTAX
+);
+
+// === CARD/CONTAINER SLIDE ANIMATION ===
+// Card slide animation with smooth easing - strictly increasing: [150, 190]
+const cardX = interpolate(
+  frame,
+  [150, 190],
+  [-400, 0],
+  {{ easing: Easing.out(Easing.cubic) }}  // CORRECT EASING SYNTAX
+);
+
+const cardOpacity = interpolate(
+  frame,
+  [150, 170],
+  [0, 1],
+  {{ easing: Easing.bezier(0.4, 0.0, 0.2, 1) }}  // CORRECT BEZIER EASING
+);
+
+// === LOGO SCALING WITH PROPER TIMING ===
+const logoScale = spring({{
+  frame: frame - 180,
+  fps: fps,
+  config: GENTLE_SPRING
+}});
+
+const logoOpacity = interpolate(
+  frame,
+  [180, 200],
+  [0, 1],
+  {{ easing: Easing.in(Easing.sine) }}  // CORRECT EASING SYNTAX
 );
 
 return React.createElement(AbsoluteFill, {{}},
-  // Video clip 1: Play from 5-15 seconds of source video
+
+  // === BACKGROUND LAYER (Z-INDEX 1) ===
+  
+  // Video clip 1: Trimmed section (5-8 seconds of source)
   React.createElement(Sequence, {{
     from: 0,
     durationInFrames: 90,
     children: React.createElement(Video, {{
       src: 'https://example.com/video1.mp4',
-      startFrom: 150, // Start from frame 150 (5 seconds at 30fps)
-      endAt: 450,     // End at frame 450 (15 seconds at 30fps)
-      style: {{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover'
-      }}
-    }})
-  }}),
-
-  // Video clip 2: Different section of same or different video
-  React.createElement(Sequence, {{
-    from: 90,
-    durationInFrames: 60,
-    children: React.createElement(Video, {{
-      src: 'https://example.com/video2.mp4',
-      startFrom: 300, // Start from frame 300 (10 seconds at 30fps)
-      endAt: 600,     // End at frame 600 (20 seconds at 30fps)
-      style: {{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover'
-      }}
-    }})
-  }}),
-
-  // Background video for remaining duration
-  React.createElement(Sequence, {{
-    from: 150,
-    durationInFrames: 90,
-    children: React.createElement(Video, {{
-      src: 'https://example.com/background.mp3',
+      trimBefore: 150,  // Start at 5 seconds (30fps) - MODERN PROP
+      trimAfter: 390,   // End at 13 seconds (30fps) - MODERN PROP
       style: {{
         width: '100%',
         height: '100%',
         objectFit: 'cover',
-        opacity: 0.5
+        opacity: clip1Opacity,
+        zIndex: Z_BACKGROUND
+      }}
+    }})
+  }}),
+
+  // Video clip 2: Different section with cross-fade
+  React.createElement(Sequence, {{
+    from: 90,
+    durationInFrames: 90,
+    children: React.createElement(Video, {{
+      src: 'https://example.com/video2.mp4',
+      trimBefore: 300,  // Start at 10 seconds - MODERN PROP
+      trimAfter: 600,   // End at 20 seconds - MODERN PROP
+      style: {{
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        opacity: clip2Opacity,
+        zIndex: Z_BACKGROUND
+      }}
+    }})
+  }}),
+
+  // Background video with reduced opacity
+  React.createElement(Sequence, {{
+    from: 180,
+    durationInFrames: 180,
+    children: React.createElement(Video, {{
+      src: 'https://example.com/background.mp4',
+      style: {{
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        opacity: backgroundOpacity,
+        zIndex: Z_BACKGROUND
       }}
     }})
   }}),
@@ -377,27 +496,294 @@ return React.createElement(AbsoluteFill, {{}},
   // Background audio
   React.createElement(Audio, {{
     src: 'https://example.com/audio.mp3',
-    startFrom: 0,
-    endAt: 240
+    trimBefore: 0,   // MODERN PROP - start from beginning
+    trimAfter: 360   // MODERN PROP - end at 12 seconds
   }}),
 
-  // Video with timing
+  // === CONTENT LAYER (Z-INDEX 2) ===
+
+  // === POSITIONING EXAMPLES - Core Patterns ===
+
+  // PATTERN 1: CENTER ELEMENT - Perfect centering with fade transition
   React.createElement(Sequence, {{
     from: 0,
-    durationInFrames: 120,
-    children: React.createElement(Video, {{
-      src: 'https://example.com/clip.mp4',
-      style: {{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover'
-      }}
-    }})
+    durationInFrames: 60,
+    children: (() => {{
+      const centerOpacity = interpolate(frame, [0, 15, 45, 60], [0, 1, 1, 0]);
+      const centerScale = interpolate(frame, [0, 20], [0.8, 1]);
+      
+      return React.createElement('div', {{
+        style: {{
+          // STANDARD CENTER PATTERN - Use this for perfect centering
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: `translate(-50%, -50%) scale(${{centerScale}})`,
+          width: '300px',
+          height: '100px',
+          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+          border: '2px solid rgba(255, 255, 255, 0.3)',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '18px',
+          color: '#FFFFFF',
+          opacity: centerOpacity,
+          zIndex: Z_CONTENT
+        }}
+      }}, 'Perfect Center');
+    }})()
   }}),
 
-  // Text overlay appearing on top
+  // PATTERN 2: FILL WITH PADDING - Responsive containers with slide-in
   React.createElement(Sequence, {{
-    from: 30,
+    from: 20,
+    durationInFrames: 60,
+    children: (() => {{
+      const fillOpacity = interpolate(frame, [20, 35, 65, 80], [0, 1, 1, 0]);
+      const fillY = interpolate(frame, [20, 40], [20, 0]);
+      
+      return React.createElement('div', {{
+        style: {{
+          // FILL WITH PADDING PATTERN - Responsive to screen size
+          position: 'absolute',
+          top: '60px',
+          left: '60px',
+          right: '60px',
+          bottom: '60px',
+          backgroundColor: 'rgba(0, 0, 0, 0.1)',
+          border: '2px solid rgba(255, 255, 255, 0.2)',
+          borderRadius: '12px',
+          padding: '20px',
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'flex-end',
+          fontSize: '16px',
+          color: '#FFFFFF',
+          opacity: fillOpacity,
+          transform: `translateY(${{fillY}}px)`,
+          zIndex: Z_CONTENT
+        }}
+      }}, 'Fill Container');
+    }})()
+  }}),
+
+  // PATTERN 3: SAFE ZONE POSITIONING - All corner and edge placements
+  React.createElement(Sequence, {{
+    from: 10,
+    durationInFrames: 80,
+    children: (() => {{
+      const safeOpacity = interpolate(frame, [10, 25, 75, 90], [0, 1, 1, 0]);
+      const safeScale = interpolate(frame, [10, 30], [0.9, 1]);
+      
+      return React.createElement('div', {{
+        style: {{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          opacity: safeOpacity,
+          transform: `scale(${{safeScale}})`,
+          zIndex: Z_CONTENT
+        }}
+      }},
+        // TOP-LEFT: Brand/Logo placement
+        React.createElement('div', {{
+          style: {{
+            position: 'absolute',
+            top: `${{SAFE_ZONE_PADDING / 2}}px`,      // 30px from top
+            left: `${{SAFE_ZONE_PADDING / 2}}px`,     // 30px from left
+            width: '120px',
+            height: '40px',
+            backgroundColor: 'rgba(76, 205, 196, 0.9)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            color: '#FFFFFF',
+            fontWeight: 'bold'
+          }}
+        }}, 'TOP-LEFT'),
+
+        // TOP-RIGHT: Status/Info placement
+        React.createElement('div', {{
+          style: {{
+            position: 'absolute',
+            top: `${{SAFE_ZONE_PADDING / 2}}px`,      // 30px from top
+            right: `${{SAFE_ZONE_PADDING / 2}}px`,    // 30px from right
+            width: '120px',
+            height: '40px',
+            backgroundColor: 'rgba(255, 107, 107, 0.9)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            color: '#FFFFFF',
+            fontWeight: 'bold'
+          }}
+        }}, 'TOP-RIGHT'),
+
+        // BOTTOM-LEFT: Secondary info placement
+        React.createElement('div', {{
+          style: {{
+            position: 'absolute',
+            bottom: `${{SAFE_ZONE_PADDING / 2}}px`,   // 30px from bottom
+            left: `${{SAFE_ZONE_PADDING / 2}}px`,     // 30px from left
+            width: '120px',
+            height: '40px',
+            backgroundColor: 'rgba(255, 195, 0, 0.9)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            color: '#FFFFFF',
+            fontWeight: 'bold'
+          }}
+        }}, 'BOTTOM-LEFT'),
+
+        // BOTTOM-RIGHT: CTA/Action placement
+        React.createElement('div', {{
+          style: {{
+            position: 'absolute',
+            bottom: `${{SAFE_ZONE_PADDING / 2}}px`,   // 30px from bottom
+            right: `${{SAFE_ZONE_PADDING / 2}}px`,    // 30px from right
+            width: '120px',
+            height: '40px',
+            backgroundColor: 'rgba(138, 43, 226, 0.9)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            color: '#FFFFFF',
+            fontWeight: 'bold'
+          }}
+        }}, 'BOTTOM-RIGHT'),
+
+        // TOP-CENTER: Title/Header placement
+        React.createElement('div', {{
+          style: {{
+            position: 'absolute',
+            top: `${{SAFE_ZONE_PADDING / 2}}px`,      // 30px from top
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '200px',
+            height: '40px',
+            backgroundColor: 'rgba(0, 123, 255, 0.9)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            color: '#FFFFFF',
+            fontWeight: 'bold'
+          }}
+        }}, 'TOP-CENTER'),
+
+        // BOTTOM-CENTER: Progress/Status placement
+        React.createElement('div', {{
+          style: {{
+            position: 'absolute',
+            bottom: `${{SAFE_ZONE_PADDING / 2}}px`,   // 30px from bottom
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '200px',
+            height: '40px',
+            backgroundColor: 'rgba(40, 167, 69, 0.9)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            color: '#FFFFFF',
+            fontWeight: 'bold'
+          }}
+        }}, 'BOTTOM-CENTER'),
+
+        // LEFT-CENTER: Navigation placement
+        React.createElement('div', {{
+          style: {{
+            position: 'absolute',
+            left: `${{SAFE_ZONE_PADDING / 2}}px`,     // 30px from left
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: '80px',
+            height: '100px',
+            backgroundColor: 'rgba(108, 117, 125, 0.9)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '10px',
+            color: '#FFFFFF',
+            fontWeight: 'bold',
+            writingMode: 'vertical-rl'
+          }}
+        }}, 'LEFT-CENTER'),
+
+        // RIGHT-CENTER: Sidebar placement
+        React.createElement('div', {{
+          style: {{
+            position: 'absolute',
+            right: `${{SAFE_ZONE_PADDING / 2}}px`,    // 30px from right
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: '80px',
+            height: '100px',
+            backgroundColor: 'rgba(220, 53, 69, 0.9)',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '10px',
+            color: '#FFFFFF',
+            fontWeight: 'bold',
+            writingMode: 'vertical-rl'
+          }}
+        }}, 'RIGHT-CENTER')
+      );
+    }})()
+  }}),
+
+  // Main title with fixed container - prevents size jumping
+  React.createElement(Sequence, {{
+    from: SPRING_DELAY,
+    durationInFrames: 150,
+    children: React.createElement('div', {{
+      style: {{
+        position: 'absolute',
+        top: '30%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '80%',
+        height: `${{TITLE_CONTAINER_HEIGHT}}px`, // Fixed height prevents jumping
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: Z_CONTENT
+      }}
+    }}, React.createElement('div', {{
+      style: {{
+        fontSize: '72px',
+        fontWeight: 'bold',
+        color: '#FFFFFF',
+        textAlign: 'center',
+        textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+        opacity: titleOpacity,
+        transform: `scale(${{Math.max(0.1, titleScale)}})`, // Prevent scale(0) artifacts
+        lineHeight: '1.1'
+      }}
+    }}, 'Professional Title'))
+  }}),
+
+  // Typing effect with stable container
+  React.createElement(Sequence, {{
+    from: 60,
     durationInFrames: 120,
     children: React.createElement('div', {{
       style: {{
@@ -405,48 +791,158 @@ return React.createElement(AbsoluteFill, {{}},
         top: '50%',
         left: '50%',
         transform: 'translate(-50%, -50%)',
-        fontSize: '60px',
-        fontWeight: 'bold',
+        width: '70%',
+        height: `${{SUBTITLE_CONTAINER_HEIGHT}}px`, // Fixed container height
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: '12px',
+        padding: `${{CARD_PADDING}}px`,
+        zIndex: Z_CONTENT
+      }}
+    }}, React.createElement('div', {{
+      style: {{
+        fontSize: '32px',
         color: '#FFFFFF',
         textAlign: 'center',
-        opacity: textOpacity,
-        transform: `translate(-50%, -50%) scale(${{textScale}})`
+        fontWeight: '500',
+        width: '100%' // Takes full container width
       }}
-    }}, 'Your Text Here')
+    }}, 'Dynamic Content Here'.substring(0, Math.floor(typingProgress * 'Dynamic Content Here'.length))))
   }}),
 
-  // Logo with spring animation
+  // Subtitle with smooth slide-in
   React.createElement(Sequence, {{
-    from: 60,
+    from: 90,
     durationInFrames: 180,
     children: React.createElement('div', {{
       style: {{
         position: 'absolute',
-        top: '20px',
-        right: '20px',
-        width: '100px',
-        height: '100px',
-        backgroundColor: '#FF6B6B',
-        borderRadius: '50%',
-        transform: `scale(${{logoScale}})`
+        top: '70%',
+        left: '50%',
+        transform: `translate(-50%, calc(-50% + ${{subtitleY}}px))`,
+        width: '60%',
+        textAlign: 'center',
+        fontSize: '28px',
+        color: '#FFFFFF',
+        opacity: subtitleOpacity,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        padding: `${{CARD_PADDING / 2}}px ${{CARD_PADDING}}px`,
+        borderRadius: '8px',
+        zIndex: Z_CONTENT
       }}
-    }})
+    }}, 'Supporting Information')
   }}),
 
-  // Sliding element
+  // === OVERLAY LAYER (Z-INDEX 3) ===
+
+  // Sliding card container with proper positioning
   React.createElement(Sequence, {{
-    from: 90,
-    durationInFrames: 90,
+    from: 150,
+    durationInFrames: 120,
     children: React.createElement('div', {{
       style: {{
         position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: `translate(${{slideX}}px, -50%)`,
-        fontSize: '40px',
-        color: '#4ECDC4'
+        top: `${{SAFE_ZONE_PADDING}}px`,
+        left: `${{SAFE_ZONE_PADDING}}px`,
+        right: `${{SAFE_ZONE_PADDING}}px`,
+        bottom: `${{SAFE_ZONE_PADDING}}px`,
+        pointerEvents: 'none',
+        zIndex: Z_OVERLAY
       }}
-    }}, 'Sliding Text')
+    }}, React.createElement('div', {{
+      style: {{
+        position: 'absolute',
+        bottom: '0',
+        right: '0',
+        width: '400px',
+        height: '200px',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderRadius: '16px',
+        padding: `${{CARD_PADDING}}px`,
+        transform: `translateX(${{cardX}}px)`,
+        opacity: cardOpacity,
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center'
+      }}
+    }}, 
+      React.createElement('div', {{
+        style: {{
+          fontSize: '24px',
+          fontWeight: 'bold',
+          color: '#333333',
+          marginBottom: '12px'
+        }}
+      }}, 'Key Information'),
+      React.createElement('div', {{
+        style: {{
+          fontSize: '18px',
+          color: '#666666',
+          lineHeight: '1.4'
+        }}
+      }}, 'Supporting details with proper spacing and hierarchy')
+    ))
+  }}),
+
+  // === UI LAYER (Z-INDEX 4) ===
+
+  // Logo with spring animation - top-right safe zone
+  React.createElement(Sequence, {{
+    from: 180,
+    durationInFrames: 180,
+    children: React.createElement('div', {{
+      style: {{
+        position: 'absolute',
+        top: `${{SAFE_ZONE_PADDING / 2}}px`,
+        right: `${{SAFE_ZONE_PADDING / 2}}px`,
+        width: '120px',
+        height: '120px',
+        backgroundColor: '#FF6B6B',
+        borderRadius: '50%',
+        transform: `scale(${{Math.max(0.1, logoScale)}})`,
+        opacity: logoOpacity,
+        zIndex: Z_UI,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)'
+      }}
+    }}, React.createElement('div', {{
+      style: {{
+        color: '#FFFFFF',
+        fontSize: '24px',
+        fontWeight: 'bold'
+      }}
+    }}, 'LOGO'))
+  }}),
+
+  // Progress indicator with smooth animation
+  React.createElement(Sequence, {{
+    from: 0,
+    durationInFrames: 360,
+    children: React.createElement('div', {{
+      style: {{
+        position: 'absolute',
+        bottom: `${{SAFE_ZONE_PADDING / 3}}px`,
+        left: `${{SAFE_ZONE_PADDING}}px`,
+        right: `${{SAFE_ZONE_PADDING}}px`,
+        height: '4px',
+        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+        borderRadius: '2px',
+        zIndex: Z_UI
+      }}
+    }}, React.createElement('div', {{
+      style: {{
+        width: `${{(frame / 360) * 100}}%`,
+        height: '100%',
+        backgroundColor: '#4ECDC4',
+        borderRadius: '2px',
+        transition: 'width 0.1s ease'
+      }}
+    }}))
   }})
 );
 
