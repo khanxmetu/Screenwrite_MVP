@@ -314,14 +314,29 @@ CONTEXT:
                 media_item = next((m for m in media_library if m.get('name') == media_name), None)
                 if media_item and media_item.get('gemini_file_id'):
                     try:
-                        gemini_file = gemini_api.files.get(name=media_item['gemini_file_id'])
+                        # Retry mechanism for files not yet ACTIVE
+                        max_retries = 10
+                        retry_delay = 2  # seconds
                         
-                        # Check if file is in ACTIVE state
-                        if gemini_file.state.name == 'ACTIVE':
-                            content_parts.append(gemini_file)
-                            print(f"🧠 Synth: Added {media_name} for analysis")
+                        for attempt in range(max_retries):
+                            gemini_file = gemini_api.files.get(name=media_item['gemini_file_id'])
+                            
+                            if gemini_file.state.name == 'ACTIVE':
+                                content_parts.append(gemini_file)
+                                print(f"🧠 Synth: Added {media_name} for analysis (ready after {attempt + 1} attempts)")
+                                break
+                            elif gemini_file.state.name == 'FAILED':
+                                print(f"❌ Synth: {media_name} failed to process, skipping")
+                                break
+                            else:
+                                print(f"⏳ Synth: {media_name} not ready (state: {gemini_file.state.name}), retrying in {retry_delay}s... ({attempt + 1}/{max_retries})")
+                                if attempt < max_retries - 1:  # Don't sleep on last attempt
+                                    import asyncio
+                                    await asyncio.sleep(retry_delay)
                         else:
-                            print(f"⚠️ Synth: {media_name} not ready (state: {gemini_file.state.name}), skipping analysis")
+                            # All retries exhausted
+                            print(f"⚠️ Synth: {media_name} not ready after {max_retries} attempts, proceeding without analysis")
+                            
                     except Exception as e:
                         print(f"⚠️ Synth: Failed to load {media_name}: {e}")
         
