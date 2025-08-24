@@ -245,7 +245,6 @@ EXECUTION CONTEXT:
 - Full namespaces available: Remotion.* and Transitions.* for any additional functionality
 - Use React.createElement syntax, not JSX
 - Use 'div' for text elements (no Text component in Remotion)
-- safeInterpolate wrapper automatically handles monotonic errors (interpolate calls are auto-replaced)
 
 ⚠️ **CRITICAL**: Only change/add what the user specifically asks for. Keep EVERYTHING else UNCHANGED.
             
@@ -485,7 +484,7 @@ async def generate_composition_with_validation(
                 contents=user_prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
-                    temperature=0.7
+                    temperature=0.3
                 )
             )
         else:
@@ -494,7 +493,7 @@ async def generate_composition_with_validation(
                 contents=user_prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
-                    temperature=0.7
+                    temperature=0.3
                 )
             )
         

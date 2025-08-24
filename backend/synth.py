@@ -147,7 +147,7 @@ CONTEXT:
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                temperature=0.3
+                temperature=1.0
             )
         )
         
@@ -230,12 +230,10 @@ When analyzing video content and referencing specific moments, always specify ti
 
 ⚠️ TIMING INSTRUCTION: Reference video moments using their original timestamps from the source media file. Always clearly specify which media file the timestamp refers to. The code generator will handle composition timing conversion.
 
-⚠️ KEY PATTERNS FOR VIDEO REFERENCES:
+⚠️ KEY PATTERNS FOR VIDEO REFERENCE:
 - Timing: "at X seconds in source media file 'filename.ext'"
-- Position: "positioned [relative to video frame content/areas]" 
-- Properties: Reference visual elements in source video rather than absolute coordinates
 
-⚠️ FOCUS ON CREATIVE INTENT: Do not output code, interpolate functions, frame calculations, or technical implementation. Focus purely on creative direction and visual specifications.
+⚠️ FOCUS ON CREATIVE INTENT: Do not output technical implementation. Focus purely on creative direction and visual specifications.
 
 Return ONLY the creative execution plan - no code, no explanations, no questions."""
 
@@ -268,7 +266,7 @@ CONTEXT:
             contents=content_parts,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                temperature=0.4
+                temperature=1.0
             )
         )
         

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import * as Remotion from "remotion";
 import { Player, type PlayerRef } from "@remotion/player";
 import * as Transitions from "@remotion/transitions";
-import { fixCode, type CodeFixRequest } from "../utils/api";
 
 // Destructure commonly used components for convenience
 const { 
@@ -23,71 +22,20 @@ export interface DynamicCompositionProps {
   tsxCode: string;
   backgroundColor?: string;
   fps?: number;
-  onCodeFixed?: (fixedCode: string) => void; // Callback to update the parent with fixed code
 }
 
 // Dynamic composition that executes AI-generated TSX code
 export function DynamicComposition({
   tsxCode,
   backgroundColor = "#000000",
-  onCodeFixed,
 }: DynamicCompositionProps) {
   const frame = useCurrentFrame();
-  const [isFixingError, setIsFixingError] = useState(false);
   const [currentCode, setCurrentCode] = useState(tsxCode);
-  const [fixAttempts, setFixAttempts] = useState(0);
-  const maxFixAttempts = 2; // Limit retry attempts
 
   // Update current code when tsxCode prop changes
   useEffect(() => {
     setCurrentCode(tsxCode);
-    setFixAttempts(0); // Reset attempts when new code arrives
   }, [tsxCode]);
-
-  // Function to attempt automatic error correction
-  const attemptErrorFix = async (error: Error, brokenCode: string) => {
-    if (fixAttempts >= maxFixAttempts || isFixingError) {
-      console.log('Max fix attempts reached or already fixing, showing error');
-      return null;
-    }
-
-    setIsFixingError(true);
-    setFixAttempts(prev => prev + 1);
-
-    try {
-      console.log('🔧 Attempting automatic error correction...');
-      
-      const fixRequest: CodeFixRequest = {
-        broken_code: brokenCode,
-        error_message: error.message,
-        error_stack: error.stack || '',
-        user_request: 'Auto-fix broken composition code', // Generic request since we don't have original context
-        media_library: [] // Could be passed from parent if needed
-      };
-
-      const fixResponse = await fixCode(fixRequest);
-
-      if (fixResponse.success && fixResponse.corrected_code !== brokenCode) {
-        console.log('✅ Code fixed successfully, applying correction...');
-        setCurrentCode(fixResponse.corrected_code);
-        
-        // Notify parent component of the fix
-        if (onCodeFixed) {
-          onCodeFixed(fixResponse.corrected_code);
-        }
-        
-        return fixResponse.corrected_code;
-      } else {
-        console.log('❌ Error correction failed or no changes made');
-        return null;
-      }
-    } catch (fixError) {
-      console.error('Error during automatic correction:', fixError);
-      return null;
-    } finally {
-      setIsFixingError(false);
-    }
-  };
 
   // If no TSX code, show placeholder
   if (!currentCode) {
@@ -146,19 +94,15 @@ export function DynamicComposition({
       // Available components and functions
       const { createElement } = React;
       
-      // Destructure everything from Remotion - make all components available
+      // Destructure components and utilities from Remotion - avoid duplicates
       const {
         AbsoluteFill,
         interpolate,
         spring,
-        useCurrentFrame,
-        useVideoConfig,
-        useCurrentScale,
         Sequence,
         Img,
         Video,
         Audio,
-        Player,
         Easing,
         // Animation utilities
         continueRender,
@@ -176,18 +120,13 @@ export function DynamicComposition({
         random,
         // Layout utilities
         Loop,
-        Series,
-        // Additional hooks
-        useCurrentFrame: useCurrentFrameHook,
-        useVideoConfig: useVideoConfigHook,
-        // All other Remotion exports
-        ...Remotion
+        Series
       } = Remotion;
       
       // Destructure transitions
       const { fade, iris, wipe, flip, slide } = Transitions;
       
-      // Safe interpolate wrapper that sorts inputRange and removes duplicates
+      // Safe interpolate wrapper that handles duplicates, sorting, and NaN values
       const safeInterpolate = (frame, inputRange, outputRange, options = {}) => {
         // Create paired array of [input, output] to maintain correspondence
         const paired = inputRange.map((input, index) => ({
@@ -195,11 +134,30 @@ export function DynamicComposition({
           output: outputRange[index] !== undefined ? outputRange[index] : outputRange[outputRange.length - 1]
         }));
         
+        // Filter out NaN and invalid values
+        const validPaired = paired.filter(pair => 
+          !isNaN(pair.input) && isFinite(pair.input) && 
+          !isNaN(pair.output) && isFinite(pair.output)
+        );
+        
+        // Log when we filter invalid values
+        if (validPaired.length !== paired.length) {
+          console.log('🛡️ safeInterpolate: Filtered out NaN/invalid values:', 
+            paired.filter(pair => isNaN(pair.input) || !isFinite(pair.input) || isNaN(pair.output) || !isFinite(pair.output))
+          );
+        }
+        
+        // If no valid values, return a safe default
+        if (validPaired.length === 0) {
+          console.warn('🛡️ safeInterpolate: No valid values, returning 0');
+          return 0;
+        }
+        
         // Remove duplicates based on input values
         const uniquePaired = [];
         const seenInputs = new Set();
         
-        for (const pair of paired) {
+        for (const pair of validPaired) {
           if (!seenInputs.has(pair.input)) {
             seenInputs.add(pair.input);
             uniquePaired.push(pair);
@@ -227,7 +185,7 @@ export function DynamicComposition({
         return interpolate(frame, safeInputRange, safeOutputRange, options);
       };
       
-      // Create helper functions that use the passed values
+      // Create helper functions that use the passed values (avoiding hook duplication)
       const useCurrentFrame = () => currentFrameValue;
       const useVideoConfig = () => videoConfigValue;
       const useCurrentScale = () => currentScaleValue;
@@ -251,68 +209,7 @@ export function DynamicComposition({
   } catch (error) {
     console.error("Error executing AI-generated code:", error);
 
-    // If we're currently fixing an error, show loading state
-    if (isFixingError) {
-      return (
-        <AbsoluteFill style={{ backgroundColor: "#1a1a1a" }}>
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#4CAF50",
-              fontSize: "18px",
-              fontFamily: "Arial, sans-serif",
-              textAlign: "center",
-              padding: "40px",
-            }}
-          >
-            <div>
-              <p>🔧 Fixing code automatically...</p>
-              <p style={{ fontSize: "14px", opacity: 0.8, marginTop: "10px" }}>
-                AI is correcting the error, please wait
-              </p>
-            </div>
-          </div>
-        </AbsoluteFill>
-      );
-    }
-
-    // Attempt automatic error correction
-    if (error instanceof Error && fixAttempts < maxFixAttempts) {
-      attemptErrorFix(error, currentCode);
-      
-      // Show loading state while fixing
-      return (
-        <AbsoluteFill style={{ backgroundColor: "#1a1a1a" }}>
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#4CAF50",
-              fontSize: "18px",
-              fontFamily: "Arial, sans-serif",
-              textAlign: "center",
-              padding: "40px",
-            }}
-          >
-            <div>
-              <p>🔧 Fixing code automatically...</p>
-              <p style={{ fontSize: "14px", opacity: 0.8, marginTop: "10px" }}>
-                Attempt {fixAttempts + 1} of {maxFixAttempts}
-              </p>
-            </div>
-          </div>
-        </AbsoluteFill>
-      );
-    }
-
-    // Show error if auto-fix failed or max attempts reached
+    // Show simple error message
     return (
       <AbsoluteFill style={{ backgroundColor: "#1a1a1a" }}>
         <div
@@ -334,11 +231,6 @@ export function DynamicComposition({
             <p style={{ fontSize: "14px", opacity: 0.8, marginTop: "10px" }}>
               {error instanceof Error ? error.message : "Unknown error"}
             </p>
-            {fixAttempts >= maxFixAttempts && (
-              <p style={{ fontSize: "12px", opacity: 0.6, marginTop: "10px" }}>
-                Auto-fix attempts exhausted
-              </p>
-            )}
             <p style={{ fontSize: "12px", opacity: 0.6, marginTop: "20px" }}>
               Try rephrasing your request or ask for something simpler
             </p>
