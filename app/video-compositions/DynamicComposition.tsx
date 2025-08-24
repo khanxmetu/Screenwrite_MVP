@@ -146,17 +146,42 @@ export function DynamicComposition({
       // Available components and functions
       const { createElement } = React;
       
-      // Destructure everything from Remotion
+      // Destructure everything from Remotion - make all components available
       const {
         AbsoluteFill,
         interpolate,
+        spring,
+        useCurrentFrame,
+        useVideoConfig,
+        useCurrentScale,
         Sequence,
         Img,
         Video,
         Audio,
-        spring,
+        Player,
         Easing,
-        // Add more as needed
+        // Animation utilities
+        continueRender,
+        delayRender,
+        // Composition utilities
+        Composition,
+        Folder,
+        Still,
+        // Audio utilities
+        getAudioData,
+        getAudioDurationInSeconds,
+        // Video utilities
+        getVideoMetadata,
+        // Math utilities
+        random,
+        // Layout utilities
+        Loop,
+        Series,
+        // Additional hooks
+        useCurrentFrame: useCurrentFrameHook,
+        useVideoConfig: useVideoConfigHook,
+        // All other Remotion exports
+        ...Remotion
       } = Remotion;
       
       // Destructure transitions
