@@ -119,6 +119,22 @@ export function useStandalonePreview(onDurationUpdate?: (durationInFrames: numbe
     });
   }, []);
 
+  // Handle errors from DynamicComposition
+  const handleExecutionError = useCallback((error: Error, brokenCode: string, originalRequest: string) => {
+    console.error("❌ Execution error in DynamicComposition:", error);
+    
+    const errorMessage = improveErrorMessage(error);
+    
+    setGenerationError({
+      hasError: true,
+      errorMessage,
+      errorStack: error.stack,
+      brokenCode,
+      originalRequest,
+      canRetry: true, // Execution errors can be fixed
+    });
+  }, []);
+
   // Retry failed generation by fixing the code
   const retryWithFix = useCallback(async (): Promise<boolean> => {
     if (!generationError.hasError || !generationError.canRetry) {
@@ -212,62 +228,38 @@ export function useStandalonePreview(onDurationUpdate?: (durationInFrames: numbe
         console.log("✅ AI TSX generation successful:", response.composition_code);
         console.log("🎬 AI-determined duration:", response.duration, "seconds");
         
-        // Test the generated code for syntax errors before setting it
-        try {
-          // Try to parse the generated code to check for syntax errors
-          new Function(response.composition_code);
-          
-          // If no syntax error, proceed with setting the code
-          setGeneratedTsxCode(response.composition_code);
-          setLastAiExplanation(response.explanation);
-          setPreviewContent([]); // Clear old content since we're using TSX now
+        // Set the code directly - errors will be caught by DynamicComposition
+        setGeneratedTsxCode(response.composition_code);
+        setLastAiExplanation(response.explanation);
+        setPreviewContent([]); // Clear old content since we're using TSX now
 
-          // Clear any previous error state
-          setGenerationError({
-            hasError: false,
-            errorMessage: "",
-            brokenCode: "",
-            originalRequest: "",
-            canRetry: false,
-          });
+        // Clear any previous error state
+        setGenerationError({
+          hasError: false,
+          errorMessage: "",
+          brokenCode: "",
+          originalRequest: "",
+          canRetry: false,
+        });
 
-          // Update duration in the parent component
-          if (onDurationUpdate && response.duration && response.duration > 0) {
-            const durationInFrames = Math.round(response.duration * previewSettings.fps);
-            console.log("🎯 Updating frontend duration to:", durationInFrames, "frames");
-            onDurationUpdate(durationInFrames);
-          }
-
-          // Add this interaction to conversation history
-          const newHistoryEntry: ConversationMessage = {
-            user_request: userRequest,
-            ai_response: response.explanation,
-            generated_code: response.composition_code,
-            timestamp: new Date().toISOString(),
-          };
-          setConversationHistory(prev => [...prev, newHistoryEntry]);
-          console.log("📝 Added to conversation history:", newHistoryEntry);
-
-          return true;
-        } catch (syntaxError) {
-          // Syntax error detected - set error state for retry
-          console.error("❌ Syntax error in generated code:", syntaxError);
-          
-          const errorMessage = syntaxError instanceof Error 
-            ? improveErrorMessage(syntaxError)
-            : String(syntaxError);
-          
-          setGenerationError({
-            hasError: true,
-            errorMessage,
-            errorStack: syntaxError instanceof Error ? syntaxError.stack : undefined,
-            brokenCode: response.composition_code,
-            originalRequest: userRequest,
-            canRetry: true,
-          });
-
-          return false;
+        // Update duration in the parent component
+        if (onDurationUpdate && response.duration && response.duration > 0) {
+          const durationInFrames = Math.round(response.duration * previewSettings.fps);
+          console.log("🎯 Updating frontend duration to:", durationInFrames, "frames");
+          onDurationUpdate(durationInFrames);
         }
+
+        // Add this interaction to conversation history
+        const newHistoryEntry: ConversationMessage = {
+          user_request: userRequest,
+          ai_response: response.explanation,
+          generated_code: response.composition_code,
+          timestamp: new Date().toISOString(),
+        };
+        setConversationHistory(prev => [...prev, newHistoryEntry]);
+        console.log("📝 Added to conversation history:", newHistoryEntry);
+
+        return true;
       } else {
         console.error("❌ AI TSX generation failed:", response.error_message);
         console.log("🔄 Keeping previous composition and duration unchanged");
@@ -410,5 +402,6 @@ export function useStandalonePreview(onDurationUpdate?: (durationInFrames: numbe
     setGeneratedTsxCode, // Export function to update generated TSX code
     retryWithFix, // Export retry function
     clearError, // Export error clearing function
+    handleExecutionError, // Export error handler for DynamicComposition
   };
 }

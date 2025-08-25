@@ -24,6 +24,8 @@ export interface DynamicCompositionProps {
   useSampleCode?: boolean; // When true, load from test file
   backgroundColor?: string;
   fps?: number;
+  onCodeFixed?: (fixedCode: string) => void; // Callback for when code is automatically fixed
+  onError?: (error: Error, brokenCode: string) => void; // Callback for when there's an execution error
 }
 
 // Dynamic composition that executes AI-generated TSX code
@@ -31,6 +33,7 @@ export function DynamicComposition({
   tsxCode,
   useSampleCode = false,
   backgroundColor = "#000000",
+  onError,
 }: DynamicCompositionProps) {
   const frame = useCurrentFrame();
   const [currentCode, setCurrentCode] = useState(tsxCode);
@@ -274,6 +277,11 @@ return React.createElement(AbsoluteFill, {
   } catch (error) {
     console.error("Error executing AI-generated code:", error);
 
+    // Call the error callback if provided
+    if (onError && error instanceof Error) {
+      onError(error, currentCode);
+    }
+
     // Show simple error message
     return (
       <AbsoluteFill style={{ backgroundColor: "#1a1a1a" }}>
@@ -297,7 +305,7 @@ return React.createElement(AbsoluteFill, {
               {error instanceof Error ? error.message : "Unknown error"}
             </p>
             <p style={{ fontSize: "12px", opacity: 0.6, marginTop: "20px" }}>
-              Try rephrasing your request or ask for something simpler
+              Check the chat for retry options
             </p>
           </div>
         </div>
@@ -316,6 +324,7 @@ export interface DynamicVideoPlayerProps {
   playerRef?: React.Ref<PlayerRef>;
   durationInFrames?: number;
   onCodeFixed?: (fixedCode: string) => void; // Callback for when code is automatically fixed
+  onError?: (error: Error, brokenCode: string) => void; // Callback for when there's an execution error
 }
 
 // The dynamic video player component
@@ -328,6 +337,7 @@ export function DynamicVideoPlayer({
   playerRef,
   durationInFrames = 300, // Default 10 seconds at 30fps
   onCodeFixed,
+  onError,
 }: DynamicVideoPlayerProps) {
   console.log("DynamicVideoPlayer - TSX Code length:", tsxCode?.length || 0);
   console.log("DynamicVideoPlayer - Use Sample Code:", useSampleCode);
@@ -341,6 +351,7 @@ export function DynamicVideoPlayer({
         useSampleCode,
         backgroundColor,
         onCodeFixed,
+        onError,
       }}
       durationInFrames={durationInFrames}
       compositionWidth={compositionWidth}

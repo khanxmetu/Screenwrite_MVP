@@ -101,11 +101,26 @@ export default function TimelineEditor() {
     setGeneratedTsxCode,
     retryWithFix,
     clearError,
+    handleExecutionError,
   } = useStandalonePreview(setDurationInFrames);
 
   // Wrapper function for AI composition generation with media library context
   // Function to explain composition changes
   const handleGenerateAiComposition = useCallback(async (userRequest: string, mediaBinItems: MediaBinItem[]): Promise<boolean> => {
+    return await generateAiContent(userRequest, mediaBinItems);
+  }, [generateAiContent]);
+
+  // Store the last user request for error handling
+  const [lastUserRequest, setLastUserRequest] = useState<string>("");
+
+  // Wrapper for handling execution errors from DynamicComposition
+  const handleVideoPlayerError = useCallback((error: Error, brokenCode: string) => {
+    handleExecutionError(error, brokenCode, lastUserRequest);
+  }, [handleExecutionError, lastUserRequest]);
+
+  // Enhanced wrapper that tracks user requests
+  const handleGenerateAiCompositionWithTracking = useCallback(async (userRequest: string, mediaBinItems: MediaBinItem[]): Promise<boolean> => {
+    setLastUserRequest(userRequest); // Store for error handling
     return await generateAiContent(userRequest, mediaBinItems);
   }, [generateAiContent]);
 
@@ -443,6 +458,7 @@ export default function TimelineEditor() {
                               console.log('🔧 Code automatically fixed, updating state...');
                               setGeneratedTsxCode(fixedCode);
                             }}
+                            onError={handleVideoPlayerError}
                           />
                         ) : (
                           <StandaloneVideoPlayer
@@ -480,7 +496,7 @@ export default function TimelineEditor() {
                   onMessagesChange={setChatMessages}
                   timelineState={{ tracks: [] }} // Empty timeline since we don't have timeline
                   isStandalonePreview={true}
-                  onGenerateComposition={handleGenerateAiComposition}
+                  onGenerateComposition={handleGenerateAiCompositionWithTracking}
                   isGeneratingComposition={isGenerating}
                   currentComposition={generatedTsxCode}
                   generationError={generationError}
