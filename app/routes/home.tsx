@@ -364,26 +364,30 @@ export default function TimelineEditor() {
                             <Input
                               type="number"
                               value={previewSettings.synthThinkingBudget}
-                              onChange={(e) =>
-                                updatePreviewSettings({ synthThinkingBudget: parseInt(e.target.value) || 2000 })
-                              }
+                              onChange={(e) => {
+                                const value = parseInt(e.target.value);
+                                // Allow 0 (no thinking), -1 (unlimited), or positive numbers
+                                if (!isNaN(value)) {
+                                  updatePreviewSettings({ synthThinkingBudget: value });
+                                }
+                              }}
                               className="h-5 w-16 px-1 text-xs"
-                              title="Synth Thinking Budget"
-                              min="100"
-                              max="10000"
+                              title="Synth Thinking Budget (0=no thinking, -1=unlimited)"
                               step="100"
                             />
                             <span className="text-xs text-muted-foreground">Code:</span>
                             <Input
                               type="number"
                               value={previewSettings.codeGenThinkingBudget}
-                              onChange={(e) =>
-                                updatePreviewSettings({ codeGenThinkingBudget: parseInt(e.target.value) || 3000 })
-                              }
+                              onChange={(e) => {
+                                const value = parseInt(e.target.value);
+                                // Allow 0 (no thinking), -1 (unlimited), or positive numbers
+                                if (!isNaN(value)) {
+                                  updatePreviewSettings({ codeGenThinkingBudget: value });
+                                }
+                              }}
                               className="h-5 w-16 px-1 text-xs"
-                              title="Code Generation Thinking Budget"
-                              min="100"
-                              max="10000"
+                              title="Code Generation Thinking Budget (0=no thinking, -1=unlimited)"
                               step="100"
                             />
                           </div>
