@@ -5,6 +5,7 @@ import json
 import time
 import re
 import shutil
+import uuid
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -35,10 +36,13 @@ if USE_VERTEX_AI:
         project=os.getenv("VERTEX_PROJECT_ID"),
         location=os.getenv("VERTEX_LOCATION", "europe-west1")
     )
+    # Cloud Storage will be imported when needed
+    storage_bucket_name = f"{os.getenv('VERTEX_PROJECT_ID')}-screenwrite-uploads"
     print(f"🔥 Using Vertex AI - Project: {os.getenv('VERTEX_PROJECT_ID')}, Location: {os.getenv('VERTEX_LOCATION', 'europe-west1')}")
 else:
     # Use regular Gemini API
     gemini_api = genai.Client(api_key=GEMINI_API_KEY)
+    storage_bucket_name = None
     print("🔥 Using regular Gemini API")
 
 app = FastAPI()
@@ -115,7 +119,7 @@ class GeminiUploadResponse(BaseModel):
 
 @app.post("/upload-to-gemini")
 async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse:
-    """Upload a file to Gemini Files API for later analysis."""
+    """Upload a file to Gemini Files API or Cloud Storage for later analysis."""
     
     try:
         print(f"📤 Gemini Upload: Uploading {file.filename} ({file.content_type})")
@@ -123,25 +127,67 @@ async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse
         # Read file content
         file_content = await file.read()
         
-        # Create temporary file for Gemini upload
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as tmp_file:
-            tmp_file.write(file_content)
-            tmp_file.flush()
+        if USE_VERTEX_AI:
+            # Vertex AI: Upload to Cloud Storage
+            try:
+                # Import and initialize Cloud Storage client when needed
+                from google.cloud import storage
+                storage_client = storage.Client(project=os.getenv("VERTEX_PROJECT_ID"))
+                
+                # Create bucket if it doesn't exist
+                bucket = storage_client.bucket(storage_bucket_name)
+                try:
+                    bucket.reload()
+                except Exception:
+                    # Bucket doesn't exist, create it
+                    bucket = storage_client.create_bucket(storage_bucket_name, location=os.getenv("VERTEX_LOCATION", "europe-west1"))
+                    print(f"📦 Created storage bucket: {storage_bucket_name}")
+                
+                # Generate unique filename
+                file_id = str(uuid.uuid4())
+                file_extension = os.path.splitext(file.filename)[1] if file.filename else ""
+                blob_name = f"uploads/{file_id}{file_extension}"
+                
+                # Upload to Cloud Storage
+                blob = bucket.blob(blob_name)
+                blob.upload_from_string(file_content, content_type=file.content_type)
+                
+                # Generate Cloud Storage URI
+                gs_uri = f"gs://{storage_bucket_name}/{blob_name}"
+                
+                print(f"✅ Vertex AI Upload: Success - Cloud Storage URI: {gs_uri}")
+                
+                return GeminiUploadResponse(
+                    success=True,
+                    gemini_file_id=gs_uri,  # Return Cloud Storage URI instead of file ID
+                    file_name=file.filename,
+                    mime_type=file.content_type
+                )
+                
+            except Exception as e:
+                print(f"❌ Cloud Storage Upload Failed: {str(e)}")
+                raise e
+                
+        else:
+            # Standard Gemini API: Use Files API
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as tmp_file:
+                tmp_file.write(file_content)
+                tmp_file.flush()
+                
+                # Upload to Gemini Files API
+                uploaded_file = gemini_api.files.upload(file=tmp_file.name)
+                
+                # Clean up temporary file
+                os.unlink(tmp_file.name)
             
-            # Upload to Gemini Files API with correct method signature
-            uploaded_file = gemini_api.files.upload(file=tmp_file.name)
+            print(f"✅ Gemini Upload: Success - File ID: {uploaded_file.name}")
             
-            # Clean up temporary file
-            os.unlink(tmp_file.name)
-        
-        print(f"✅ Gemini Upload: Success - File ID: {uploaded_file.name}")
-        
-        return GeminiUploadResponse(
-            success=True,
-            gemini_file_id=uploaded_file.name,
-            file_name=file.filename,
-            mime_type=file.content_type
-        )
+            return GeminiUploadResponse(
+                success=True,
+                gemini_file_id=uploaded_file.name,
+                file_name=file.filename,
+                mime_type=file.content_type
+            )
         
     except Exception as e:
         print(f"❌ Gemini Upload: Failed - {str(e)}")
@@ -154,6 +200,8 @@ async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse
             user_error = "Network connection error. Please check your internet connection and try again."
         elif "quota" in error_msg.lower() or "limit" in error_msg.lower():
             user_error = "AI service quota exceeded. Please try again later."
+        elif "only supported in the Gemini Developer client" in error_msg:
+            user_error = "File upload configuration error. Please contact support."
         else:
             user_error = "AI analysis service is temporarily unavailable. Please try again later."
         

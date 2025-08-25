@@ -442,11 +442,25 @@ Output: "Add text overlay with content 'Golden Hour Magic', fontSize 56px, fontF
 
 Return ONLY the enhanced request as a single, comprehensive instruction."""
 
+        # Prepare content parts based on file type (file ID vs Cloud Storage URI)
+        content_parts = []
+        for file_ref in gemini_file_refs:
+            file_id = file_ref['gemini_file_id']
+            if file_id.startswith('gs://'):
+                # Vertex AI: Use Cloud Storage URI
+                from google.genai.types import Part
+                # Try to get MIME type from the file reference or default to video
+                mime_type = file_ref.get('mime_type', 'video/mp4')
+                content_parts.append(Part.from_uri(file_uri=file_id, mime_type=mime_type))
+            else:
+                # Standard API: Use Files API
+                content_parts.append(gemini_api.files.get(name=file_id))
+        
         # Call Gemini for analysis
         response = gemini_api.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
-                *[gemini_api.files.get(name=file_ref['gemini_file_id']) for file_ref in gemini_file_refs],
+                *content_parts,
                 analysis_prompt
             ],
             config=types.GenerateContentConfig(

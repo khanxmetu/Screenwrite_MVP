@@ -354,39 +354,49 @@ ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or referenc
         # Prepare content for Gemini (text + media files)
         content_parts = [prompt]
         
-        # Add media files with Gemini file IDs
+        # Add media files with Gemini file IDs or Cloud Storage URIs
         if media_library:
             for media_name in relevant_media_files:
                 media_item = next((m for m in media_library if m.get('name') == media_name), None)
                 if media_item and media_item.get('gemini_file_id'):
                     try:
-                        # Retry mechanism for files not yet ACTIVE
-                        max_retries = 10
-                        retry_delay = 2  # seconds
+                        file_ref = media_item['gemini_file_id']
                         
-                        for attempt in range(max_retries):
-                            gemini_file = gemini_api.files.get(name=media_item['gemini_file_id'])
-                            
-                            if gemini_file.state.name == 'ACTIVE':
-                                content_parts.append(gemini_file)
-                                print(f"🧠 Synth: Added {media_name} for analysis (ready after {attempt + 1} attempts)")
-                                break
-                            elif gemini_file.state.name == 'FAILED':
-                                print(f"❌ Synth: {media_name} failed to process, skipping")
-                                break
-                            else:
-                                print(f"⏳ Synth: {media_name} not ready (state: {gemini_file.state.name}), retrying in {retry_delay}s... ({attempt + 1}/{max_retries})")
-                                if attempt < max_retries - 1:  # Don't sleep on last attempt
-                                    import asyncio
-                                    await asyncio.sleep(retry_delay)
+                        # Check if it's a Cloud Storage URI (Vertex AI) or file ID (standard API)
+                        if file_ref.startswith('gs://'):
+                            # Vertex AI: Use Cloud Storage URI directly
+                            from google.genai.types import Part
+                            # Extract MIME type from media item or guess from extension
+                            mime_type = media_item.get('mime_type') or media_item.get('type', 'video/mp4')
+                            content_parts.append(Part.from_uri(file_uri=file_ref, mime_type=mime_type))
+                            print(f"🧠 Synth: Added {media_name} from Cloud Storage for analysis")
                         else:
-                            # All retries exhausted
-                            print(f"⚠️ Synth: {media_name} not ready after {max_retries} attempts, proceeding without analysis")
+                            # Standard API: Use Files API
+                            # Retry mechanism for files not yet ACTIVE
+                            max_retries = 10
+                            retry_delay = 2  # seconds
+                            
+                            for attempt in range(max_retries):
+                                gemini_file = gemini_api.files.get(name=file_ref)
+                                
+                                if gemini_file.state.name == 'ACTIVE':
+                                    content_parts.append(gemini_file)
+                                    print(f"🧠 Synth: Added {media_name} for analysis (ready after {attempt + 1} attempts)")
+                                    break
+                                elif gemini_file.state.name == 'FAILED':
+                                    print(f"❌ Synth: {media_name} failed to process, skipping")
+                                    break
+                                else:
+                                    print(f"⏳ Synth: {media_name} not ready (state: {gemini_file.state.name}), retrying in {retry_delay}s... ({attempt + 1}/{max_retries})")
+                                    if attempt < max_retries - 1:  # Don't sleep on last attempt
+                                        import asyncio
+                                        await asyncio.sleep(retry_delay)
+                            else:
+                                # All retries exhausted
+                                print(f"⚠️ Synth: {media_name} not ready after {max_retries} attempts, proceeding without analysis")
                             
                     except Exception as e:
-                        print(f"⚠️ Synth: Failed to load {media_name}: {e}")
-        
-        # Extract thinking budget from preview settings  
+                        print(f"⚠️ Synth: Failed to load {media_name}: {e}")        # Extract thinking budget from preview settings  
         synth_thinking_budget = preview_settings.get('synthThinkingBudget', 2000)
         
         # Create thinking config
