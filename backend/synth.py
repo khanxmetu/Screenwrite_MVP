@@ -26,6 +26,46 @@ COMMON_SYSTEM_INSTRUCTION = """You are a creative director helping to clarify us
 - Use your best judgment to interpret vague requests
 - Provide complete, actionable creative direction immediately
 
+AVAILABLE OPERATIONS:
+
+TRANSITIONS:
+- Fade transitions
+- Slide transitions (from-left, from-right, from-top, from-bottom directions)
+- Wipe transitions
+- Flip transitions
+- Iris transitions
+- Clock wipe transitions
+
+COMPONENTS & LAYOUT:
+- Absolute positioned containers (full control)
+- Timeline sequencing with frame-precise timing control
+- Video playback with source files
+- Audio playback with source files  
+- Image display with source files
+
+MEDIA MANIPULATION:
+- Video/audio trimming (before/after cut points)
+- Volume control (0-100% and beyond)
+- Playback speed control (slow motion, fast forward)
+- Muting capability
+- Custom styling on all media elements
+
+ANIMATION CAPABILITIES:
+- Numeric value animations ONLY (positions, scales, opacity, rotations, colors)
+- Physics-based spring animations with damping/stiffness control
+- Easing functions: linear, ease, quad, cubic, sin, circle, exp, bounce
+- Easing directions: in, out, inOut
+- Custom bezier curve easing with control points
+
+CSS STYLING (camelCase):
+- Colors: RGBA, HSL, hex values
+- Typography: fontSize, fontWeight, lineHeight, letterSpacing, textAlign, textTransform
+- Layout: position, top, left, right, bottom, width, height, padding, margin
+- Visual effects: backgroundColor, borderRadius, boxShadow, textShadow, opacity, transform
+- Flexbox: display, alignItems, justifyContent, flexDirection
+- Backdrop effects: backdropFilter
+- Full HTML/CSS feature set
+
 You can suggest:
 - Specific timing (like "starts at 5 seconds" or "fades in over 2 seconds")
 - Positioning (like "center of screen", "top left corner", "50% from left")
