@@ -1,16 +1,12 @@
 import React, { useRef, useEffect, useCallback, useState } from "react";
-import type { PlayerRef, CallbackListener } from "@remotion/player";
+import type { PlayerRef } from "@remotion/player";
 import {
   Moon,
   Sun,
-  Play,
-  Pause,
   Upload,
   ChevronLeft,
 } from "lucide-react";
 
-// Custom video controls
-import { MuteButton, FullscreenButton } from "~/components/ui/video-controls";
 import { useTheme } from "next-themes";
 
 // Components
@@ -37,7 +33,7 @@ import { useRenderer } from "~/hooks/useRenderer";
 import { useStandalonePreview } from "~/hooks/useStandalonePreview";
 
 // Types and constants
-import { FPS, type Transition, type MediaBinItem } from "~/components/timeline/types";
+import { type Transition, type MediaBinItem } from "~/components/timeline/types";
 import { useNavigate } from "react-router";
 import { ChatBox } from "~/components/chat/ChatBox";
 
@@ -63,7 +59,6 @@ export default function TimelineEditor() {
   const [isChatMinimized, setIsChatMinimized] = useState<boolean>(true);
 
   // Video playback state
-  const [currentFrame, setCurrentFrame] = useState<number>(0);
   const [durationInFrames, setDurationInFrames] = useState<number>(1); // Minimal duration - gets updated by AI
 
   // Sample code toggle state
@@ -71,8 +66,6 @@ export default function TimelineEditor() {
 
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
-
-  const [selectedScrubberId, setSelectedScrubberId] = useState<string | null>(null);
 
   // video player media selection state
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
@@ -153,59 +146,6 @@ export default function TimelineEditor() {
     setIsAutoSize(auto);
   }, []);
 
-  // Play/pause controls with Player sync
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  const togglePlayback = useCallback(() => {
-    const player = playerRef.current;
-    if (player) {
-      if (player.isPlaying()) {
-        player.pause();
-        setIsPlaying(false);
-      } else {
-        player.play();
-        setIsPlaying(true);
-      }
-    }
-  }, []);
-
-  // Sync player state with controls - simplified for standalone mode
-  useEffect(() => {
-    const player = playerRef.current;
-    if (player) {
-      const handlePlay: CallbackListener<"play"> = () => setIsPlaying(true);
-      const handlePause: CallbackListener<"pause"> = () => setIsPlaying(false);
-      const handleFrameUpdate: CallbackListener<"frameupdate"> = (e) => {
-        setCurrentFrame(e.detail.frame);
-      };
-
-      player.addEventListener("play", handlePlay);
-      player.addEventListener("pause", handlePause);
-      player.addEventListener("frameupdate", handleFrameUpdate);
-
-      return () => {
-        player.removeEventListener("play", handlePlay);
-        player.removeEventListener("pause", handlePause);
-        player.removeEventListener("frameupdate", handleFrameUpdate);
-      };
-    }
-  }, []);
-
-  // Additional frame sync during playback to ensure scrubber updates
-  useEffect(() => {
-    if (!isPlaying) return;
-    
-    const interval = setInterval(() => {
-      const player = playerRef.current;
-      if (player) {
-        const frame = player.getCurrentFrame();
-        setCurrentFrame(frame);
-      }
-    }, 100); // Update every 100ms during playback
-
-    return () => clearInterval(interval);
-  }, [isPlaying]);
-
   // Update duration when composition changes
   useEffect(() => {
     if (generatedTsxCode) {
@@ -265,94 +205,6 @@ export default function TimelineEditor() {
   useEffect(() => {
     setMounted(true)
   }, [])
-
-  // Sync player frame with React state to prevent desynchronization
-  useEffect(() => {
-    const player = playerRef.current;
-    if (!player) return;
-
-    const frameUpdateListener = (e: { detail: { frame: number } }) => {
-      const playerFrame = e.detail.frame;
-      // Only update if there's a significant difference to prevent infinite loops
-      if (Math.abs(currentFrame - playerFrame) > 1) {
-        setCurrentFrame(playerFrame);
-      }
-    };
-
-    // Listen for frame updates from the player
-    player.addEventListener('frameupdate', frameUpdateListener);
-
-    return () => {
-      player.removeEventListener('frameupdate', frameUpdateListener);
-    };
-  }, [currentFrame]); // Re-run when currentFrame changes
-
-  // Simple debounce utility
-  const debounce = useCallback((func: Function, delay: number) => {
-    let timeoutId: NodeJS.Timeout;
-    return (...args: any[]) => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => func.apply(null, args), delay);
-    };
-  }, []);
-
-  // Debounced seek function to prevent rapid seeking issues
-  const debouncedSeek = useCallback(
-    debounce((frame: number) => {
-      const player = playerRef.current;
-      if (player) {
-        try {
-          console.log(`🎯 Seeking to frame: ${frame}`);
-          player.seekTo(frame);
-        } catch (error) {
-          console.error('❌ Seek error:', error);
-          // If seek fails, try again after a short delay
-          setTimeout(() => {
-            try {
-              player.seekTo(frame);
-            } catch (retryError) {
-              console.error('❌ Seek retry failed:', retryError);
-            }
-          }, 100);
-        }
-      }
-    }, 50), // 50ms debounce
-    [debounce]
-  );
-  useEffect(() => {
-    let lastFrameCheck = currentFrame;
-    let frozenCount = 0;
-    
-    const checkFrozenState = setInterval(() => {
-      const player = playerRef.current;
-      if (!player || !player.isPlaying()) return;
-      
-      // If frame hasn't changed while playing, increment frozen counter
-      if (currentFrame === lastFrameCheck) {
-        frozenCount++;
-        
-        // If frozen for more than 3 seconds, try to recover
-        if (frozenCount > 6) { // 6 * 500ms = 3 seconds
-          console.warn('🔄 Video appears frozen, attempting recovery...');
-          
-          // Pause and resume to unstick the player
-          player.pause();
-          setTimeout(() => {
-            if (player) {
-              player.play();
-            }
-          }, 100);
-          
-          frozenCount = 0; // Reset counter
-        }
-      } else {
-        frozenCount = 0; // Reset if frame is updating
-        lastFrameCheck = currentFrame;
-      }
-    }, 500); // Check every 500ms
-    
-    return () => clearInterval(checkFrozenState);
-  }, [currentFrame]);
 
   if (!mounted) return null;
 
@@ -569,67 +421,6 @@ export default function TimelineEditor() {
                             durationInFrames={durationInFrames}
                           />
                         )}
-                      </div>
-
-                      {/* Timeline Scrubber */}
-                      <div className="w-full mt-3 px-4">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {Math.floor(currentFrame / FPS / 60)}:{String(Math.floor((currentFrame / FPS) % 60)).padStart(2, '0')}
-                          </span>
-                          <div className="flex-1 relative">
-                            <div className="h-2 bg-muted rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-primary transition-all duration-100"
-                                style={{ width: `${(currentFrame / durationInFrames) * 100}%` }}
-                              />
-                            </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max={durationInFrames}
-                              value={currentFrame}
-                              onChange={(e) => {
-                                const frame = parseInt(e.target.value);
-                                setCurrentFrame(frame);
-                                debouncedSeek(frame);
-                              }}
-                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {Math.floor(durationInFrames / FPS / 60)}:{String(Math.floor((durationInFrames / FPS) % 60)).padStart(2, '0')}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Custom Video Controls - Below Timeline */}
-                      <div className="w-full flex items-center justify-center gap-2 px-4">
-                        {/* Left side controls */}
-                        <div className="flex items-center gap-1">
-                          <MuteButton playerRef={playerRef} />
-                        </div>
-
-                        {/* Center play/pause button */}
-                        <div className="flex items-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={togglePlayback}
-                            className="h-6 w-6 p-0"
-                          >
-                            {isPlaying ? (
-                              <Pause className="h-3 w-3" />
-                            ) : (
-                              <Play className="h-3 w-3" />
-                            )}
-                          </Button>
-                        </div>
-
-                        {/* Right side controls */}
-                        <div className="flex items-center gap-1">
-                          <FullscreenButton playerRef={playerRef} />
-                        </div>
                       </div>
                     </div>
                   </div>

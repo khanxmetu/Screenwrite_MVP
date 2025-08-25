@@ -257,6 +257,18 @@ export function StandaloneVideoPlayer({
         position: "relative",
         zIndex: 1,
       }}
+      // Enable built-in controls with scrubber/seek bar
+      controls={true}
+      // Show volume controls alongside play/pause and scrubber
+      showVolumeControls={true}
+      // Allow fullscreen functionality
+      allowFullscreen={true}
+      // Enable click-to-play/pause
+      clickToPlay={true}
+      // Show controls briefly when player loads, then auto-hide
+      initiallyShowControls={true}
+      // Enable space key for play/pause
+      spaceKeyToPlayOrPause={true}
       acknowledgeRemotionLicense
     />
   );
