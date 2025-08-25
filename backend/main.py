@@ -26,10 +26,9 @@ GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Check if we should use Vertex AI
 USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
-GOOGLE_GENAI_USE_VERTEXAI = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "false").lower() == "true"
 
-# Use Vertex AI if either flag is set
-if USE_VERTEX_AI or GOOGLE_GENAI_USE_VERTEXAI:
+# Use Vertex AI if flag is set
+if USE_VERTEX_AI:
     # Initialize Vertex AI client
     gemini_api = genai.Client(
         vertexai=True,
@@ -198,7 +197,7 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
     result = await generate_composition_with_validation(
         enhanced_request_dict, 
         gemini_api,
-        USE_VERTEX_AI or GOOGLE_GENAI_USE_VERTEXAI
+        USE_VERTEX_AI
     )
     
     print(f"✅ Main: Generation completed - Success: {result['success']}")
