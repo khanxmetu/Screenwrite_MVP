@@ -14,91 +14,35 @@ from google.genai import types
 
 
 # Common system instruction shared by both enhancement functions
-COMMON_SYSTEM_INSTRUCTION = """You are an AI Director for video composition. Your mission: transform vague user requests into super-specific, professionally polished creative direction.
+COMMON_SYSTEM_INSTRUCTION = """You are a creative director helping to clarify user requests for video compositions. Speak naturally and create clear plans like a real director would.
 
-⚠️ CORE RESPONSIBILITY: You are the CREATIVE DIRECTOR - you decide what happens visually, when, where, and how it looks. You do NOT write code or technical implementation.
+🚫 CRITICAL: NEVER EVER output code, technical syntax, or programming language. Only natural human language.
+🚫 NO JavaScript, React, CSS properties, or any code syntax
+🚫 NO curly braces {}, parentheses for functions, or technical specifications
 
-⚠️ DIRECTOR'S VISION: Be uncompromisingly specific about your creative vision:
-- Exact visual specifications (48px Inter font, not "large text")
-- Precise positioning (golden ratio intersection at 61.8% from left, not "top corner") 
-- Exact timing (0.5s fade-in starting at frame 30, not "quick transition")
-- Specific colors (rgba(255,255,255,0.9), not "white-ish")
-- Definitive creative choices (clockWipe transition, not "some transition")
+You can suggest:
+- Specific timing (like "starts at 5 seconds" or "fades in over 2 seconds")
+- Positioning (like "center of screen", "top left corner", "50% from left")
+- Transitions (fade in/out, slide from left/right/top/bottom, wipe across, flip, iris open/close)
+- Animations (move, scale, rotate, fade, bounce, spring effects)
+- Media files (use exact filenames when available)
+- Text styling (large/small, bold, colors, shadows)
+- Exact colors (like "white", "red", "#FF0000", "rgba(255,0,0,0.5)")
+- Audio control (volume levels, muting, speed changes)
+- Video effects (slow motion, fast forward, trimming clips)
 
+EXAMPLES:
 
-TRANSFORMATION EXAMPLES:
+User: "Add text saying hello"
+You: "Add the word 'Hello' in large white text at the top center of the screen. Have it fade in smoothly over about a second."
 
-USER: "Add text saying 'Hello'"
-AI DIRECTOR: 
-TYPOGRAPHY SPECIFICATION:
-- Display "Hello" using Inter font, 48px size, 600 font weight
-- Position at center-top (50%% horizontal, 15%% vertical from top)
-- Color: white (#FFFFFF) with 1px black text-shadow for contrast
-- Animation: fade-in over 0.5s with ease-out timing
+User: "Add my logo" 
+You: "Place the logo in the top right corner, medium size so it's visible but not dominating. Give it a subtle drop shadow."
 
-USER: "Add my logo"  
-AI DIRECTOR:
-BRAND INTEGRATION:
-- Position logo at golden ratio intersection (61.8%% from left, 38.2%% from top)
-- Scale to 8%% of viewport width, maintain aspect ratio
-- Add drop shadow: 2px offset, rgba(0,0,0,0.1) color, 4px blur
-- Breathing animation: 0.8s duration, 98%%-102%% scale variation, infinite loop
+User: "Add shore video"
+You: "Add shore.mp4 as the main background filling the entire screen. Have it fade in at the beginning."
 
-USER: "Add the shore video"
-AI DIRECTOR: "Add shore.mp4 with full viewport coverage (100%% width/height), object-fit: cover, fade-in transition over 0.8s duration starting at 0 seconds"
-
-SPECIFICATION STANDARDS:
-- Typography: Exact font family, size in px, weight, line-height
-- Colors: Hex codes or rgba values with specific opacity
-- Positioning: Precise percentages or pixel values
-- Animations: Exact duration, easing functions, keyframe specifications
-- Timing: Start/end times in seconds with decimal precision
-
-The editor can ONLY execute the following types of operations. Generate plans within these bounds:
-
-AVAILABLE OPERATIONS:
-
-TRANSITIONS:
-- Fade transitions
-- Slide transitions (from-left, from-right, from-top, from-bottom directions)
-- Wipe transitions
-- Flip transitions
-- Iris transitions
-- Clock wipe transitions
-
-COMPONENTS & LAYOUT:
-- Absolute positioned containers (full control)
-- Timeline sequencing with frame-precise timing control
-- Video playback with source files
-- Audio playback with source files  
-- Image display with source files
-
-MEDIA MANIPULATION:
-- Video/audio trimming (before/after cut points)
-- Volume control (0-100% and beyond)
-- Playback speed control (slow motion, fast forward)
-- Muting capability
-- Custom styling on all media elements
-
-ANIMATION CAPABILITIES:
-- Numeric value animations ONLY (positions, scales, opacity, rotations, colors)
-- Physics-based spring animations with damping/stiffness control
-- Easing functions: linear, ease, quad, cubic, sin, circle, exp, bounce
-- Easing directions: in, out, inOut
-- Custom bezier curve easing with control points
-
-CSS STYLING (camelCase):
-- Colors: RGBA, HSL, hex values
-- Typography: fontSize, fontWeight, lineHeight, letterSpacing, textAlign, textTransform
-- Layout: position, top, left, right, bottom, width, height, padding, margin
-- Visual effects: backgroundColor, borderRadius, boxShadow, textShadow, opacity, transform
-- Flexbox: display, alignItems, justifyContent, flexDirection
-- Backdrop effects: backdropFilter
-- Full HTML/CSS feature set
-
-Return ONLY the detailed execution plan - no explanations or questions.
-You are the creative authority. Direct with confidence and precision.
-"""
+Always use exact filenames from the available media when mentioned. Create clear, natural plans that describe what viewers will see and when."""
 
 
 async def synthesize_request(
@@ -220,7 +164,23 @@ async def enhance_without_media(
         for media_item in media_library:
             media_name = media_item.get('name', 'unknown')
             media_type = media_item.get('mediaType', 'unknown')
-            context_parts.append(f"- {media_name} ({media_type})")
+            media_duration = media_item.get('durationInSeconds', 0)
+            media_width = media_item.get('media_width', 0)
+            media_height = media_item.get('media_height', 0)
+            
+            # Build comprehensive media description with metadata
+            media_info = f"- {media_name} ({media_type}"
+            
+            # Add resolution for video/image
+            if media_type in ['video', 'image'] and media_width and media_height:
+                media_info += f", {media_width}x{media_height}"
+            
+            # Add duration for video/audio
+            if media_type in ['video', 'audio'] and media_duration:
+                media_info += f", {media_duration}s"
+            
+            media_info += ")"
+            context_parts.append(media_info)
     
     context_text = "\n".join(context_parts)
 
@@ -230,9 +190,10 @@ async def enhance_without_media(
     # User prompt with context
     prompt = f"""USER REQUEST: "{user_request}"
 
-CONTEXT:
-- Current Composition Code: {current_composition or "No current composition"}
-- Conversation History: {context_text}"""
+ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or reference in output):
+{context_text}
+
+⚠️ CRITICAL: Analyze the context for understanding, but output ONLY natural language creative direction. Never include code or technical syntax in your response."""
 
     try:
         response = gemini_api.models.generate_content(
@@ -314,10 +275,21 @@ async def enhance_with_media(
                 found_files.append(media_name)
                 media_type = media_item.get('mediaType', 'unknown')
                 media_duration = media_item.get('durationInSeconds', 0)
-                if media_type == 'video' and media_duration:
-                    context_parts.append(f"- {media_name}: {media_type} ({media_duration}s)")
-                else:
-                    context_parts.append(f"- {media_name}: {media_type}")
+                media_width = media_item.get('media_width', 0)
+                media_height = media_item.get('media_height', 0)
+                
+                # Build comprehensive media description with metadata
+                media_info = f"- {media_name}: {media_type}"
+                
+                # Add resolution for video/image
+                if media_type in ['video', 'image'] and media_width and media_height:
+                    media_info += f" ({media_width}x{media_height})"
+                
+                # Add duration for video/audio
+                if media_type in ['video', 'audio'] and media_duration:
+                    media_info += f" - {media_duration}s duration"
+                
+                context_parts.append(media_info)
             else:
                 missing_files.append(media_name)
     
@@ -337,17 +309,29 @@ When analyzing video content and referencing specific moments, always specify ti
 ⚠️ KEY PATTERNS FOR VIDEO REFERENCE:
 - Timing: "at X seconds in source media file 'filename.ext'"
 
-⚠️ FOCUS ON CREATIVE INTENT: Do not output technical implementation. Focus purely on creative direction and visual specifications.
+⚠️ FOCUS ON CREATIVE INTENT: Do not output technical implementation or code. Focus purely on creative direction and visual specifications.
+
+⚠️ CRITICAL OUTPUT RULE: NEVER include JavaScript code, React.createElement statements, or any programming syntax in your response. Output ONLY natural language creative direction.
+
+⚠️ FORBIDDEN OUTPUT PATTERNS:
+- React.createElement(...) 
+- const frame = useCurrentFrame();
+- Any JavaScript syntax
+- Code blocks or technical implementation
+
+✅ CORRECT OUTPUT PATTERN: Natural language creative specifications only.
 
 Return ONLY the creative execution plan - no code, no explanations, no questions."""
 
     # User prompt with specific request and context
     prompt = f"""USER REQUEST: "{user_request}"
 
-CONTEXT:
-- Current Composition Code: {current_composition or "No current composition"}
+ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or reference in output):
+- Current Composition: {current_composition or "No current composition"}
 - Conversation History: {context_text}
-- Relevant Media Files: {len(relevant_media_files)} files for analysis"""
+- Relevant Media Files: {len(relevant_media_files)} files for analysis
+
+⚠️ CRITICAL: Analyze the context for understanding, but output ONLY natural language creative direction. Never include code or technical syntax in your response."""
 
     try:
         # Prepare content for Gemini (text + media files)
