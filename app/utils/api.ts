@@ -53,7 +53,6 @@ export interface CodeFixRequest {
   broken_code: string;
   error_message: string;
   error_stack?: string;
-  user_request: string;
   media_library?: any[];
 }
 

@@ -97,7 +97,6 @@ class CodeFixRequest(BaseModel):
     broken_code: str  # The code that failed to execute
     error_message: str  # The exact error from frontend
     error_stack: Optional[str] = None  # Full error stack if available
-    user_request: str  # Original user request for context
     media_library: Optional[List[Dict[str, Any]]] = []  # Available media files
 
 
@@ -265,7 +264,7 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
 async def fix_code(request: CodeFixRequest) -> CodeFixResponse:
     """Fix broken AI-generated code based on real runtime errors from the frontend."""
     
-    print(f"🔧 Fix: Processing error correction for user request: '{request.user_request[:100]}...'")
+    print(f"🔧 Fix: Processing error correction")
     print(f"🔧 Fix: Error message: {request.error_message}")
     
     try:
@@ -274,64 +273,18 @@ async def fix_code(request: CodeFixRequest) -> CodeFixResponse:
 
 ⚠️ **CRITICAL**: Only fix the specific error - do not redesign, rewrite, or improve the code. Make the minimal possible change to resolve the error.
 
-⚠️ **CRITICAL** REMOTION RULES:
-1. interpolate() inputRange should be roughly increasing - safeInterpolate wrapper will handle edge cases automatically
-2. interpolate() outputRange MUST contain ONLY NUMBERS - never strings, booleans, or other types
-3. CSS properties in React must be camelCase (backgroundColor, fontSize, fontWeight)
-4. spring() config uses 'damping' not 'dampening'
-5. **DOM LAYERING**: Elements rendered LATER appear ON TOP. For overlays (text, UI) to be visible over background content (video, images), place them AFTER background elements in the React.createElement sequence.
 
-CORRECT interpolate examples:
-- interpolate(frame, [0, 30, 60], [0, 1, 0])  ✅ Numbers increasing
-- interpolate(frame, [10, 20, 50], [0, 100, 0])  ✅ Numbers increasing  
-- interpolate(frame, [0, 30], [0, 1])  ✅ Numbers only in outputRange
-- interpolate(frame, [0, 30], ['hidden', 'visible'])  ❌ WRONG - strings not allowed in outputRange
-
-NOTE: The runtime uses safeInterpolate wrapper that automatically handles timing edge cases, so focus on clean animation logic.
-
-CSS POSITIONING SYSTEM:
-Screen coordinates: (0,0) is TOP-LEFT corner. Y-axis goes DOWN (top: 100px = 100px DOWN from top).
-
-POSITIONING PATTERNS - Use these exact patterns:
-CENTER ELEMENT:
-style: {{
-  position: 'absolute',
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: 'desired-width',
-  height: 'desired-height'
-}}
-
-FILL WITH PADDING:
-style: {{
-  position: 'absolute',
-  top: '40px',
-  left: '40px',
-  right: '40px',
-  bottom: '40px'
-}}
-
-FORBIDDEN:
-❌ Never use objectFit for positioning (objectFit only controls scaling)
-❌ Never use margin for positioning with position: 'absolute'
-
-EXECUTION CONTEXT:
-- Code executes in a React.createElement environment 
-- Available globally: Entire Remotion namespace (Remotion.*) and Transitions namespace (Transitions.*)
-- Available components: AbsoluteFill, Sequence, Img, Video, Audio, Player
-- Available functions: useCurrentFrame, interpolate, spring, useVideoConfig, useCurrentScale
-- Available utilities: Easing (all easing functions), all transition effects (fade, iris, wipe, flip, slide)
+**CRITICAL: EXECUTION CONTEXT:**
+- Code executes in React.createElement environment with Function() constructor
 - Use React.createElement syntax, not JSX
-- Use 'div' for text elements (no Text component available)
-- Access everything through global namespaces: Remotion.interpolate, Easing.easeOutQuad, Transitions.fade, etc.
+- Use 'div' elements for text (no Text component in Remotion)
 
 RESPONSE FORMAT - You must respond with EXACTLY this structure:
 DURATION: [number in seconds based on composition content and timing]
 CODE:
 [raw JavaScript code using React.createElement - no markdown blocks, no import statements]
 
-Fix the error and return the corrected code that will execute properly."""
+Fix ONLY the error and return the corrected code that will execute properly."""
 
         # User prompt with just the error and broken code
         user_prompt = f"""Fix this broken code:

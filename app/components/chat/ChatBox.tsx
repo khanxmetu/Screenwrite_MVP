@@ -10,6 +10,7 @@ import {
   Type,
   ChevronLeft,
   ChevronRight,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { type MediaBinItem, type TimelineState } from "../timeline/types";
@@ -47,6 +48,17 @@ interface ChatBoxProps {
   isGeneratingComposition?: boolean;
   // Props for conversational edit system
   currentComposition?: string; // Current TSX composition code
+  // Error handling props
+  generationError?: {
+    hasError: boolean;
+    errorMessage: string;
+    errorStack?: string;
+    brokenCode: string;
+    originalRequest: string;
+    canRetry: boolean;
+  };
+  onRetryFix?: () => Promise<boolean>;
+  onClearError?: () => void;
 }
 
 export function ChatBox({
@@ -62,6 +74,9 @@ export function ChatBox({
   onGenerateComposition,
   isGeneratingComposition = false,
   currentComposition,
+  generationError,
+  onRetryFix,
+  onClearError,
 }: ChatBoxProps) {
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -431,6 +446,59 @@ export function ChatBox({
             style={{ maxHeight: "calc(100vh - 200px)" }}
           >
             <div className="space-y-3">
+              {/* Error Display */}
+              {generationError?.hasError && (
+                <div className="flex justify-start">
+                  <div className="max-w-[90%] rounded-lg px-3 py-3 text-xs bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 mr-8">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-red-600 dark:text-red-400" />
+                      <div className="flex-1">
+                        <div className="font-medium text-red-800 dark:text-red-200 mb-1">
+                          Generation Error
+                        </div>
+                        <div className="text-red-700 dark:text-red-300 mb-2">
+                          {generationError.errorMessage}
+                        </div>
+                        
+                        {generationError.canRetry && onRetryFix && (
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={async () => {
+                                const success = await onRetryFix();
+                                if (!success) {
+                                  console.error("Retry failed");
+                                }
+                              }}
+                              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-md transition-colors"
+                              disabled={isGeneratingComposition}
+                            >
+                              {isGeneratingComposition ? "Fixing..." : "Try Again"}
+                            </button>
+                            {onClearError && (
+                              <button
+                                onClick={onClearError}
+                                className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded-md transition-colors"
+                              >
+                                Dismiss
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        
+                        {!generationError.canRetry && onClearError && (
+                          <button
+                            onClick={onClearError}
+                            className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded-md transition-colors mt-2"
+                          >
+                            Dismiss
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               {messages.map((message) => (
                 <div
                   key={message.id}

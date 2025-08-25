@@ -90,6 +90,7 @@ export default function TimelineEditor() {
     previewSettings,
     isGenerating,
     lastAiExplanation,
+    generationError,
     addPreviewContent,
     removePreviewContent,
     updatePreviewContent,
@@ -98,6 +99,8 @@ export default function TimelineEditor() {
     loadSampleContent,
     updatePreviewSettings,
     setGeneratedTsxCode,
+    retryWithFix,
+    clearError,
   } = useStandalonePreview(setDurationInFrames);
 
   // Wrapper function for AI composition generation with media library context
@@ -480,6 +483,9 @@ export default function TimelineEditor() {
                   onGenerateComposition={handleGenerateAiComposition}
                   isGeneratingComposition={isGenerating}
                   currentComposition={generatedTsxCode}
+                  generationError={generationError}
+                  onRetryFix={retryWithFix}
+                  onClearError={clearError}
                 />
               </div>
             </ResizablePanel>
