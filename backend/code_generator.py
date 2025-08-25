@@ -221,8 +221,8 @@ def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
             media_url_local = media.get('mediaUrlLocal', '')
             media_url_remote = media.get('mediaUrlRemote', '')
             
-            # Determine which URL to use (prefer local, fallback to remote)
-            actual_url = media_url_local if media_url_local else media_url_remote
+            # Determine which URL to use (prefer remote static URL, fallback to local blob URL)
+            actual_url = media_url_remote if media_url_remote else media_url_local
             
             if media_type == 'video':
                 media_section += f"- {name}: Video ({duration}s) - URL: {actual_url}\n"
