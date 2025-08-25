@@ -305,6 +305,17 @@ EXAMPLE CORRECT USAGE:
 
 6. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
 
+7. **NAMING CONVENTIONS:**
+   ✅ CORRECT naming patterns to follow:
+   - Constants: UPPER_SNAKE_CASE (SCENE_START, FADE_DURATION, TEXT_COLOR)
+   - Variables: camelCase (textElement, backgroundDiv, fadeOpacity)
+   - Functions: camelCase (createText, animateElement, renderScene)
+   - Use full descriptive names, NO abbreviations
+   ❌ WRONG: Mixing conventions, inconsistent patterns, or abbreviations
+   - Don't mix camelCase and snake_case for similar items
+   - Don't abbreviate (use textElement not txtElem, backgroundColor not bgColor)
+   - Stick to one convention per type throughout the entire code
+
 ⚠️ **COMMON MISTAKES TO AVOID:**
 ❌ display: interpolate(frame, [0, 60], ['none', 'block']) 
 ✅ display: interpolate(frame, [0, 60], [0, 1]) > 0.5 ? 'block' : 'none'
@@ -316,6 +327,15 @@ EXAMPLE CORRECT USAGE:
 ✅ transform: `scale(${interpolate(frame, [0, 60], [0, 1])})`
 
 ⚠️ **CRITICAL**: Only change/add what the user specifically asks for. Keep EVERYTHING else UNCHANGED.
+
+⚠️ **PRE-SUBMISSION CHECKLIST:**
+Before submitting your code, verify:
+- [ ] All constants use UPPER_SNAKE_CASE, variables use camelCase
+- [ ] NO abbreviations used anywhere (full descriptive names only)
+- [ ] Naming conventions are consistent throughout the code
+- [ ] No string/boolean outputs in interpolate() calls
+- [ ] Proper React.createElement syntax used
+- [ ] No import statements included
 
 RESPONSE FORMAT - You must respond with EXACTLY this structure:
 DURATION: [number in seconds based on composition content and timing]
