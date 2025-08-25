@@ -120,7 +120,7 @@ async def synthesize_request(
         # Valid @filename mentions found - use enhanced enhancement with media analysis
         return await enhance_with_media(
             user_request, conversation_history, current_composition,
-            valid_files, media_library, gemini_api
+            valid_files, media_library, preview_settings, gemini_api
         )
 
 
@@ -196,12 +196,22 @@ ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or referenc
 ⚠️ CRITICAL: Analyze the context for understanding, but output ONLY natural language creative direction. Never include code or technical syntax in your response."""
 
     try:
+        # Extract thinking budget from preview settings
+        synth_thinking_budget = preview_settings.get('synthThinkingBudget', 2000)
+        
+        # Create thinking config
+        thinking_config = types.ThinkingConfig(
+            include_thoughts=True,
+            thinking_budget=synth_thinking_budget
+        )
+        
         response = gemini_api.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                temperature=1.0
+                temperature=1.0,
+                thinking_config=thinking_config
             )
         )
         
@@ -223,6 +233,7 @@ async def enhance_with_media(
     current_composition: Optional[str],
     relevant_media_files: List[str],
     media_library: Optional[List[Dict[str, Any]]],
+    preview_settings: Dict[str, Any],
     gemini_api: Any
 ) -> str:
     """Enhanced enhancement with media content analysis"""
@@ -369,12 +380,22 @@ ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or referenc
                     except Exception as e:
                         print(f"⚠️ Synth: Failed to load {media_name}: {e}")
         
+        # Extract thinking budget from preview settings  
+        synth_thinking_budget = preview_settings.get('synthThinkingBudget', 2000)
+        
+        # Create thinking config
+        thinking_config = types.ThinkingConfig(
+            include_thoughts=True,
+            thinking_budget=synth_thinking_budget
+        )
+        
         response = gemini_api.models.generate_content(
             model="gemini-2.5-flash",
             contents=content_parts,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                temperature=1.0
+                temperature=1.0,
+                thinking_config=thinking_config
             )
         )
         

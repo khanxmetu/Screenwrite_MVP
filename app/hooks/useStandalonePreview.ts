@@ -7,6 +7,8 @@ export interface PreviewSettings {
   height: number;
   backgroundColor: string;
   fps: number;
+  synthThinkingBudget: number;
+  codeGenThinkingBudget: number;
 }
 
 // Default boilerplate Remotion composition - matches AI output format
@@ -30,6 +32,8 @@ export function useStandalonePreview(onDurationUpdate?: (durationInFrames: numbe
     height: 1080,
     backgroundColor: "#000000",
     fps: 30,
+    synthThinkingBudget: 2000,
+    codeGenThinkingBudget: 3000,
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [lastAiExplanation, setLastAiExplanation] = useState<string>("");

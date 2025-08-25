@@ -339,6 +339,36 @@ export default function TimelineEditor() {
                             className="h-5 w-8 p-0 border-0"
                             title="Background Color"
                           />
+                          
+                          {/* Thinking Budget Controls */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">Synth:</span>
+                            <Input
+                              type="number"
+                              value={previewSettings.synthThinkingBudget}
+                              onChange={(e) =>
+                                updatePreviewSettings({ synthThinkingBudget: parseInt(e.target.value) || 2000 })
+                              }
+                              className="h-5 w-16 px-1 text-xs"
+                              title="Synth Thinking Budget"
+                              min="100"
+                              max="10000"
+                              step="100"
+                            />
+                            <span className="text-xs text-muted-foreground">Code:</span>
+                            <Input
+                              type="number"
+                              value={previewSettings.codeGenThinkingBudget}
+                              onChange={(e) =>
+                                updatePreviewSettings({ codeGenThinkingBudget: parseInt(e.target.value) || 3000 })
+                              }
+                              className="h-5 w-16 px-1 text-xs"
+                              title="Code Generation Thinking Budget"
+                              min="100"
+                              max="10000"
+                              step="100"
+                            />
+                          </div>
                         </div>
 
                         {/* Show chat toggle when minimized */}
