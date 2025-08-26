@@ -110,9 +110,9 @@ def log_conversation_for_fine_tuning(system_instruction: str, user_prompt: str, 
             ]
         }
         
-        # Ensure logs directory exists
-        dataset_path = os.path.join("logs", dataset_file)
-        os.makedirs("logs", exist_ok=True)
+        # Ensure fine-tuning directory exists
+        dataset_path = os.path.join("logs", "fine-tuning", dataset_file)
+        os.makedirs(os.path.join("logs", "fine-tuning"), exist_ok=True)
         
         # Append to JSONL file (each line is a complete JSON object)
         with open(dataset_path, "a", encoding="utf-8") as f:
@@ -137,7 +137,7 @@ def manage_fine_tuning_dataset(action: str = "list", entry_index: Optional[int] 
     Actions: 'list' (show all entries), 'remove' (remove by line number), 'clear' (remove all)
     """
     try:
-        dataset_path = os.path.join("logs", dataset_file)
+        dataset_path = os.path.join("logs", "fine-tuning", dataset_file)
         
         if not os.path.exists(dataset_path):
             print(f"📂 No dataset file found at: {dataset_path}")
