@@ -35,6 +35,7 @@ TRANSITIONS:
 - Flip transitions
 - Iris transitions
 - Clock wipe transitions
+NOTE: Clearly state if you want a cross-transition between two clips. Like "crossfade between clip1 and clip2", "wipe between clip1 and clip2".
 
 COMPONENTS & LAYOUT:
 - Absolute positioned containers (full control)
