@@ -58,14 +58,6 @@ def create_simplified_system_instruction(original_system_instruction: str) -> st
 
 6. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
 
-7. **NAMING CONVENTIONS:**
-   ✅ CORRECT naming patterns to follow:
-   - Constants: UPPER_SNAKE_CASE (SCENE_START, FADE_DURATION, TEXT_COLOR)
-   - Variables: camelCase (textElement, backgroundDiv, fadeOpacity)
-   - Functions: camelCase (createText, animateElement, renderScene)
-   - Use full descriptive names, NO abbreviations
-   ❌ WRONG: Mixing conventions, inconsistent patterns, or abbreviations
-
 ⚠️ **CRITICAL**: Only change/add what the user specifically asks for. Keep EVERYTHING else UNCHANGED.
 
 **CRITICAL**: DO NOT include any import statements in your code. All necessary imports (React, useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, etc.) are already provided. Start your code directly with variable declarations and function calls.
@@ -410,18 +402,35 @@ def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
             name = media.get('name', 'unnamed')
             media_type = media.get('mediaType', 'unknown')
             duration = media.get('durationInSeconds', 0)
+            media_width = media.get('media_width', 0)
+            media_height = media.get('media_height', 0)
             media_url_local = media.get('mediaUrlLocal', '')
             media_url_remote = media.get('mediaUrlRemote', '')
             
             # Determine which URL to use (prefer remote static URL, fallback to local blob URL)
             actual_url = media_url_remote if media_url_remote else media_url_local
             
+            # Build comprehensive media description with metadata
             if media_type == 'video':
-                media_section += f"- {name}: Video ({duration}s) - URL: {actual_url}\n"
+                media_info = f"- {name}: Video"
+                if media_width and media_height:
+                    media_info += f" ({media_width}x{media_height})"
+                if duration:
+                    media_info += f" ({duration}s)"
+                media_info += f" - URL: {actual_url}\n"
+                media_section += media_info
             elif media_type == 'image':
-                media_section += f"- {name}: Image - URL: {actual_url}\n"
+                media_info = f"- {name}: Image"
+                if media_width and media_height:
+                    media_info += f" ({media_width}x{media_height})"
+                media_info += f" - URL: {actual_url}\n"
+                media_section += media_info
             elif media_type == 'audio':
-                media_section += f"- {name}: Audio ({duration}s) - URL: {actual_url}\n"
+                media_info = f"- {name}: Audio"
+                if duration:
+                    media_info += f" ({duration}s)"
+                media_info += f" - URL: {actual_url}\n"
+                media_section += media_info
         media_section += "\n⚠️ CRITICAL: Use the EXACT URLs provided above in Video/Img/Audio src props. Never use filenames like 'video.mp4' - always use the full URL.\n"
         media_section += "⚠️ EXAMPLE: src: 'https://example.com/file.mp4' NOT src: 'filename.mp4'\n"
     else:
