@@ -7,6 +7,198 @@ from google import genai
 from google.genai import types
 
 
+def create_simplified_system_instruction(original_system_instruction: str) -> str:
+    """
+    Create a simplified system instruction for fine-tuning by removing the bloated template
+    but keeping the essential rules and API reference.
+    """
+    simplified = """You are a world-class Remotion developer. Update the composition based on user requests.
+
+🎯 **CURATED API REFERENCE** - Use ONLY these verified components:
+
+**CORE ANIMATION:**
+• AbsoluteFill: Main container component for layouts
+• Sequence: Timeline control with {from: number, durationInFrames: number, children: ReactNode}
+• useCurrentFrame(): Returns current frame number (call at component level)
+• useVideoConfig(): Returns {width, height, fps, durationInFrames}
+• interpolate(frame, inputRange, outputRange, options?): Animate numeric values
+• spring({frame, fps, config}): Physics-based animations with {damping: number, stiffness: number}
+
+**MEDIA COMPONENTS:**
+• Video: {src: string, trimBefore?: number, trimAfter?: number, volume?: number, playbackRate?: number, muted?: boolean, style?: object}
+• Audio: {src: string, trimBefore?: number, trimAfter?: number, volume?: number, playbackRate?: number, muted?: boolean}
+• Img: {src: string, style?: object, placeholder?: string}
+
+**EXECUTION CONTEXT:**
+- Code executes in React.createElement environment with Function() constructor
+- Use React.createElement syntax, not JSX
+- Use 'div' elements for text (no Text component in Remotion)
+
+⚠️ **CRITICAL RULES:**
+
+1. **interpolate() OUTPUT TYPES:**
+   ✅ CORRECT: interpolate(frame, [0, 100], [0, 1, 0.5]) // Numbers only
+   ❌ WRONG: interpolate(frame, [0, 100], ['hidden', 'visible']) // No strings
+   → For strings: Use conditionals instead: opacity > 0.5 ? 'block' : 'none'
+
+2. **EASING SYNTAX:**
+   ✅ CORRECT: {easing: Easing.inOut(Easing.quad)}
+   ❌ WRONG: {easing: 'ease-in-out'}
+
+3. **CSS PROPERTIES:**
+   ✅ CORRECT: backgroundColor, fontSize, fontWeight, borderRadius
+   ❌ WRONG: background-color, font-size, font-weight, border-radius
+
+4. **SPRING CONFIG:**
+   ✅ CORRECT: {damping: 12, stiffness: 80}
+   ❌ WRONG: {dampening: 12, stiffness: 80}
+
+5. **SEQUENCE CHILDREN:**
+   ✅ CORRECT: React.createElement(Sequence, {from: 0, durationInFrames: 60, children: content})
+
+6. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
+
+7. **NAMING CONVENTIONS:**
+   ✅ CORRECT naming patterns to follow:
+   - Constants: UPPER_SNAKE_CASE (SCENE_START, FADE_DURATION, TEXT_COLOR)
+   - Variables: camelCase (textElement, backgroundDiv, fadeOpacity)
+   - Functions: camelCase (createText, animateElement, renderScene)
+   - Use full descriptive names, NO abbreviations
+   ❌ WRONG: Mixing conventions, inconsistent patterns, or abbreviations
+
+⚠️ **CRITICAL**: Only change/add what the user specifically asks for. Keep EVERYTHING else UNCHANGED.
+
+**CRITICAL**: DO NOT include any import statements in your code. All necessary imports (React, useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, etc.) are already provided. Start your code directly with variable declarations and function calls.
+
+RESPONSE FORMAT - You must respond with EXACTLY this structure:
+DURATION: [number in seconds based on composition content and timing]
+CODE:
+[raw JavaScript code - no markdown blocks]"""
+    
+    return simplified
+
+
+def log_conversation_for_fine_tuning(system_instruction: str, user_prompt: str, ai_response: str, dataset_file: str = "fine_tuning_dataset.jsonl"):
+    """
+    Log conversation in Gemini fine-tuning format (JSONL) for dataset creation.
+    Each line is a complete conversation with system instruction and user/model exchange.
+    Uses a simplified system instruction without the bloated template.
+    """
+    try:
+        # Use simplified system instruction for fine-tuning (removes bloated examples)
+        simplified_system_instruction = create_simplified_system_instruction(system_instruction)
+        
+        # Create the conversation entry in Gemini fine-tuning format
+        conversation_entry = {
+            "systemInstruction": {
+                "role": "system",
+                "parts": [
+                    {
+                        "text": simplified_system_instruction
+                    }
+                ]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": user_prompt
+                        }
+                    ]
+                },
+                {
+                    "role": "model",
+                    "parts": [
+                        {
+                            "text": ai_response
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # Ensure logs directory exists
+        dataset_path = os.path.join("logs", dataset_file)
+        os.makedirs("logs", exist_ok=True)
+        
+        # Append to JSONL file (each line is a complete JSON object)
+        with open(dataset_path, "a", encoding="utf-8") as f:
+            json.dump(conversation_entry, f, ensure_ascii=False)
+            f.write("\n")  # JSONL format: one JSON object per line
+        
+        # Count total lines for feedback
+        line_count = 0
+        if os.path.exists(dataset_path):
+            with open(dataset_path, "r", encoding="utf-8") as f:
+                line_count = sum(1 for line in f if line.strip())
+        
+        print(f"💾 Fine-tuning conversation logged to: {dataset_path} (total entries: {line_count})")
+        
+    except Exception as e:
+        print(f"❌ Error logging fine-tuning conversation: {e}")
+
+
+def manage_fine_tuning_dataset(action: str = "list", entry_index: Optional[int] = None, dataset_file: str = "fine_tuning_dataset.jsonl"):
+    """
+    Helper function to manage the fine-tuning dataset (JSONL format).
+    Actions: 'list' (show all entries), 'remove' (remove by line number), 'clear' (remove all)
+    """
+    try:
+        dataset_path = os.path.join("logs", dataset_file)
+        
+        if not os.path.exists(dataset_path):
+            print(f"📂 No dataset file found at: {dataset_path}")
+            return
+        
+        # Read all lines from JSONL file
+        entries = []
+        with open(dataset_path, "r", encoding="utf-8") as f:
+            for line_num, line in enumerate(f):
+                line = line.strip()
+                if line:
+                    try:
+                        entry = json.loads(line)
+                        entries.append((line_num + 1, entry))
+                    except json.JSONDecodeError as e:
+                        print(f"⚠️ Skipping invalid JSON on line {line_num + 1}: {e}")
+        
+        if action == "list":
+            print(f"📊 Fine-tuning dataset has {len(entries)} entries:")
+            for i, (line_num, entry) in enumerate(entries):
+                user_text = entry["contents"][0]["parts"][0]["text"][:100]
+                print(f"  {i}: (line {line_num}) {user_text}...")
+                
+        elif action == "remove" and entry_index is not None:
+            if 0 <= entry_index < len(entries):
+                # Remove entry by recreating file without that line
+                removed_entry = entries[entry_index][1]
+                user_text = removed_entry["contents"][0]["parts"][0]["text"][:100]
+                print(f"🗑️ Removing entry {entry_index}: {user_text}...")
+                
+                # Write all entries except the removed one
+                with open(dataset_path, "w", encoding="utf-8") as f:
+                    for i, (_, entry) in enumerate(entries):
+                        if i != entry_index:
+                            json.dump(entry, f, ensure_ascii=False)
+                            f.write("\n")
+                
+                print(f"💾 Dataset updated. Remaining entries: {len(entries) - 1}")
+            else:
+                print(f"❌ Invalid index {entry_index}. Dataset has {len(entries)} entries.")
+                
+        elif action == "clear":
+            with open(dataset_path, "w", encoding="utf-8") as f:
+                pass  # Empty file
+            print(f"🧹 Cleared all entries from dataset.")
+            
+        else:
+            print(f"❌ Unknown action: {action}. Use 'list', 'remove', or 'clear'.")
+            
+    except Exception as e:
+        print(f"❌ Error managing dataset: {e}")
+
+
 def parse_ai_response(response_text: str) -> Tuple[float, str]:
     """
     Parse AI response to extract duration and code.
@@ -1024,6 +1216,9 @@ async def generate_composition_with_validation(
         # Parse the AI response to extract duration and code
         raw_response = response.text.strip()
         print(f"Raw AI response (first 200 chars): {raw_response[:200]}...")
+        
+        # Log conversation for fine-tuning dataset
+        log_conversation_for_fine_tuning(system_instruction, user_prompt, raw_response)
         
         # Extract duration and code from structured response
         duration, generated_code = parse_ai_response(raw_response)
