@@ -1,12 +1,8 @@
 import React, { useState, useEffect } from "react";
 import * as Remotion from "remotion";
 import { Player, type PlayerRef } from "@remotion/player";
-import { TransitionSeries, linearTiming, springTiming } from "@remotion/transitions";
-import { fade } from "@remotion/transitions/fade";
-import { slide } from "@remotion/transitions/slide";
-import { wipe } from "@remotion/transitions/wipe";
-import { flip } from "@remotion/transitions/flip";
-import { iris } from "@remotion/transitions/iris";
+import * as Transitions from "@remotion/transitions";
+import { fixCode, type CodeFixRequest } from "../utils/api";
 
 // Destructure commonly used components for convenience
 const { 
@@ -27,20 +23,71 @@ export interface DynamicCompositionProps {
   tsxCode: string;
   backgroundColor?: string;
   fps?: number;
+  onCodeFixed?: (fixedCode: string) => void; // Callback to update the parent with fixed code
 }
 
 // Dynamic composition that executes AI-generated TSX code
 export function DynamicComposition({
   tsxCode,
   backgroundColor = "#000000",
+  onCodeFixed,
 }: DynamicCompositionProps) {
   const frame = useCurrentFrame();
+  const [isFixingError, setIsFixingError] = useState(false);
   const [currentCode, setCurrentCode] = useState(tsxCode);
+  const [fixAttempts, setFixAttempts] = useState(0);
+  const maxFixAttempts = 2; // Limit retry attempts
 
   // Update current code when tsxCode prop changes
   useEffect(() => {
     setCurrentCode(tsxCode);
+    setFixAttempts(0); // Reset attempts when new code arrives
   }, [tsxCode]);
+
+  // Function to attempt automatic error correction
+  const attemptErrorFix = async (error: Error, brokenCode: string) => {
+    if (fixAttempts >= maxFixAttempts || isFixingError) {
+      console.log('Max fix attempts reached or already fixing, showing error');
+      return null;
+    }
+
+    setIsFixingError(true);
+    setFixAttempts(prev => prev + 1);
+
+    try {
+      console.log('🔧 Attempting automatic error correction...');
+      
+      const fixRequest: CodeFixRequest = {
+        broken_code: brokenCode,
+        error_message: error.message,
+        error_stack: error.stack || '',
+        user_request: 'Auto-fix broken composition code', // Generic request since we don't have original context
+        media_library: [] // Could be passed from parent if needed
+      };
+
+      const fixResponse = await fixCode(fixRequest);
+
+      if (fixResponse.success && fixResponse.corrected_code !== brokenCode) {
+        console.log('✅ Code fixed successfully, applying correction...');
+        setCurrentCode(fixResponse.corrected_code);
+        
+        // Notify parent component of the fix
+        if (onCodeFixed) {
+          onCodeFixed(fixResponse.corrected_code);
+        }
+        
+        return fixResponse.corrected_code;
+      } else {
+        console.log('❌ Error correction failed or no changes made');
+        return null;
+      }
+    } catch (fixError) {
+      console.error('Error during automatic correction:', fixError);
+      return null;
+    } finally {
+      setIsFixingError(false);
+    }
+  };
 
   // If no TSX code, show placeholder
   if (!currentCode) {
@@ -90,14 +137,7 @@ export function DynamicComposition({
     const executeCode = new Function(
       'React',
       'Remotion', // Pass entire Remotion namespace
-      'TransitionSeries', // Pass TransitionSeries specifically
-      'fade', // Pass fade transition
-      'slide', // Pass slide transition
-      'wipe', // Pass wipe transition
-      'flip', // Pass flip transition
-      'iris', // Pass iris transition
-      'linearTiming', // Pass linearTiming
-      'springTiming', // Pass springTiming
+      'Transitions', // Pass entire Transitions namespace
       'currentFrameValue', // Renamed to avoid conflicts
       'videoConfigValue', // Renamed to avoid conflicts
       'currentScaleValue', // Renamed to avoid conflicts
@@ -119,12 +159,8 @@ export function DynamicComposition({
         // Add more as needed
       } = Remotion;
       
-      // Transition functions are now directly available:
-      // fade, slide, wipe, flip, iris, linearTiming, springTiming
-      // TransitionSeries is also directly available
-      
-      // Note: Transition functions usage:
-      // fade() returns a transition object to use with TransitionSeries.Transition
+      // Destructure transitions
+      const { fade, iris, wipe, flip, slide } = Transitions;
       
       // Safe interpolate wrapper that sorts inputRange and removes duplicates
       const safeInterpolate = (frame, inputRange, outputRange, options = {}) => {
@@ -171,9 +207,6 @@ export function DynamicComposition({
       const useVideoConfig = () => videoConfigValue;
       const useCurrentScale = () => currentScaleValue;
       
-      // Pre-defined utility function for frame calculations
-      const timeToFrames = (timeInSeconds) => timeInSeconds * videoConfigValue.fps;
-      
       // Execute the AI-generated code with safe interpolation
       ${safeCode}
       `
@@ -182,14 +215,7 @@ export function DynamicComposition({
     const generatedJSX = executeCode(
       React,
       Remotion, // Pass entire namespace
-      TransitionSeries, // Pass TransitionSeries specifically
-      fade, // Pass fade transition
-      slide, // Pass slide transition
-      wipe, // Pass wipe transition
-      flip, // Pass flip transition
-      iris, // Pass iris transition
-      linearTiming, // Pass linearTiming
-      springTiming, // Pass springTiming
+      Transitions, // Pass entire namespace
       frame, // Pass the actual frame value
       videoConfig, // Pass the config object
       currentScale, // Pass the scale value
@@ -200,7 +226,68 @@ export function DynamicComposition({
   } catch (error) {
     console.error("Error executing AI-generated code:", error);
 
-    // Show simple error message
+    // If we're currently fixing an error, show loading state
+    if (isFixingError) {
+      return (
+        <AbsoluteFill style={{ backgroundColor: "#1a1a1a" }}>
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#4CAF50",
+              fontSize: "18px",
+              fontFamily: "Arial, sans-serif",
+              textAlign: "center",
+              padding: "40px",
+            }}
+          >
+            <div>
+              <p>🔧 Fixing code automatically...</p>
+              <p style={{ fontSize: "14px", opacity: 0.8, marginTop: "10px" }}>
+                AI is correcting the error, please wait
+              </p>
+            </div>
+          </div>
+        </AbsoluteFill>
+      );
+    }
+
+    // Attempt automatic error correction
+    if (error instanceof Error && fixAttempts < maxFixAttempts) {
+      attemptErrorFix(error, currentCode);
+      
+      // Show loading state while fixing
+      return (
+        <AbsoluteFill style={{ backgroundColor: "#1a1a1a" }}>
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#4CAF50",
+              fontSize: "18px",
+              fontFamily: "Arial, sans-serif",
+              textAlign: "center",
+              padding: "40px",
+            }}
+          >
+            <div>
+              <p>🔧 Fixing code automatically...</p>
+              <p style={{ fontSize: "14px", opacity: 0.8, marginTop: "10px" }}>
+                Attempt {fixAttempts + 1} of {maxFixAttempts}
+              </p>
+            </div>
+          </div>
+        </AbsoluteFill>
+      );
+    }
+
+    // Show error if auto-fix failed or max attempts reached
     return (
       <AbsoluteFill style={{ backgroundColor: "#1a1a1a" }}>
         <div
@@ -222,6 +309,11 @@ export function DynamicComposition({
             <p style={{ fontSize: "14px", opacity: 0.8, marginTop: "10px" }}>
               {error instanceof Error ? error.message : "Unknown error"}
             </p>
+            {fixAttempts >= maxFixAttempts && (
+              <p style={{ fontSize: "12px", opacity: 0.6, marginTop: "10px" }}>
+                Auto-fix attempts exhausted
+              </p>
+            )}
             <p style={{ fontSize: "12px", opacity: 0.6, marginTop: "20px" }}>
               Try rephrasing your request or ask for something simpler
             </p>
@@ -240,6 +332,7 @@ export interface DynamicVideoPlayerProps {
   backgroundColor?: string;
   playerRef?: React.Ref<PlayerRef>;
   durationInFrames?: number;
+  onCodeFixed?: (fixedCode: string) => void; // Callback for when code is automatically fixed
 }
 
 // The dynamic video player component
@@ -250,6 +343,7 @@ export function DynamicVideoPlayer({
   backgroundColor = "#000000",
   playerRef,
   durationInFrames = 300, // Default 10 seconds at 30fps
+  onCodeFixed,
 }: DynamicVideoPlayerProps) {
   console.log("DynamicVideoPlayer - TSX Code length:", tsxCode?.length || 0);
 
@@ -260,6 +354,7 @@ export function DynamicVideoPlayer({
       inputProps={{
         tsxCode,
         backgroundColor,
+        onCodeFixed,
       }}
       durationInFrames={durationInFrames}
       compositionWidth={compositionWidth}
@@ -271,18 +366,6 @@ export function DynamicVideoPlayer({
         position: "relative",
         zIndex: 1,
       }}
-      // Enable built-in controls with scrubber/seek bar
-      controls={true}
-      // Show volume controls alongside play/pause and scrubber
-      showVolumeControls={true}
-      // Allow fullscreen functionality
-      allowFullscreen={true}
-      // Enable click-to-play/pause
-      clickToPlay={true}
-      // Show controls briefly when player loads, then auto-hide
-      initiallyShowControls={true}
-      // Enable space key for play/pause
-      spaceKeyToPlayOrPause={true}
       acknowledgeRemotionLicense
     />
   );

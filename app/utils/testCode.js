@@ -1,11 +1,7 @@
-// Sample code loader - simple function that returns test code
-// To change the test code, edit this file directly
+// Simple test code for Remotion - paste your code here
+// This file is imported as a module to avoid TypeScript parsing issues
 
-export function getSampleCode(): string {
-  console.log('📁 Loading test code from sampleCodeLoader.ts');
-  
-  // Edit this code to test different Remotion animations
-  return `
+const testCode = `
 const frame = currentFrameValue;
 const { width, height, fps } = videoConfigValue;
 
@@ -34,5 +30,6 @@ return React.createElement(AbsoluteFill, {
     border: '2px solid rgba(255, 255, 255, 0.3)'
   }
 }, 'Sample Mode Active'));
-  `;
-}
+`;
+
+export default testCode;

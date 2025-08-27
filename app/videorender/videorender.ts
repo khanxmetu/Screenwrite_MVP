@@ -5,6 +5,40 @@ import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import multer from 'multer';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
+
+// Function to re-encode video with I-frames every 30 frames for accurate trimming
+async function reencodeVideoForAccurateTrimming(inputPath: string, outputPath: string): Promise<void> {
+  const ffmpegCommand = [
+    'ffmpeg',
+    '-i', `"${inputPath}"`,
+    '-c:v', 'libx264',        // Use H.264 codec
+    '-g', '30',               // GOP size: I-frame every 30 frames (1 second at 30fps)
+    '-keyint_min', '30',      // Minimum keyframe interval
+    '-sc_threshold', '0',     // Disable scene change detection
+    '-c:a', 'aac',           // Use AAC for audio
+    '-movflags', '+faststart', // Optimize for web streaming
+    '-y',                     // Overwrite output file
+    `"${outputPath}"`
+  ].join(' ');
+
+  console.log(`🔄 Re-encoding video for accurate trimming: ${path.basename(inputPath)}`);
+  console.log(`📟 FFmpeg command: ${ffmpegCommand}`);
+  
+  try {
+    const { stdout, stderr } = await execAsync(ffmpegCommand);
+    console.log(`✅ Re-encoding completed: ${path.basename(outputPath)}`);
+    if (stderr) {
+      console.log(`📝 FFmpeg output: ${stderr}`);
+    }
+  } catch (error) {
+    console.error(`❌ Re-encoding failed for ${path.basename(inputPath)}:`, error);
+    throw error;
+  }
+}
 
 // The composition you want to render
 const compositionId = 'TimelineComposition';
@@ -98,52 +132,123 @@ app.get('/media', (req: Request, res: Response): void => {
   }
 });
 
-// File upload endpoint
-app.post('/upload', upload.single('media'), (req: Request, res: Response): void => {
+// File upload endpoint with video re-encoding for accurate trimming
+app.post('/upload', upload.single('media'), async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No file uploaded' });
       return;
     }
 
-    const fileUrl = `/media/${encodeURIComponent(req.file.filename)}`;
-    const fullUrl = `http://localhost:${port}${fileUrl}`; // Direct backend URL for Remotion
+    const originalPath = req.file.path;
+    const fileExtension = path.extname(req.file.originalname).toLowerCase();
+    
+    // Check if it's a video file that needs re-encoding
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v'];
+    const isVideo = videoExtensions.includes(fileExtension);
 
-    console.log(`📁 File uploaded: ${req.file.originalname} -> ${req.file.filename}`);
+    if (isVideo) {
+      // Generate a new filename for the re-encoded video
+      const timestamp = Date.now();
+      const nameWithoutExt = path.basename(req.file.originalname, fileExtension);
+      const reencodedFilename = `${nameWithoutExt}_reencoded_${timestamp}.mp4`;
+      const reencodedPath = path.join('out', reencodedFilename);
 
-    res.json({
-      success: true,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      url: fileUrl,
-      fullUrl: fullUrl,
-      size: req.file.size,
-      path: req.file.path
-    });
+      // Re-encode the video with I-frames every 30 frames
+      await reencodeVideoForAccurateTrimming(originalPath, reencodedPath);
+      
+      // Delete the original uploaded file
+      fs.unlinkSync(originalPath);
+      
+      // Update file info to point to re-encoded file
+      const fileUrl = `/media/${encodeURIComponent(reencodedFilename)}`;
+      const fullUrl = `http://localhost:${port}${fileUrl}`;
+
+      console.log(`📁 Video uploaded and re-encoded: ${req.file.originalname} -> ${reencodedFilename}`);
+
+      res.json({
+        success: true,
+        filename: reencodedFilename,
+        originalName: req.file.originalname,
+        url: fileUrl,
+        fullUrl: fullUrl,
+        size: fs.statSync(reencodedPath).size,
+        path: reencodedPath,
+        reencoded: true
+      });
+    } else {
+      // For non-video files (images, audio), serve as-is
+      const fileUrl = `/media/${encodeURIComponent(req.file.filename)}`;
+      const fullUrl = `http://localhost:${port}${fileUrl}`;
+
+      console.log(`📁 File uploaded: ${req.file.originalname} -> ${req.file.filename}`);
+
+      res.json({
+        success: true,
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        url: fileUrl,
+        fullUrl: fullUrl,
+        size: req.file.size,
+        path: req.file.path,
+        reencoded: false
+      });
+    }
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({ error: 'File upload failed' });
   }
 });
 
-// Bulk file upload endpoint
-app.post('/upload-multiple', upload.array('media', 10), (req: Request, res: Response): void => {
+// Bulk file upload endpoint with video re-encoding
+app.post('/upload-multiple', upload.array('media', 10), async (req: Request, res: Response): Promise<void> => {
   try {
-    if (!req.files || req.files.length === 0) {
+    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
       res.status(400).json({ error: 'No files uploaded' });
       return;
     }
 
-    const uploadedFiles = (req.files as Express.Multer.File[]).map(file => ({
-      filename: file.filename,
-      originalName: file.originalname,
-      url: `/media/${encodeURIComponent(file.filename)}`,
-      fullUrl: `http://localhost:${port}/media/${encodeURIComponent(file.filename)}`, // Direct backend URL for Remotion
-      size: file.size,
-      path: file.path
-    }));
+    const uploadedFiles = [];
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v'];
 
-    console.log(`📁 ${uploadedFiles.length} files uploaded`);
+    for (const file of req.files as Express.Multer.File[]) {
+      const originalPath = file.path;
+      const fileExtension = path.extname(file.originalname).toLowerCase();
+      const isVideo = videoExtensions.includes(fileExtension);
+
+      if (isVideo) {
+        // Generate a new filename for the re-encoded video
+        const timestamp = Date.now();
+        const nameWithoutExt = path.basename(file.originalname, fileExtension);
+        const reencodedFilename = `${nameWithoutExt}_reencoded_${timestamp}.mp4`;
+        const reencodedPath = path.join('out', reencodedFilename);
+
+        // Re-encode the video with I-frames every 30 frames
+        await reencodeVideoForAccurateTrimming(originalPath, reencodedPath);
+        
+        // Delete the original uploaded file
+        fs.unlinkSync(originalPath);
+
+        uploadedFiles.push({
+          filename: reencodedFilename,
+          originalName: file.originalname,
+          url: `/media/${encodeURIComponent(reencodedFilename)}`,
+          size: fs.statSync(reencodedPath).size,
+          reencoded: true
+        });
+      } else {
+        // For non-video files, add as-is
+        uploadedFiles.push({
+          filename: file.filename,
+          originalName: file.originalname,
+          url: `/media/${encodeURIComponent(file.filename)}`,
+          size: file.size,
+          reencoded: false
+        });
+      }
+    }
+
+    console.log(`📁 ${uploadedFiles.length} files uploaded and processed`);
 
     res.json({
       success: true,

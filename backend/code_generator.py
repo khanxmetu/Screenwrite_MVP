@@ -5,11 +5,12 @@ import re
 from typing import Tuple, List, Dict, Any, Optional
 from google import genai
 from google.genai import types
+import anthropic
 
 
 def create_simplified_system_instruction(original_system_instruction: str) -> str:
     """
-    Create a simplified system instruction for fine-tuning by removing the bloated template
+    Create a simplified system instruction ONLY for fine-tuning by removing the bloated template
     but keeping the essential rules and API reference.
     """
     simplified = """You are a world-class Remotion developer. Update the composition based on user requests.
@@ -33,30 +34,6 @@ def create_simplified_system_instruction(original_system_instruction: str) -> st
 - Code executes in React.createElement environment with Function() constructor
 - Use React.createElement syntax, not JSX
 - Use 'div' elements for text (no Text component in Remotion)
-
-⚠️ **CRITICAL RULES:**
-
-1. **interpolate() OUTPUT TYPES:**
-   ✅ CORRECT: interpolate(frame, [0, 100], [0, 1, 0.5]) // Numbers only
-   ❌ WRONG: interpolate(frame, [0, 100], ['hidden', 'visible']) // No strings
-   → For strings: Use conditionals instead: opacity > 0.5 ? 'block' : 'none'
-
-2. **EASING SYNTAX:**
-   ✅ CORRECT: {easing: Easing.inOut(Easing.quad)}
-   ❌ WRONG: {easing: 'ease-in-out'}
-
-3. **CSS PROPERTIES:**
-   ✅ CORRECT: backgroundColor, fontSize, fontWeight, borderRadius
-   ❌ WRONG: background-color, font-size, font-weight, border-radius
-
-4. **SPRING CONFIG:**
-   ✅ CORRECT: {damping: 12, stiffness: 80}
-   ❌ WRONG: {dampening: 12, stiffness: 80}
-
-5. **SEQUENCE CHILDREN:**
-   ✅ CORRECT: React.createElement(Sequence, {from: 0, durationInFrames: 60, children: content})
-
-6. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
 
 ⚠️ **CRITICAL**: Only change/add what the user specifically asks for. Keep EVERYTHING else UNCHANGED.
 
@@ -116,6 +93,9 @@ def log_conversation_for_fine_tuning(system_instruction: str, user_prompt: str, 
         
         # Append to JSONL file (each line is a complete JSON object)
         with open(dataset_path, "a", encoding="utf-8") as f:
+            # Add timestamp at the beginning of the line for reference
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{timestamp}] ")
             json.dump(conversation_entry, f, ensure_ascii=False)
             f.write("\n")  # JSONL format: one JSON object per line
         
@@ -454,6 +434,57 @@ def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
 • Audio: {src: string, trimBefore?: number, trimAfter?: number, volume?: number, playbackRate?: number, muted?: boolean}
 • Img: {src: string, style?: object, placeholder?: string}
 
+⚠️ CRITICAL TRIMMING RULE: trimBefore and trimAfter use FRAMES, not seconds!
+✅ CORRECT: trimBefore: timeToFrames(155) // Trims 155 seconds using helper function
+❌ WRONG: trimBefore: 155 // This only trims 155 frames (5.17 seconds at 30fps)
+→ Always use timeToFrames(): timeToFrames(155) converts 155 seconds to frames
+
+🚨 **CRITICAL TRIM CALCULATION - MUST GET THIS RIGHT:**
+
+**Understanding trimBefore and trimAfter:**
+- `trimBefore`: Start time in source video (in frames)
+- `trimAfter`: End time in source video (in frames)  
+- These define which portion of the source video to play
+
+**✅ CORRECT CALCULATION:**
+```javascript
+// To play from 14s to 16.6s in source video (2.6s duration):
+const startTimeSeconds = 14;
+const durationSeconds = 2.6;
+const endTimeSeconds = startTimeSeconds + durationSeconds; // 16.6
+
+const trimBefore = timeToFrames(startTimeSeconds); // timeToFrames(14) = 420 frames
+const trimAfter = timeToFrames(endTimeSeconds);    // timeToFrames(16.6) = 498 frames
+
+// Remotion will play frames 420 to 498 from source video
+```
+
+**❌ WRONG CALCULATIONS - NEVER DO THESE:**
+```javascript
+// WRONG: Using video file duration in calculation
+const trimAfter = VIDEO_DURATION_IN_FRAMES - (trimBefore + playDuration);
+
+// WRONG: Subtracting from total duration  
+const trimAfter = totalVideoLength - trimBefore - segmentLength;
+
+// WRONG: Using negative values or complex math
+const trimAfter = trimBefore + playDuration - VIDEO_DURATION_IN_FRAMES;
+```
+
+**🎯 SIMPLE FORMULA - ALWAYS USE THIS:**
+```javascript
+const startSeconds = 14; // Where to start in source video
+const playSeconds = 2.6; // How long to play
+
+const trimBefore = timeToFrames(startSeconds);
+const trimAfter = timeToFrames(startSeconds + playSeconds);
+
+// VALIDATION: trimAfter must ALWAYS be > trimBefore
+if (trimAfter <= trimBefore) {
+  throw new Error("trimAfter must be greater than trimBefore");
+}
+```
+
 ⚠️ CRITICAL MEDIA RULE: When using Video/Audio/Img components, ALWAYS use the exact URL from the AVAILABLE MEDIA ASSETS section above. 
 NEVER use just the filename - always use the full URL provided in the "URL:" field.
 
@@ -462,12 +493,118 @@ EXAMPLE CORRECT USAGE:
 - NOT src: "video.mp4"
 
 **TRANSITION EFFECTS (from @remotion/transitions):**
-• fade(): Simple opacity transition
-• slide({direction}): direction = "from-left" | "from-right" | "from-top" | "from-bottom"
-• wipe(): Slide overlay transition
+
+🚨 **USE TransitionSeries FOR ALL MEDIA TRANSITIONS - NOT manual interpolation**
+
+**TransitionSeries Components:**
+• TransitionSeries: Container for sequences with transitions between them
+• TransitionSeries.Sequence: Individual scenes with durationInFrames
+• TransitionSeries.Transition: Transitions between sequences with timing and presentation
+
+**Transition Functions Available:**
+• fade(): Simple opacity transition between scenes
+• slide(): Slide transition with direction: {direction: "from-left" | "from-right" | "from-top" | "from-bottom"}
+• wipe(): Slide over transition (wipe effect)
 • flip(): 3D rotation transition
 • iris(): Circular reveal transition
-• clockWipe(): Circular wipe transition
+
+**Timing Functions Available:**
+• linearTiming({durationInFrames: number, easing?: Easing}): Linear timing with optional easing
+• springTiming({config?: {damping: number, stiffness: number}, durationInFrames?: number}): Spring-based timing
+
+🚨 **CRITICAL TRANSITION RULES:**
+❌ FORBIDDEN: const opacity = interpolate(frame, [0, 30], [0, 1]) for Video/Audio fade effects
+❌ FORBIDDEN: style: { opacity: fadeOpacity } on Video/Audio components
+❌ FORBIDDEN: Manual opacity animations on ANY Video/Audio component (even single videos)
+✅ REQUIRED: TransitionSeries.Transition with presentation: fade() for ALL Video/Audio fade effects
+✅ REQUIRED: TransitionSeries.Transition with presentation: slide() for ALL Video/Audio slide effects
+✅ REQUIRED: Use linearTiming() or springTiming() for transition duration
+
+**CORRECT TransitionSeries USAGE PATTERNS:**
+
+**Pattern 1: Single Video with Fade-in (Entry Animation):**
+```javascript
+React.createElement(TransitionSeries, {},
+  React.createElement(TransitionSeries.Transition, {
+    timing: linearTiming({durationInFrames: timeToFrames(1.5)}),
+    presentation: fade()
+  }),
+  React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(5)},
+    React.createElement(Video, {
+      src: 'https://example.com/video.mp4',
+      trimBefore: timeToFrames(10),
+      trimAfter: timeToFrames(15)
+    })
+  )
+)
+```
+
+**Pattern 2: Single Video with Fade-out (Exit Animation):**
+```javascript
+React.createElement(TransitionSeries, {},
+  React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(5)},
+    React.createElement(Video, {
+      src: 'https://example.com/video.mp4',
+      trimBefore: timeToFrames(10),
+      trimAfter: timeToFrames(15)
+    })
+  ),
+  React.createElement(TransitionSeries.Transition, {
+    timing: linearTiming({durationInFrames: timeToFrames(1.5)}),
+    presentation: fade()
+  })
+)
+```
+
+**Pattern 3: Multiple Videos with Transitions Between:**
+```javascript
+React.createElement(TransitionSeries, {},
+  React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(3)},
+    React.createElement(Video, {src: 'https://example.com/video1.mp4'})),
+  React.createElement(TransitionSeries.Transition, {
+    timing: linearTiming({durationInFrames: timeToFrames(1)}),
+    presentation: fade()
+  }),
+  React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(3)},
+    React.createElement(Video, {src: 'https://example.com/video2.mp4'})),
+  React.createElement(TransitionSeries.Transition, {
+    timing: springTiming({config: {damping: 200}}),
+    presentation: slide({direction: "from-right"})
+  }),
+  React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(3)},
+    React.createElement(Video, {src: 'https://example.com/video3.mp4'}))
+)
+```
+
+**Pattern 4: Advanced Timing Examples:**
+```javascript
+// Linear timing with easing
+linearTiming({
+  durationInFrames: timeToFrames(2),
+  easing: Easing.inOut(Easing.ease)
+})
+
+// Spring timing with custom config
+springTiming({
+  config: {damping: 200, stiffness: 100},
+  durationInFrames: timeToFrames(1.5),
+  durationRestThreshold: 0.001 // Recommended for smooth transitions
+})
+```
+
+🎯 **TRANSITION STRUCTURE RULES:**
+1. TransitionSeries can only contain TransitionSeries.Sequence and TransitionSeries.Transition
+2. At least one Sequence must come before or after each Transition
+3. Two Transitions cannot be next to each other
+4. Transition duration cannot be longer than adjacent sequence durations
+5. Total duration = sum of all sequences minus overlapping transition durations
+
+⚠️ **WHEN TO USE WHAT:**
+• **TransitionSeries + fade()**: For ANY opacity fade-in/fade-out between sequences
+• **TransitionSeries + slide()**: For ANY slide animations between sequences  
+• **TransitionSeries + wipe()**: For ANY wipe effects between sequences
+• **interpolate()**: ONLY for scaling, rotation, complex custom animations within sequences
+• **NEVER interpolate()**: For basic opacity/position transitions between media
 
 **EASING FUNCTIONS** - Use EXACT syntax:
 ✅ CORRECT: easing: Easing.linear, easing: Easing.ease, easing: Easing.quad, easing: Easing.cubic
@@ -480,42 +617,136 @@ EXAMPLE CORRECT USAGE:
 - Code executes in React.createElement environment with Function() constructor
 - Use React.createElement syntax, not JSX
 - Use 'div' elements for text (no Text component in Remotion)
-
 ⚠️ **CRITICAL RULES:**
 
-1. **interpolate() OUTPUT TYPES:**
+1. **🚨 TRANSITIONSERIES vs INTERPOLATE USAGE:**
+   ✅ CORRECT: TransitionSeries for ALL Video/Audio fade/slide/wipe effects (even single videos)
+   ✅ CORRECT: interpolate() for animations WITHIN individual sequences (scaling, rotation, position)
+   ❌ WRONG: interpolate() for ANY opacity fade on Video/Audio components
+   ❌ WRONG: style: { opacity: interpolate(...) } on Video/Audio components
+   → ALWAYS use TransitionSeries.Transition with fade() for Video/Audio opacity effects
+
+2. **interpolate() OUTPUT TYPES:**
    ✅ CORRECT: interpolate(frame, [0, 100], [0, 1, 0.5]) // Numbers only
    ❌ WRONG: interpolate(frame, [0, 100], ['hidden', 'visible']) // No strings
    ❌ WRONG: interpolate(frame, [0, 100], [true, false]) // No booleans
    → For strings: Use conditionals instead: opacity > 0.5 ? 'block' : 'none'
 
-2. **EASING SYNTAX:**
+3. **EASING SYNTAX:**
    ✅ CORRECT: {easing: Easing.inOut(Easing.quad)}
    ❌ WRONG: {easing: 'ease-in-out'}
 
-3. **CSS PROPERTIES:**
+4. **CSS PROPERTIES:**
    ✅ CORRECT: backgroundColor, fontSize, fontWeight, borderRadius
    ❌ WRONG: background-color, font-size, font-weight, border-radius
 
-4. **SPRING CONFIG:**
+5. **SPRING CONFIG:**
    ✅ CORRECT: {damping: 12, stiffness: 80}
    ❌ WRONG: {dampening: 12, stiffness: 80}
 
-5. **SEQUENCE CHILDREN:**
+6. **SEQUENCE CHILDREN:**
    ✅ CORRECT: React.createElement(Sequence, {from: 0, durationInFrames: 60, children: content})
 
-6. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
+7. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
 
-7. **NAMING CONVENTIONS:**
-   ✅ CORRECT naming patterns to follow:
-   - Constants: UPPER_SNAKE_CASE (SCENE_START, FADE_DURATION, TEXT_COLOR)
-   - Variables: camelCase (textElement, backgroundDiv, fadeOpacity)
-   - Functions: camelCase (createText, animateElement, renderScene)
-   - Use full descriptive names, NO abbreviations
-   ❌ WRONG: Mixing conventions, inconsistent patterns, or abbreviations
-   - Don't mix camelCase and snake_case for similar items
-   - Don't abbreviate (use textElement not txtElem, backgroundColor not bgColor)
-   - Stick to one convention per type throughout the entire code
+📐 **POSITIONING FUNDAMENTALS - MASTER THESE PATTERNS:**
+
+**🎯 CENTER EVERYTHING (Most Common Need):**
+```javascript
+// Perfect center (horizontal + vertical)
+style: {
+  position: 'absolute',
+  top: '50%',
+  left: '50%',
+  transform: 'translate(-50%, -50%)',
+  textAlign: 'center' // Only for text centering within element
+}
+```
+
+**🎯 SPECIFIC POSITIONING PATTERNS:**
+```javascript
+// Top-left corner
+style: { position: 'absolute', top: 0, left: 0 }
+
+// Top-right corner  
+style: { position: 'absolute', top: 0, right: 0 }
+
+// Bottom-left corner
+style: { position: 'absolute', bottom: 0, left: 0 }
+
+// Bottom-right corner
+style: { position: 'absolute', bottom: 0, right: 0 }
+
+// Center horizontally, specific vertical position
+style: { 
+  position: 'absolute', 
+  left: '50%', 
+  transform: 'translateX(-50%)',
+  top: '20px' // or bottom: '20px'
+}
+
+// Center vertically, specific horizontal position  
+style: { 
+  position: 'absolute', 
+  top: '50%', 
+  transform: 'translateY(-50%)',
+  left: '20px' // or right: '20px'
+}
+```
+
+**🚨 CRITICAL POSITIONING RULES:**
+
+1. **ALWAYS use position: 'absolute'** for precise placement
+2. **NEVER rely on textAlign: 'center' alone** - it only centers text within its container
+3. **Use transform: 'translate(-50%, -50%)' for true centering** - this centers the element itself
+4. **Combine positioning methods:** 
+   - `left: '50%'` moves element's left edge to center
+   - `transform: 'translateX(-50%)'` moves element back by half its width
+   - Result: element is perfectly centered
+
+**❌ POSITIONING MISTAKES TO AVOID:**
+```javascript
+// WRONG - Won't center the element, only text inside it
+style: { textAlign: 'center' }
+
+// WRONG - Element's left edge will be at center, not element center  
+style: { position: 'absolute', left: '50%' }
+
+// WRONG - Missing position absolute
+style: { top: '50%', left: '50%' }
+```
+
+**✅ CORRECT POSITIONING EXAMPLES:**
+```javascript
+// Title centered on screen
+style: { 
+  position: 'absolute', 
+  top: '50%', 
+  left: '50%', 
+  transform: 'translate(-50%, -50%)',
+  fontSize: '48px',
+  color: '#FFFFFF',
+  textAlign: 'center'
+}
+
+// Subtitle below center
+style: { 
+  position: 'absolute', 
+  top: '60%', 
+  left: '50%', 
+  transform: 'translateX(-50%)',
+  fontSize: '24px'
+}
+
+// Corner overlay text
+style: { 
+  position: 'absolute', 
+  bottom: '20px', 
+  left: '20px',
+  fontSize: '18px'
+}
+```
+
 
 ⚠️ **COMMON MISTAKES TO AVOID:**
 ❌ display: interpolate(frame, [0, 60], ['none', 'block']) 
@@ -531,12 +762,15 @@ EXAMPLE CORRECT USAGE:
 
 ⚠️ **PRE-SUBMISSION CHECKLIST:**
 Before submitting your code, verify:
+- [ ] 🚨 NO manual interpolation for fade/slide/wipe on Video/Audio - USE TransitionSeries.Transition ALWAYS
+- [ ] 🚨 NO style: { opacity: interpolate(...) } on Video/Audio components
+- [ ] No import statements included
+- [ ] NO timeToFrames() function definition - it's already provided
 - [ ] All constants use UPPER_SNAKE_CASE, variables use camelCase
 - [ ] NO abbreviations used anywhere (full descriptive names only)
 - [ ] Naming conventions are consistent throughout the code
 - [ ] No string/boolean outputs in interpolate() calls
 - [ ] Proper React.createElement syntax used
-- [ ] No import statements included
 
 RESPONSE FORMAT - You must respond with EXACTLY this structure:
 DURATION: [number in seconds based on composition content and timing]
@@ -550,7 +784,7 @@ DURATION: 12
 CODE:
 
 const frame = useCurrentFrame();
-const {{ width, height, fps }} = useVideoConfig();
+const { width, height, fps } = useVideoConfig();
 
 // TIMING CONSTANTS - Standard durations for consistency
 const FADE_DURATION = 20;          // Standard fade in/out
@@ -571,517 +805,557 @@ const Z_OVERLAY = 3;
 const Z_UI = 4;
 
 // SPRING CONFIG - Consistent easing
-const STANDARD_SPRING = {{ damping: 12, stiffness: 80 }};
-const GENTLE_SPRING = {{ damping: 15, stiffness: 60 }};
-const BOUNCY_SPRING = {{ damping: 8, stiffness: 100 }};
+const STANDARD_SPRING = { damping: 12, stiffness: 80 };
+const GENTLE_SPRING = { damping: 15, stiffness: 60 };
+const BOUNCY_SPRING = { damping: 8, stiffness: 100 };
 
-// === BACKGROUND VIDEO SEQUENCES WITH CROSS-FADES ===
+// FRAME CALCULATION HELPERS - Pre-defined functions
+// timeToFrames(timeInSeconds) is already available - do not redefine
 
-// Video clip 1 with fade in - strictly increasing: [0, 20, 75, 90]
-const clip1Opacity = interpolate(
-  frame,
-  [0, FADE_DURATION, 75, 90],
-  [0, 1, 1, 0]
-);
+// === BACKGROUND LAYER WITH TRANSITIONS ===
 
-// Video clip 2 with cross-fade from clip 1 - strictly increasing: [75, 90, 165, 180]
-const clip2Opacity = interpolate(
-  frame,
-  [75, 90, 165, 180],
-  [0, 1, 1, 0]
-);
-
-// Background video for remaining duration with fade in - strictly increasing: [165, 180]
-const backgroundOpacity = interpolate(
-  frame,
-  [165, 180],
-  [0, 0.6]
-);
-
-// === CONTAINER-BASED TEXT ANIMATIONS ===
-
-// Title animation with fixed container - no size jumping - strictly increasing: [30, 50]
-const titleOpacity = interpolate(
-  frame,
-  [SPRING_DELAY, SPRING_DELAY + FADE_DURATION],
-  [0, 1]
-);
-
-const titleScale = spring({{
-  frame: frame - SPRING_DELAY,
-  fps: fps,
-  config: STANDARD_SPRING
-}});
-
-// Typing effect with stable container - strictly increasing: [60, 120]
-const typingProgress = interpolate(
-  frame,
-  [60, 120],
-  [0, 1],
-  {{ extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }}
-);
-
-// Subtitle slide-in with proper timing - strictly increasing: [90, 110]
-const subtitleY = interpolate(
-  frame,
-  [90, 110],
-  [40, 0],
-  {{ easing: Easing.inOut(Easing.quad) }}  // CORRECT EASING SYNTAX
-);
-
-const subtitleOpacity = interpolate(
-  frame,
-  [90, 110],
-  [0, 1],
-  {{ easing: Easing.ease }}  // CORRECT EASING SYNTAX
-);
-
-// === CARD/CONTAINER SLIDE ANIMATION ===
-// Card slide animation with smooth easing - strictly increasing: [150, 190]
-const cardX = interpolate(
-  frame,
-  [150, 190],
-  [-400, 0],
-  {{ easing: Easing.out(Easing.cubic) }}  // CORRECT EASING SYNTAX
-);
-
-const cardOpacity = interpolate(
-  frame,
-  [150, 170],
-  [0, 1],
-  {{ easing: Easing.bezier(0.4, 0.0, 0.2, 1) }}  // CORRECT BEZIER EASING
-);
-
-// === LOGO SCALING WITH PROPER TIMING ===
-const logoScale = spring({{
-  frame: frame - 180,
-  fps: fps,
-  config: GENTLE_SPRING
-}});
-
-const logoOpacity = interpolate(
-  frame,
-  [180, 200],
-  [0, 1],
-  {{ easing: Easing.in(Easing.sine) }}  // CORRECT EASING SYNTAX
-);
-
-return React.createElement(AbsoluteFill, {{}},
-
-  // === BACKGROUND LAYER (Z-INDEX 1) ===
+// Use TransitionSeries for video sequences with proper transitions
+React.createElement(TransitionSeries, {},
+  // First video sequence
+  React.createElement(TransitionSeries.Sequence, {
+    durationInFrames: timeToFrames(3)
+  }, React.createElement(Video, {
+    src: 'https://example.com/video1.mp4',
+    trimBefore: timeToFrames(5),   // Start at 5 seconds using timeToFrames
+    trimAfter: timeToFrames(13),   // End at 13 seconds using timeToFrames
+    style: {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover'
+    }
+  })),
   
-  // Video clip 1: Trimmed section (5-8 seconds of source)
-  React.createElement(Sequence, {{
-    from: 0,
-    durationInFrames: 90,
-    children: React.createElement(Video, {{
-      src: 'https://example.com/video1.mp4',
-      trimBefore: 150,  // Start at 5 seconds (30fps) - MODERN PROP
-      trimAfter: 390,   // End at 13 seconds (30fps) - MODERN PROP
-      style: {{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover',
-        opacity: clip1Opacity,
-        zIndex: Z_BACKGROUND
-      }}
-    }})
-  }}),
+  // Transition between sequences
+  React.createElement(TransitionSeries.Transition, {
+    timing: linearTiming({durationInFrames: FADE_DURATION}),
+    presentation: fade()
+  }),
+  
+  // Second video sequence
+  React.createElement(TransitionSeries.Sequence, {
+    durationInFrames: timeToFrames(3)
+  }, React.createElement(Video, {
+    src: 'https://example.com/video2.mp4',
+    trimBefore: timeToFrames(10),  // Start at 10 seconds using timeToFrames
+    trimAfter: timeToFrames(20),   // End at 20 seconds using timeToFrames
+    style: {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover'
+    }
+  })),
+  
+  // Another transition
+  React.createElement(TransitionSeries.Transition, {
+    timing: linearTiming({durationInFrames: FADE_DURATION}),
+    presentation: slide({direction: "from-left"})
+  }),
+  
+  // Third video sequence  
+  React.createElement(TransitionSeries.Sequence, {
+    durationInFrames: timeToFrames(4)
+  }, React.createElement(Video, {
+    src: 'https://example.com/background.mp4',
+    style: {
+      width: '100%',
+      height: '100%', 
+      objectFit: 'cover',
+      opacity: 0.6 // Reduced opacity for background
+    }
+  }))
+),
 
-  // Video clip 2: Different section with cross-fade
-  React.createElement(Sequence, {{
-    from: 90,
-    durationInFrames: 90,
-    children: React.createElement(Video, {{
-      src: 'https://example.com/video2.mp4',
-      trimBefore: 300,  // Start at 10 seconds - MODERN PROP
-      trimAfter: 600,   // End at 20 seconds - MODERN PROP
-      style: {{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover',
-        opacity: clip2Opacity,
-        zIndex: Z_BACKGROUND
-      }}
-    }})
-  }}),
+// Background audio
+React.createElement(Audio, {
+  src: 'https://example.com/audio.mp3',
+  trimBefore: 0,   // MODERN PROP - start from beginning
+  trimAfter: timeToFrames(12)   // MODERN PROP - end at 12 seconds
+}),
 
-  // Background video with reduced opacity
-  React.createElement(Sequence, {{
-    from: 180,
-    durationInFrames: 180,
-    children: React.createElement(Video, {{
-      src: 'https://example.com/background.mp4',
-      style: {{
-        width: '100%',
-        height: '100%',
-        objectFit: 'cover',
-        opacity: backgroundOpacity,
-        zIndex: Z_BACKGROUND
-      }}
-    }})
-  }}),
+// === CONTENT LAYER (Z-INDEX 2) ===
 
-  // Background audio
-  React.createElement(Audio, {{
-    src: 'https://example.com/audio.mp3',
-    trimBefore: 0,   // MODERN PROP - start from beginning
-    trimAfter: 360   // MODERN PROP - end at 12 seconds
-  }}),
+// === POSITIONING EXAMPLES - Core Patterns ===
 
-  // === CONTENT LAYER (Z-INDEX 2) ===
-
-  // === POSITIONING EXAMPLES - Core Patterns ===
-
-  // PATTERN 1: CENTER ELEMENT - Perfect centering with fade transition
-  React.createElement(Sequence, {{
-    from: 0,
-    durationInFrames: 60,
-    children: (() => {{
-      const centerOpacity = interpolate(frame, [0, 15, 45, 60], [0, 1, 1, 0]);
-      const centerScale = interpolate(frame, [0, 20], [0.8, 1]);
-      
-      return React.createElement('div', {{
-        style: {{
-          // STANDARD CENTER PATTERN - Use this for perfect centering
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: `translate(-50%, -50%) scale(${{centerScale}})`,
-          width: '300px',
-          height: '100px',
-          backgroundColor: 'rgba(255, 255, 255, 0.1)',
-          border: '2px solid rgba(255, 255, 255, 0.3)',
-          borderRadius: '8px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '18px',
-          color: '#FFFFFF',
-          opacity: centerOpacity,
-          zIndex: Z_CONTENT
-        }}
-      }}, 'Perfect Center');
-    }})()
-  }}),
-
-  // PATTERN 2: FILL WITH PADDING - Responsive containers with slide-in
-  React.createElement(Sequence, {{
-    from: 20,
-    durationInFrames: 60,
-    children: (() => {{
-      const fillOpacity = interpolate(frame, [20, 35, 65, 80], [0, 1, 1, 0]);
-      const fillY = interpolate(frame, [20, 40], [20, 0]);
-      
-      return React.createElement('div', {{
-        style: {{
-          // FILL WITH PADDING PATTERN - Responsive to screen size
-          position: 'absolute',
-          top: '60px',
-          left: '60px',
-          right: '60px',
-          bottom: '60px',
-          backgroundColor: 'rgba(0, 0, 0, 0.1)',
-          border: '2px solid rgba(255, 255, 255, 0.2)',
-          borderRadius: '12px',
-          padding: '20px',
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'flex-end',
-          fontSize: '16px',
-          color: '#FFFFFF',
-          opacity: fillOpacity,
-          transform: `translateY(${{fillY}}px)`,
-          zIndex: Z_CONTENT
-        }}
-      }}, 'Fill Container');
-    }})()
-  }}),
-
-  // PATTERN 3: SAFE ZONE POSITIONING - All corner and edge placements
-  React.createElement(Sequence, {{
-    from: 10,
-    durationInFrames: 80,
-    children: (() => {{
-      const safeOpacity = interpolate(frame, [10, 25, 75, 90], [0, 1, 1, 0]);
-      const safeScale = interpolate(frame, [10, 30], [0.9, 1]);
-      
-      return React.createElement('div', {{
-        style: {{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          opacity: safeOpacity,
-          transform: `scale(${{safeScale}})`,
-          zIndex: Z_CONTENT
-        }}
-      }},
-        // TOP-LEFT: Brand/Logo placement
-        React.createElement('div', {{
-          style: {{
-            position: 'absolute',
-            top: `${{SAFE_ZONE_PADDING / 2}}px`,      // 30px from top
-            left: `${{SAFE_ZONE_PADDING / 2}}px`,     // 30px from left
-            width: '120px',
-            height: '40px',
-            backgroundColor: 'rgba(76, 205, 196, 0.9)',
-            borderRadius: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '12px',
-            color: '#FFFFFF',
-            fontWeight: 'bold'
-          }}
-        }}, 'TOP-LEFT'),
-
-        // TOP-RIGHT: Status/Info placement
-        React.createElement('div', {{
-          style: {{
-            position: 'absolute',
-            top: `${{SAFE_ZONE_PADDING / 2}}px`,      // 30px from top
-            right: `${{SAFE_ZONE_PADDING / 2}}px`,    // 30px from right
-            width: '120px',
-            height: '40px',
-            backgroundColor: 'rgba(255, 107, 107, 0.9)',
-            borderRadius: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '12px',
-            color: '#FFFFFF',
-            fontWeight: 'bold'
-          }}
-        }}, 'TOP-RIGHT'),
-
-        // BOTTOM-LEFT: Secondary info placement
-        React.createElement('div', {{
-          style: {{
-            position: 'absolute',
-            bottom: `${{SAFE_ZONE_PADDING / 2}}px`,   // 30px from bottom
-            left: `${{SAFE_ZONE_PADDING / 2}}px`,     // 30px from left
-            width: '120px',
-            height: '40px',
-            backgroundColor: 'rgba(255, 195, 0, 0.9)',
-            borderRadius: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '12px',
-            color: '#FFFFFF',
-            fontWeight: 'bold'
-          }}
-        }}, 'BOTTOM-LEFT'),
-
-        // BOTTOM-RIGHT: CTA/Action placement
-        React.createElement('div', {{
-          style: {{
-            position: 'absolute',
-            bottom: `${{SAFE_ZONE_PADDING / 2}}px`,   // 30px from bottom
-            right: `${{SAFE_ZONE_PADDING / 2}}px`,    // 30px from right
-            width: '120px',
-            height: '40px',
-            backgroundColor: 'rgba(138, 43, 226, 0.9)',
-            borderRadius: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '12px',
-            color: '#FFFFFF',
-            fontWeight: 'bold'
-          }}
-        }}, 'BOTTOM-RIGHT'),
-
-        // TOP-CENTER: Title/Header placement
-        React.createElement('div', {{
-          style: {{
-            position: 'absolute',
-            top: `${{SAFE_ZONE_PADDING / 2}}px`,      // 30px from top
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: '200px',
-            height: '40px',
-            backgroundColor: 'rgba(0, 123, 255, 0.9)',
-            borderRadius: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '12px',
-            color: '#FFFFFF',
-            fontWeight: 'bold'
-          }}
-        }}, 'TOP-CENTER'),
-
-        // BOTTOM-CENTER: Progress/Status placement
-        React.createElement('div', {{
-          style: {{
-            position: 'absolute',
-            bottom: `${{SAFE_ZONE_PADDING / 2}}px`,   // 30px from bottom
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: '200px',
-            height: '40px',
-            backgroundColor: 'rgba(40, 167, 69, 0.9)',
-            borderRadius: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '12px',
-            color: '#FFFFFF',
-            fontWeight: 'bold'
-          }}
-        }}, 'BOTTOM-CENTER'),
-
-        // LEFT-CENTER: Navigation placement
-        React.createElement('div', {{
-          style: {{
-            position: 'absolute',
-            left: `${{SAFE_ZONE_PADDING / 2}}px`,     // 30px from left
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '80px',
-            height: '100px',
-            backgroundColor: 'rgba(108, 117, 125, 0.9)',
-            borderRadius: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '10px',
-            color: '#FFFFFF',
-            fontWeight: 'bold',
-            writingMode: 'vertical-rl'
-          }}
-        }}, 'LEFT-CENTER'),
-
-        // RIGHT-CENTER: Sidebar placement
-        React.createElement('div', {{
-          style: {{
-            position: 'absolute',
-            right: `${{SAFE_ZONE_PADDING / 2}}px`,    // 30px from right
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '80px',
-            height: '100px',
-            backgroundColor: 'rgba(220, 53, 69, 0.9)',
-            borderRadius: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '10px',
-            color: '#FFFFFF',
-            fontWeight: 'bold',
-            writingMode: 'vertical-rl'
-          }}
-        }}, 'RIGHT-CENTER')
-      );
-    }})()
-  }}),
-
-  // Main title with fixed container - prevents size jumping
-  React.createElement(Sequence, {{
-    from: SPRING_DELAY,
-    durationInFrames: 150,
-    children: React.createElement('div', {{
-      style: {{
+// PATTERN 1: CENTER ELEMENT - Perfect centering with fade transition
+React.createElement(Sequence, {
+  from: 0,
+  durationInFrames: timeToFrames(2),
+  children: (() => {
+    const centerOpacity = interpolate(frame, [0, 15, timeToFrames(1.5), timeToFrames(2)], [0, 1, 1, 0]);
+    const centerScale = interpolate(frame, [0, 20], [0.8, 1]);
+    
+    return React.createElement('div', {
+      style: {
+        // STANDARD CENTER PATTERN - Use this for perfect centering
         position: 'absolute',
-        top: '30%',
+        top: '50%',
         left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '80%',
-        height: `${{TITLE_CONTAINER_HEIGHT}}px`, // Fixed height prevents jumping
+        transform: `translate(-50%, -50%) scale(${centerScale})`,
+        width: '300px',
+        height: '100px',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        border: '2px solid rgba(255, 255, 255, 0.3)',
+        borderRadius: '8px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: Z_CONTENT
-      }}
-    }}, React.createElement('div', {{
-      style: {{
-        fontSize: '72px',
-        fontWeight: 'bold',
+        fontSize: '18px',
         color: '#FFFFFF',
-        textAlign: 'center',
-        textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
-        opacity: titleOpacity,
-        transform: `scale(${{Math.max(0.1, titleScale)}})`, // Prevent scale(0) artifacts
-        lineHeight: '1.1'
-      }}
-    }}, 'Professional Title'))
-  }}),
+        opacity: centerOpacity,
+        zIndex: Z_CONTENT
+      }
+    }, 'Perfect Center');
+  })()
+}),
 
-  // Typing effect with stable container
-  React.createElement(Sequence, {{
-    from: 60,
-    durationInFrames: 120,
-    children: React.createElement('div', {{
-      style: {{
+// PATTERN 2: FILL WITH PADDING - Responsive containers with slide-in
+React.createElement(Sequence, {
+  from: timeToFrames(0.67),
+  durationInFrames: timeToFrames(2),
+  children: (() => {
+    const fillOpacity = interpolate(frame, [timeToFrames(0.67), timeToFrames(1.17), timeToFrames(2.17), timeToFrames(2.67)], [0, 1, 1, 0]);
+    const fillY = interpolate(frame, [timeToFrames(0.67), timeToFrames(1.33)], [20, 0]);
+    
+    return React.createElement('div', {
+      style: {
+        // FILL WITH PADDING PATTERN - Responsive to screen size
+        position: 'absolute',
+        top: '60px',
+        left: '60px',
+        right: '60px',
+        bottom: '60px',
+        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+        border: '2px solid rgba(255, 255, 255, 0.2)',
+        borderRadius: '12px',
+        padding: '20px',
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'flex-end',
+        fontSize: '16px',
+        color: '#FFFFFF',
+        opacity: fillOpacity,
+        transform: `translateY(${fillY}px)`,
+        zIndex: Z_CONTENT
+      }
+    }, 'Fill Container');
+  })()
+}),
+
+// PATTERN 3: SAFE ZONE POSITIONING - All corner and edge placements
+React.createElement(Sequence, {
+  from: timeToFrames(0.33),
+  durationInFrames: timeToFrames(2.67),
+  children: (() => {
+    const safeOpacity = interpolate(frame, [timeToFrames(0.33), timeToFrames(0.83), timeToFrames(2.5), timeToFrames(3)], [0, 1, 1, 0]);
+    const safeScale = interpolate(frame, [timeToFrames(0.33), timeToFrames(1)], [0.9, 1]);
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        opacity: safeOpacity,
+        transform: `scale(${safeScale})`,
+        zIndex: Z_CONTENT
+      }
+    },
+      // TOP-LEFT: Brand/Logo placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          top: `${SAFE_ZONE_PADDING / 2}px`,      // 30px from top
+          left: `${SAFE_ZONE_PADDING / 2}px`,     // 30px from left
+          width: '120px',
+          height: '40px',
+          backgroundColor: 'rgba(76, 205, 196, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'TOP-LEFT'),
+
+      // TOP-RIGHT: Status/Info placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          top: `${SAFE_ZONE_PADDING / 2}px`,      // 30px from top
+          right: `${SAFE_ZONE_PADDING / 2}px`,    // 30px from right
+          width: '120px',
+          height: '40px',
+          backgroundColor: 'rgba(255, 107, 107, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'TOP-RIGHT'),
+
+      // BOTTOM-LEFT: Secondary info placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          bottom: `${SAFE_ZONE_PADDING / 2}px`,   // 30px from bottom
+          left: `${SAFE_ZONE_PADDING / 2}px`,     // 30px from left
+          width: '120px',
+          height: '40px',
+          backgroundColor: 'rgba(255, 195, 0, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'BOTTOM-LEFT'),
+
+      // BOTTOM-RIGHT: CTA/Action placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          bottom: `${SAFE_ZONE_PADDING / 2}px`,   // 30px from bottom
+          right: `${SAFE_ZONE_PADDING / 2}px`,    // 30px from right
+          width: '120px',
+          height: '40px',
+          backgroundColor: 'rgba(138, 43, 226, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'BOTTOM-RIGHT'),
+
+      // TOP-CENTER: Title/Header placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          top: `${SAFE_ZONE_PADDING / 2}px`,      // 30px from top
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '200px',
+          height: '40px',
+          backgroundColor: 'rgba(0, 123, 255, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'TOP-CENTER'),
+
+      // BOTTOM-CENTER: Progress/Status placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          bottom: `${SAFE_ZONE_PADDING / 2}px`,   // 30px from bottom
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '200px',
+          height: '40px',
+          backgroundColor: 'rgba(40, 167, 69, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'BOTTOM-CENTER'),
+
+      // LEFT-CENTER: Navigation placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          left: `${SAFE_ZONE_PADDING / 2}px`,     // 30px from left
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: '80px',
+          height: '100px',
+          backgroundColor: 'rgba(108, 117, 125, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '10px',
+          color: '#FFFFFF',
+          fontWeight: 'bold',
+          writingMode: 'vertical-rl'
+        }
+      }, 'LEFT-CENTER'),
+
+      // RIGHT-CENTER: Sidebar placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          right: `${SAFE_ZONE_PADDING / 2}px`,    // 30px from right
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: '80px',
+          height: '100px',
+          backgroundColor: 'rgba(220, 53, 69, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '10px',
+          color: '#FFFFFF',
+          fontWeight: 'bold',
+          writingMode: 'vertical-rl'
+        }
+      }, 'RIGHT-CENTER')
+    );
+  })()
+}),
+
+// === CONTENT LAYER ANIMATIONS ===
+// For individual element animations, use interpolate() for complex effects
+
+// Slide-in animation example using interpolate()
+React.createElement(Sequence, {
+  from: timeToFrames(1),
+  durationInFrames: timeToFrames(2),
+  children: (() => {
+    const slideX = interpolate(
+      frame, 
+      [timeToFrames(1), timeToFrames(1.5)], 
+      [width, 0], 
+      {easing: Easing.out(Easing.quad)}
+    );
+    const slideOpacity = interpolate(
+      frame,
+      [timeToFrames(1), timeToFrames(1.3)],
+      [0, 1]
+    );
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: '20%',
+        left: '50%',
+        transform: `translateX(calc(-50% + ${slideX}px))`,
+        width: '300px',
+        height: '80px',
+        backgroundColor: 'rgba(255, 123, 0, 0.9)',
+        borderRadius: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '18px',
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+        opacity: slideOpacity,
+        zIndex: Z_CONTENT
+      }
+    }, 'Slide Animation');
+  })()
+}),
+
+// Scale animation example using spring()
+React.createElement(Sequence, {
+  from: timeToFrames(3.5),
+  durationInFrames: timeToFrames(1.5),
+  children: (() => {
+    const scaleValue = spring({
+      frame: frame - timeToFrames(3.5),
+      fps: fps,
+      config: BOUNCY_SPRING
+    });
+    const fadeOpacity = interpolate(
+      frame,
+      [timeToFrames(3.5), timeToFrames(3.8)],
+      [0, 1]
+    );
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: '80%',
+        left: '50%',
+        transform: `translate(-50%, -50%) scale(${Math.max(0.1, scaleValue)})`,
+        width: '400px',
+        height: '60px',
+        backgroundColor: 'rgba(138, 43, 226, 0.9)',
+        borderRadius: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '16px',
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+        opacity: fadeOpacity,
+        zIndex: Z_CONTENT
+      }
+    }, 'Scale Animation');
+  })()
+}),
+
+// Main title with fixed container - prevents size jumping
+React.createElement(Sequence, {
+  from: SPRING_DELAY,
+  durationInFrames: timeToFrames(5),
+  children: React.createElement('div', {
+    style: {
+      position: 'absolute',
+      top: '30%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: '80%',
+      height: `${TITLE_CONTAINER_HEIGHT}px`, // Fixed height prevents jumping
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: Z_CONTENT
+    }
+  }, React.createElement('div', {
+    style: {
+      fontSize: '72px',
+      fontWeight: 'bold',
+      color: '#FFFFFF',
+      textAlign: 'center',
+      textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+      opacity: interpolate(frame, [SPRING_DELAY, SPRING_DELAY + FADE_DURATION], [0, 1]),
+      transform: `scale(${Math.max(0.1, spring({
+        frame: frame - SPRING_DELAY,
+        fps: fps,
+        config: STANDARD_SPRING
+      }))})`, // Prevent scale(0) artifacts
+      lineHeight: '1.1'
+    }
+  }, 'Professional Title'))
+}),
+
+// Typing effect with stable container
+React.createElement(Sequence, {
+  from: timeToFrames(2),
+  durationInFrames: timeToFrames(4),
+  children: (() => {
+    const typingProgress = interpolate(
+      frame,
+      [timeToFrames(2), timeToFrames(4)],
+      [0, 1],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+    );
+    
+    return React.createElement('div', {
+      style: {
         position: 'absolute',
         top: '50%',
         left: '50%',
         transform: 'translate(-50%, -50%)',
         width: '70%',
-        height: `${{SUBTITLE_CONTAINER_HEIGHT}}px`, // Fixed container height
+        height: `${SUBTITLE_CONTAINER_HEIGHT}px`, // Fixed container height
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: 'rgba(0, 0, 0, 0.7)',
         borderRadius: '12px',
-        padding: `${{CARD_PADDING}}px`,
+        padding: `${CARD_PADDING}px`,
         zIndex: Z_CONTENT
-      }}
-    }}, React.createElement('div', {{
-      style: {{
+      }
+    }, React.createElement('div', {
+      style: {
         fontSize: '32px',
         color: '#FFFFFF',
         textAlign: 'center',
         fontWeight: '500',
         width: '100%' // Takes full container width
-      }}
-    }}, 'Dynamic Content Here'.substring(0, Math.floor(typingProgress * 'Dynamic Content Here'.length))))
-  }}),
+      }
+    }, 'Dynamic Content Here'.substring(0, Math.floor(typingProgress * 'Dynamic Content Here'.length))));
+  })()
+}),
 
-  // Subtitle with smooth slide-in
-  React.createElement(Sequence, {{
-    from: 90,
-    durationInFrames: 180,
-    children: React.createElement('div', {{
-      style: {{
+// Subtitle with smooth slide-in
+React.createElement(Sequence, {
+  from: timeToFrames(3),
+  durationInFrames: timeToFrames(6),
+  children: (() => {
+    const subtitleY = interpolate(
+      frame,
+      [timeToFrames(3), timeToFrames(3.67)],
+      [40, 0],
+      { easing: Easing.inOut(Easing.quad) }  // CORRECT EASING SYNTAX
+    );
+
+    const subtitleOpacity = interpolate(
+      frame,
+      [timeToFrames(3), timeToFrames(3.67)],
+      [0, 1],
+      { easing: Easing.ease }  // CORRECT EASING SYNTAX
+    );
+    
+    return React.createElement('div', {
+      style: {
         position: 'absolute',
         top: '70%',
         left: '50%',
-        transform: `translate(-50%, calc(-50% + ${{subtitleY}}px))`,
+        transform: `translate(-50%, calc(-50% + ${subtitleY}px))`,
         width: '60%',
         textAlign: 'center',
         fontSize: '28px',
         color: '#FFFFFF',
         opacity: subtitleOpacity,
         backgroundColor: 'rgba(0, 0, 0, 0.6)',
-        padding: `${{CARD_PADDING / 2}}px ${{CARD_PADDING}}px`,
+        padding: `${CARD_PADDING / 2}px ${CARD_PADDING}px`,
         borderRadius: '8px',
         zIndex: Z_CONTENT
-      }}
-    }}, 'Supporting Information')
-  }}),
+      }
+    }, 'Supporting Information');
+  })()
+}),
 
-  // === OVERLAY LAYER (Z-INDEX 3) ===
+// === OVERLAY LAYER (Z-INDEX 3) ===
 
-  // Sliding card container with proper positioning
-  React.createElement(Sequence, {{
-    from: 150,
-    durationInFrames: 120,
-    children: React.createElement('div', {{
-      style: {{
+// Sliding card container with proper positioning
+React.createElement(Sequence, {
+  from: timeToFrames(5),
+  durationInFrames: timeToFrames(4),
+  children: (() => {
+    const cardX = interpolate(
+      frame,
+      [timeToFrames(5), timeToFrames(6.33)],
+      [-400, 0],
+      { easing: Easing.out(Easing.cubic) }  // CORRECT EASING SYNTAX
+    );
+
+    const cardOpacity = interpolate(
+      frame,
+      [timeToFrames(5), timeToFrames(5.67)],
+      [0, 1],
+      { easing: Easing.bezier(0.4, 0.0, 0.2, 1) }  // CORRECT BEZIER EASING
+    );
+    
+    return React.createElement('div', {
+      style: {
         position: 'absolute',
-        top: `${{SAFE_ZONE_PADDING}}px`,
-        left: `${{SAFE_ZONE_PADDING}}px`,
-        right: `${{SAFE_ZONE_PADDING}}px`,
-        bottom: `${{SAFE_ZONE_PADDING}}px`,
+        top: `${SAFE_ZONE_PADDING}px`,
+        left: `${SAFE_ZONE_PADDING}px`,
+        right: `${SAFE_ZONE_PADDING}px`,
+        bottom: `${SAFE_ZONE_PADDING}px`,
         pointerEvents: 'none',
         zIndex: Z_OVERLAY
-      }}
-    }}, React.createElement('div', {{
-      style: {{
+      }
+    }, React.createElement('div', {
+      style: {
         position: 'absolute',
         bottom: '0',
         right: '0',
@@ -1089,93 +1363,110 @@ return React.createElement(AbsoluteFill, {{}},
         height: '200px',
         backgroundColor: 'rgba(255, 255, 255, 0.95)',
         borderRadius: '16px',
-        padding: `${{CARD_PADDING}}px`,
-        transform: `translateX(${{cardX}}px)`,
+        padding: `${CARD_PADDING}px`,
+        transform: `translateX(${cardX}px)`,
         opacity: cardOpacity,
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center'
-      }}
-    }}, 
-      React.createElement('div', {{
-        style: {{
+      }
+    }, 
+      React.createElement('div', {
+        style: {
           fontSize: '24px',
           fontWeight: 'bold',
           color: '#333333',
           marginBottom: '12px'
-        }}
-      }}, 'Key Information'),
-      React.createElement('div', {{
-        style: {{
+        }
+      }, 'Key Information'),
+      React.createElement('div', {
+        style: {
           fontSize: '18px',
           color: '#666666',
           lineHeight: '1.4'
-        }}
-      }}, 'Supporting details with proper spacing and hierarchy')
-    ))
-  }}),
+        }
+      }, 'Supporting details with proper spacing and hierarchy')
+    ));
+  })()
+}),
 
-  // === UI LAYER (Z-INDEX 4) ===
+// === UI LAYER (Z-INDEX 4) ===
 
-  // Logo with spring animation - top-right safe zone
-  React.createElement(Sequence, {{
-    from: 180,
-    durationInFrames: 180,
-    children: React.createElement('div', {{
-      style: {{
+// Logo with spring animation - top-right safe zone
+React.createElement(Sequence, {
+  from: timeToFrames(6),
+  durationInFrames: timeToFrames(6),
+  children: (() => {
+    const logoScale = spring({
+      frame: frame - timeToFrames(6),
+      fps: fps,
+      config: GENTLE_SPRING
+    });
+
+    const logoOpacity = interpolate(
+      frame,
+      [timeToFrames(6), timeToFrames(6.67)],
+      [0, 1],
+      { easing: Easing.in(Easing.sine) }  // CORRECT EASING SYNTAX
+    );
+    
+    return React.createElement('div', {
+      style: {
         position: 'absolute',
-        top: `${{SAFE_ZONE_PADDING / 2}}px`,
-        right: `${{SAFE_ZONE_PADDING / 2}}px`,
+        top: `${SAFE_ZONE_PADDING / 2}px`,
+        right: `${SAFE_ZONE_PADDING / 2}px`,
         width: '120px',
         height: '120px',
         backgroundColor: '#FF6B6B',
         borderRadius: '50%',
-        transform: `scale(${{Math.max(0.1, logoScale)}})`,
+        transform: `scale(${Math.max(0.1, logoScale)})`,
         opacity: logoOpacity,
         zIndex: Z_UI,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)'
-      }}
-    }}, React.createElement('div', {{
-      style: {{
+      }
+    }, React.createElement('div', {
+      style: {
         color: '#FFFFFF',
         fontSize: '24px',
         fontWeight: 'bold'
-      }}
-    }}, 'LOGO'))
-  }}),
+      }
+    }, 'LOGO'));
+  })()
+}),
 
-  // Progress indicator with smooth animation
-  React.createElement(Sequence, {{
-    from: 0,
-    durationInFrames: 360,
-    children: React.createElement('div', {{
-      style: {{
-        position: 'absolute',
-        bottom: `${{SAFE_ZONE_PADDING / 3}}px`,
-        left: `${{SAFE_ZONE_PADDING}}px`,
-        right: `${{SAFE_ZONE_PADDING}}px`,
-        height: '4px',
-        backgroundColor: 'rgba(255, 255, 255, 0.3)',
-        borderRadius: '2px',
-        zIndex: Z_UI
-      }}
-    }}, React.createElement('div', {{
-      style: {{
-        width: `${{(frame / 360) * 100}}%`,
-        height: '100%',
-        backgroundColor: '#4ECDC4',
-        borderRadius: '2px',
-        transition: 'width 0.1s ease'
-      }}
-    }}))
-  }})
+// Progress indicator with smooth animation
+React.createElement(Sequence, {
+  from: 0,
+  durationInFrames: timeToFrames(12),
+  children: React.createElement('div', {
+    style: {
+      position: 'absolute',
+      bottom: `${SAFE_ZONE_PADDING / 3}px`,
+      left: `${SAFE_ZONE_PADDING}px`,
+      right: `${SAFE_ZONE_PADDING}px`,
+      height: '4px',
+      backgroundColor: 'rgba(255, 255, 255, 0.3)',
+      borderRadius: '2px',
+      zIndex: Z_UI
+    }
+  }, React.createElement('div', {
+    style: {
+      width: `${(frame / timeToFrames(12)) * 100}%`,
+      height: '100%',
+      backgroundColor: '#4ECDC4',
+      borderRadius: '2px',
+      transition: 'width 0.1s ease'
+    }
+  }))
+})
+
 );
 
-**CRITICAL**: DO NOT include any import statements in your code. All necessary imports (React, useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, etc.) are already provided. Start your code directly with variable declarations and function calls."""
+**CRITICAL**: DO NOT include any import statements in your code. All necessary imports (React, useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, fade, slide, wipe, TransitionSeries, etc.) are already provided. Start your code directly with variable declarations and function calls."""
 
     # User prompt with specific context
     user_prompt = f"""CURRENT COMPOSITION CODE:
@@ -1202,28 +1493,54 @@ async def generate_composition_with_validation(
         # Build the edit prompt
         system_instruction, user_prompt = build_edit_prompt(request)
 
-        # Generate code with AI
-        if use_vertex_ai:
-            response = gemini_api.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.3
-                )
-            )
-        else:
-            response = gemini_api.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.3
-                )
-            )
+        # Check if Claude should be used
+        use_claude = os.getenv('USE_CLAUDE', '').lower() in ['true', '1', 'yes']
         
-        # Parse the AI response to extract duration and code
-        raw_response = response.text.strip()
+        if use_claude:
+            # Use Claude for code generation
+            claude_api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not claude_api_key:
+                raise Exception("ANTHROPIC_API_KEY environment variable is required when USE_CLAUDE is enabled")
+            
+            client = anthropic.Anthropic(api_key=claude_api_key)
+            
+            response = client.messages.create(
+                max_tokens=8192,
+                #model="claude-sonnet-4-20250514",
+                model="claude-3-5-haiku-20241022",
+                temperature=0.3,
+                system=system_instruction,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": user_prompt
+                    }
+                ]
+            )
+            raw_response = response.content[0].text.strip()
+            
+        elif use_vertex_ai:
+            # Use Vertex AI Gemini
+            response = gemini_api.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.3,
+                )
+            )
+            raw_response = response.text.strip()
+        else:
+            # Use standard Gemini API
+            response = gemini_api.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.3,
+                )
+            )
+            raw_response = response.text.strip()
         print(f"Raw AI response (first 200 chars): {raw_response[:200]}...")
         
         # Log conversation for fine-tuning dataset

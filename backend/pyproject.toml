@@ -8,6 +8,8 @@ dependencies = [
     "fastapi[standard]>=0.115.13",
     "google-genai>=1.22.0",
     "google-cloud-storage>=2.10.0",
+    "anthropic>=0.40.0",
+    "uvicorn>=0.34.3",
 ]
 
 [project.optional-dependencies]
