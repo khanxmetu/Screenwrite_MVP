@@ -431,14 +431,45 @@ def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
 • interpolate(frame, inputRange, outputRange, options?): Animate numeric values
 • spring({frame, fps, config}): Physics-based animations with {damping: number, stiffness: number}
 
+🚨 **CRITICAL TIMING RULE: GLOBAL vs SEQUENCE-RELATIVE FRAMES**
+
+**⚠️ MOST COMMON BUG: Using sequence-relative timing in interpolate()**
+
+The `frame` variable in `interpolate()` is ALWAYS the GLOBAL frame number, NOT relative to the Sequence start!
+
+**❌ WRONG (sequence-relative timing):**
+```javascript
+React.createElement(Sequence, {{
+  from: timeToFrames(5.5),  // Sequence starts at 5.5s globally
+  durationInFrames: timeToFrames(3)
+}}, (() => {{
+  // WRONG: Using sequence-relative timing [0, 0.5, 2.5, 3]
+  const opacity = interpolate(frame, [0, timeToFrames(0.5), timeToFrames(2.5), timeToFrames(3)], [0, 1, 1, 0]);
+  // This will animate at wrong times because frame is GLOBAL!
+```
+
+**✅ CORRECT (global timing):**
+```javascript
+React.createElement(Sequence, {{
+  from: timeToFrames(5.5),  // Sequence starts at 5.5s globally
+  durationInFrames: timeToFrames(3)
+}}, (() => {{
+  // CORRECT: Using global timing [5.5, 6, 8, 8.5]
+  const opacity = interpolate(frame, [timeToFrames(5.5), timeToFrames(6), timeToFrames(8), timeToFrames(8.5)], [0, 1, 1, 0]);
+  // This animates from 5.5s-6s (fade in) and 8s-8.5s (fade out) GLOBALLY
+```
+
+**🎯 TIMING CALCULATION FORMULA:**
+1. When should text appear globally? → Use that exact time in interpolate()
+2. Text at 10s globally → `timeToFrames(10)` in interpolate array
+3. NEVER use `[0, timeToFrames(0.5), ...]` unless Sequence starts at 0s!
+
 **MEDIA COMPONENTS:**
 • Video: {src: string, trimBefore?: number, trimAfter?: number, volume?: number, playbackRate?: number, muted?: boolean, style?: object}
 • Audio: {src: string, trimBefore?: number, trimAfter?: number, volume?: number, playbackRate?: number, muted?: boolean}
 • Img: {src: string, style?: object, placeholder?: string}
 
 ⚠️ CRITICAL TRIMMING RULE: trimBefore and trimAfter use FRAMES, not seconds!
-✅ CORRECT: trimBefore: timeToFrames(155) // Trims 155 seconds using helper function
-❌ WRONG: trimBefore: 155 // This only trims 155 frames (5.17 seconds at 30fps)
 → Always use timeToFrames(): timeToFrames(155) converts 155 seconds to frames
 
 🚨 **CRITICAL TRIM CALCULATION - MUST GET THIS RIGHT:**
@@ -449,32 +480,9 @@ def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
 - These define which portion of the source video to play
 
 **✅ CORRECT CALCULATION:**
-```javascript
-// To play from 14s to 16.6s in source video (2.6s duration):
-const startTimeSeconds = 14;
-const durationSeconds = 2.6;
-const endTimeSeconds = startTimeSeconds + durationSeconds; // 16.6
-
-const trimBefore = timeToFrames(startTimeSeconds); // timeToFrames(14) = 420 frames
-const trimAfter = timeToFrames(endTimeSeconds);    // timeToFrames(16.6) = 498 frames
-
-// Remotion will play frames 420 to 498 from source video
-```
-
-**❌ WRONG CALCULATIONS - NEVER DO THESE:**
-```javascript
-// WRONG: Using video file duration in calculation
-const trimAfter = VIDEO_DURATION_IN_FRAMES - (trimBefore + playDuration);
-
-// WRONG: Subtracting from total duration  
-const trimAfter = totalVideoLength - trimBefore - segmentLength;
-
-// WRONG: Using negative values or complex math
-const trimAfter = trimBefore + playDuration - VIDEO_DURATION_IN_FRAMES;
-```
-
 **🎯 SIMPLE FORMULA - ALWAYS USE THIS:**
 ```javascript
+// To play from 14s to 16.6s in source video (2.6s duration):
 const startSeconds = 14; // Where to start in source video
 const playSeconds = 2.6; // How long to play
 
@@ -498,6 +506,26 @@ EXAMPLE CORRECT USAGE:
 
 🚨 **USE TransitionSeries FOR ALL MEDIA TRANSITIONS - NOT manual interpolation**
 
+**🚨 CRITICAL OVERLAP TIMING RULE (FROM REMOTION DOCS):**
+**TransitionSeries.Sequence durations = intended clip durations (USE FULL DURATIONS)**
+- Each sequence uses its full intended durationInFrames
+- Transitions create overlaps that REDUCE total timeline duration  
+- Formula: Total = Seq1Duration + Seq2Duration - TransitionDuration
+
+**OVERLAP EXAMPLE (VERIFIED WITH REMOTION DOCS):**
+Synth: "Beach 7s, 0.5s crossfade, Forest 5s" 
+```javascript
+React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(7)}, // Full 7s
+  React.createElement(Video, {...})),
+React.createElement(TransitionSeries.Transition, {
+  timing: linearTiming({durationInFrames: timeToFrames(0.5)}), // 0.5s transition
+  presentation: fade()
+}),
+React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(5)}, // Full 5s
+  React.createElement(Video, {...}))
+```
+**Result:** Total composition = 11.5s (7+5-0.5), sequences overlap during transition automatically!
+
 **TransitionSeries Components:**
 • TransitionSeries: Container for sequences with transitions between them
 • TransitionSeries.Sequence: Individual scenes with durationInFrames
@@ -515,9 +543,6 @@ EXAMPLE CORRECT USAGE:
 • springTiming({config?: {damping: number, stiffness: number}, durationInFrames?: number}): Spring-based timing
 
 🚨 **CRITICAL TRANSITION RULES:**
-❌ FORBIDDEN: const opacity = interpolate(frame, [0, 30], [0, 1]) for Video/Audio fade effects
-❌ FORBIDDEN: style: { opacity: fadeOpacity } on Video/Audio components
-❌ FORBIDDEN: Manual opacity animations on ANY Video/Audio component (even single videos)
 ✅ REQUIRED: TransitionSeries.Transition with presentation: fade() for ALL Video/Audio fade effects
 ✅ REQUIRED: TransitionSeries.Transition with presentation: slide() for ALL Video/Audio slide effects
 ✅ REQUIRED: Use linearTiming() or springTiming() for transition duration
@@ -594,20 +619,6 @@ springTiming({
 })
 ```
 
-🎯 **TRANSITION STRUCTURE RULES:**
-1. TransitionSeries can only contain TransitionSeries.Sequence and TransitionSeries.Transition
-2. At least one Sequence must come before or after each Transition
-3. Two Transitions cannot be next to each other
-4. Transition duration cannot be longer than adjacent sequence durations
-5. Total duration = sum of all sequences minus overlapping transition durations
-
-⚠️ **WHEN TO USE WHAT:**
-• **TransitionSeries + fade()**: For ANY opacity fade-in/fade-out between sequences
-• **TransitionSeries + slide()**: For ANY slide animations between sequences  
-• **TransitionSeries + wipe()**: For ANY wipe effects between sequences
-• **interpolate()**: ONLY for scaling, rotation, complex custom animations within sequences
-• **NEVER interpolate()**: For basic opacity/position transitions between media
-
 **EASING FUNCTIONS** - Use EXACT syntax:
 ✅ CORRECT: easing: Easing.linear, easing: Easing.ease, easing: Easing.quad, easing: Easing.cubic
 ✅ CORRECT: easing: Easing.sin, easing: Easing.circle, easing: Easing.exp, easing: Easing.bounce
@@ -637,13 +648,6 @@ springTiming({
    ```
    → ALWAYS use the pre-defined 'frame' variable directly
 
-2. **🚨 TRANSITIONSERIES vs INTERPOLATE USAGE:**
-   ✅ CORRECT: TransitionSeries for ALL Video/Audio fade/slide/wipe effects (even single videos)
-   ✅ CORRECT: interpolate() for animations WITHIN individual sequences (scaling, rotation, position)
-   ❌ WRONG: interpolate() for ANY opacity fade on Video/Audio components
-   ❌ WRONG: style: { opacity: interpolate(...) } on Video/Audio components
-   → ALWAYS use TransitionSeries.Transition with fade() for Video/Audio opacity effects
-
 3. **interpolate() OUTPUT TYPES:**
    ✅ CORRECT: interpolate(frame, [0, 100], [0, 1, 0.5]) // Numbers only
    ❌ WRONG: interpolate(frame, [0, 100], ['hidden', 'visible']) // No strings
@@ -666,6 +670,9 @@ springTiming({
    ✅ CORRECT: React.createElement(Sequence, {from: 0, durationInFrames: 60, children: content})
 
 8. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
+   ⚠️ **TEXT OVER VIDEO CRITICAL:** Text elements MUST include `zIndex` to ensure visibility over video content.
+   ✅ CORRECT: style: { position: 'absolute', zIndex: 10, color: 'white', ... }
+   ❌ WRONG: style: { position: 'absolute', color: 'white', ... } // Missing zIndex - text may be hidden behind video
 
 📐 **POSITIONING FUNDAMENTALS - MASTER THESE PATTERNS:**
 
@@ -780,6 +787,7 @@ style: {
 
 ⚠️ **PRE-SUBMISSION CHECKLIST:**
 Before submitting your code, verify:
+- [ ] 🚨 Code MUST start with `return` statement - function must return JSX
 - [ ] 🚨 NO useCurrentFrame() calls inside Sequence children - USE 'frame' variable directly
 - [ ] 🚨 NO frame variable definition - it's already available in execution environment
 - [ ] 🚨 NO manual interpolation for fade/slide/wipe on Video/Audio - USE TransitionSeries.Transition ALWAYS
@@ -797,11 +805,32 @@ DURATION: [number in seconds based on composition content and timing]
 CODE:
 [raw JavaScript code - no markdown blocks]
 
+🚨 **CRITICAL**: Your generated code MUST start with a `return` statement. The code is executed inside a function, so it must return the JSX element.
+
+✅ CORRECT: `return React.createElement(AbsoluteFill, {}, ...)`
+❌ WRONG: `React.createElement(AbsoluteFill, {}, ...)` (missing return)
+
 # Complete Remotion Composition Template
 
 ## EXAMPLE RESPONSE:
 DURATION: 12
 CODE:
+
+return React.createElement(AbsoluteFill, {
+  style: { backgroundColor: '#000000' }
+},
+  // Your composition content here
+  React.createElement('div', {
+    style: {
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      color: 'white',
+      fontSize: '48px'
+    }
+  }, 'Sample Content')
+);
 
 const { width, height, fps } = useVideoConfig();
 

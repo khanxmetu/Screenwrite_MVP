@@ -52,10 +52,36 @@ You are editing an existing composition. Output ONLY the specific changes, addit
 AVAILABLE OPERATIONS:
 
 TRANSITIONS:
-🎬 **CRITICAL: ALL TRANSITIONS BETWEEN TWO SCENES REQUIRE OVERLAP TIMING**
+🎬 **CRITICAL: REMOTION TRANSITIONSERIES OVERLAP MECHANICS**
 
-COMPONENTS & LAYOUT:
-- Absolute positioned containers (full control)
+**🚨 FUNDAMENTAL RULE (CONFIRMED FROM REMOTION DOCS):**
+- Each sequence keeps its specified durationInFrames  
+- Transitions create overlaps that REDUCE total timeline duration
+- Formula: Total = Seq1Duration + Seq2Duration - TransitionDuration
+
+**OVERLAP TIMING FORMULA:**
+When user says: "Clip A (10s), 1s transition, Clip B (10s)"
+
+**Timeline Reality:**
+- Clip A: durationInFrames = 10s (plays fully)
+- Clip B: durationInFrames = 10s (plays fully) 
+- Transition: 1s overlap period (both visible simultaneously)
+- Total composition: 19s (10+10-1, NOT 20s or 21s!)
+
+**CRITICAL CALCULATION:**
+- Sequence durations = intended durations (unchanged)
+- Total timeline = Sum of all sequence durations - Sum of all transition durations
+- Overlaps happen automatically in TransitionSeries
+
+**EXAMPLE BREAKDOWN:**
+User: "Beach scene 7s, 0.5s crossfade, Forest scene 5s"
+- Beach sequence: durationInFrames = 7s
+- Forest sequence: durationInFrames = 5s  
+- Transition: 0.5s crossfade
+- Total composition: 11.5s (7+5-0.5)
+
+**CRITICAL:** Sequence durations are the actual clip lengths - TransitionSeries handles overlaps!
+
 - Timeline sequencing with frame-precise timing control
 - Video playback with source files
 - Audio playback with source files  
