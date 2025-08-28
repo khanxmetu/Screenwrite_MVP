@@ -34,7 +34,6 @@ export function DynamicComposition({
   tsxCode,
   backgroundColor = "#000000",
 }: DynamicCompositionProps) {
-  const frame = useCurrentFrame();
   const [currentCode, setCurrentCode] = useState(tsxCode);
 
   // Update current code when tsxCode prop changes
@@ -98,7 +97,7 @@ export function DynamicComposition({
       'iris', // Pass iris transition
       'linearTiming', // Pass linearTiming
       'springTiming', // Pass springTiming
-      'currentFrameValue', // Renamed to avoid conflicts
+      'frame', // Pass frame directly as global variable
       'videoConfigValue', // Renamed to avoid conflicts
       'currentScaleValue', // Renamed to avoid conflicts
       'Player',
@@ -127,7 +126,7 @@ export function DynamicComposition({
       // fade() returns a transition object to use with TransitionSeries.Transition
       
       // Safe interpolate wrapper that sorts inputRange and removes duplicates
-      const safeInterpolate = (frame, inputRange, outputRange, options = {}) => {
+      const safeInterpolate = (frameValue, inputRange, outputRange, options = {}) => {
         // Create paired array of [input, output] to maintain correspondence
         const paired = inputRange.map((input, index) => ({
           input: input,
@@ -152,7 +151,7 @@ export function DynamicComposition({
         if (uniquePaired.length === 1) {
           const singleValue = uniquePaired[0];
           return interpolate(
-            frame,
+            frameValue,
             [singleValue.input, singleValue.input + 1],
             [singleValue.output, singleValue.output],
             options
@@ -163,11 +162,10 @@ export function DynamicComposition({
         const safeInputRange = uniquePaired.map(pair => pair.input);
         const safeOutputRange = uniquePaired.map(pair => pair.output);
         
-        return interpolate(frame, safeInputRange, safeOutputRange, options);
+        return interpolate(frameValue, safeInputRange, safeOutputRange, options);
       };
       
       // Create helper functions that use the passed values
-      const useCurrentFrame = () => currentFrameValue;
       const useVideoConfig = () => videoConfigValue;
       const useCurrentScale = () => currentScaleValue;
       

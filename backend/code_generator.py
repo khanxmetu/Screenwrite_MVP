@@ -39,6 +39,8 @@ def create_simplified_system_instruction(original_system_instruction: str) -> st
 
 **CRITICAL**: DO NOT include any import statements in your code. All necessary imports (React, useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, etc.) are already provided. Start your code directly with variable declarations and function calls.
 
+**CRITICAL**: DO NOT define 'frame' variable - it is already available in the execution environment. Never include `const frame = useCurrentFrame();` in your generated code. Just use it!
+
 RESPONSE FORMAT - You must respond with EXACTLY this structure:
 DURATION: [number in seconds based on composition content and timing]
 CODE:
@@ -619,35 +621,51 @@ springTiming({
 - Use 'div' elements for text (no Text component in Remotion)
 ⚠️ **CRITICAL RULES:**
 
-1. **🚨 TRANSITIONSERIES vs INTERPOLATE USAGE:**
+1. **🚨 FRAME USAGE IN SEQUENCES - Use 'frame' variable directly:**
+   ✅ CORRECT: Use frame variable directly (it's pre-defined in execution environment)
+   ```javascript
+   React.createElement(Sequence, {}, (() => {
+     const opacity = interpolate(frame, [0, 30], [0, 1]);
+     return React.createElement('div', {style: {opacity}}, 'Text');
+   })())
+   ```
+   ❌ FORBIDDEN: Never call useCurrentFrame() inside Sequence children (breaks Rules of Hooks)
+   ```javascript
+   React.createElement(Sequence, {}, (() => {
+     const currentFrame = useCurrentFrame(); // ❌ FATAL ERROR
+   })())
+   ```
+   → ALWAYS use the pre-defined 'frame' variable directly
+
+2. **🚨 TRANSITIONSERIES vs INTERPOLATE USAGE:**
    ✅ CORRECT: TransitionSeries for ALL Video/Audio fade/slide/wipe effects (even single videos)
    ✅ CORRECT: interpolate() for animations WITHIN individual sequences (scaling, rotation, position)
    ❌ WRONG: interpolate() for ANY opacity fade on Video/Audio components
    ❌ WRONG: style: { opacity: interpolate(...) } on Video/Audio components
    → ALWAYS use TransitionSeries.Transition with fade() for Video/Audio opacity effects
 
-2. **interpolate() OUTPUT TYPES:**
+3. **interpolate() OUTPUT TYPES:**
    ✅ CORRECT: interpolate(frame, [0, 100], [0, 1, 0.5]) // Numbers only
    ❌ WRONG: interpolate(frame, [0, 100], ['hidden', 'visible']) // No strings
    ❌ WRONG: interpolate(frame, [0, 100], [true, false]) // No booleans
    → For strings: Use conditionals instead: opacity > 0.5 ? 'block' : 'none'
 
-3. **EASING SYNTAX:**
+4. **EASING SYNTAX:**
    ✅ CORRECT: {easing: Easing.inOut(Easing.quad)}
    ❌ WRONG: {easing: 'ease-in-out'}
 
-4. **CSS PROPERTIES:**
+5. **CSS PROPERTIES:**
    ✅ CORRECT: backgroundColor, fontSize, fontWeight, borderRadius
    ❌ WRONG: background-color, font-size, font-weight, border-radius
 
-5. **SPRING CONFIG:**
+6. **SPRING CONFIG:**
    ✅ CORRECT: {damping: 12, stiffness: 80}
    ❌ WRONG: {dampening: 12, stiffness: 80}
 
-6. **SEQUENCE CHILDREN:**
+7. **SEQUENCE CHILDREN:**
    ✅ CORRECT: React.createElement(Sequence, {from: 0, durationInFrames: 60, children: content})
 
-7. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
+8. **DOM LAYERING:** Elements rendered LATER appear ON TOP. Place overlays AFTER background elements.
 
 📐 **POSITIONING FUNDAMENTALS - MASTER THESE PATTERNS:**
 
@@ -762,6 +780,8 @@ style: {
 
 ⚠️ **PRE-SUBMISSION CHECKLIST:**
 Before submitting your code, verify:
+- [ ] 🚨 NO useCurrentFrame() calls inside Sequence children - USE 'frame' variable directly
+- [ ] 🚨 NO frame variable definition - it's already available in execution environment
 - [ ] 🚨 NO manual interpolation for fade/slide/wipe on Video/Audio - USE TransitionSeries.Transition ALWAYS
 - [ ] 🚨 NO style: { opacity: interpolate(...) } on Video/Audio components
 - [ ] No import statements included
@@ -783,8 +803,22 @@ CODE:
 DURATION: 12
 CODE:
 
-const frame = useCurrentFrame();
 const { width, height, fps } = useVideoConfig();
+
+// 🚨 CRITICAL: In Sequence children, use the 'frame' variable directly - it's already available
+// ✅ CORRECT: Use frame variable directly in Sequences
+// React.createElement(Sequence, {}, (() => {
+//   const opacity = interpolate(frame, [0, 30], [0, 1]);
+//   return React.createElement('div', {style: {opacity}}, 'Text');
+// })())
+//
+// ❌ WRONG: Never call useCurrentFrame() inside Sequence children
+// React.createElement(Sequence, {}, (() => {
+//   const currentFrame = useCurrentFrame(); // ❌ FORBIDDEN - breaks Rules of Hooks
+// })())
+//
+// ❌ WRONG: Never define frame variable - it's already available
+// const frame = useCurrentFrame(); // ❌ FORBIDDEN - already defined
 
 // TIMING CONSTANTS - Standard durations for consistency
 const FADE_DURATION = 20;          // Standard fade in/out
