@@ -23,7 +23,7 @@ from synth import synthesize_request
 load_dotenv()
 
 # Get API key (used for both regular and Vertex AI fallback)
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 # Check if we should use Vertex AI
 USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"

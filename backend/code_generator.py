@@ -531,6 +531,42 @@ React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(5
 • TransitionSeries.Sequence: Individual scenes with durationInFrames
 • TransitionSeries.Transition: Transitions between sequences with timing and presentation
 
+**🚨 CRITICAL: EMPTY SEQUENCE PREVENTION**
+**NEVER create empty TransitionSeries.Sequence components!**
+```javascript
+// ❌ WRONG - Empty sequence (causes runtime error):
+React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(3)})
+
+// ✅ CORRECT - Sequence with content (duration = actual content duration):
+React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(6)},
+  React.createElement(Video, {
+    src: "...",
+    trimBefore: timeToFrames(10),
+    trimAfter: timeToFrames(16)  // 6 seconds of content
+  }))
+```
+**RULE:** Every TransitionSeries.Sequence MUST contain child elements AND durationInFrames should match the actual content duration (NOT content + transition duration)
+
+**🚨 CRITICAL: FADE ENDINGS**
+**For fade endings, you MUST include a final sequence after the transition!**
+```javascript
+// ❌ WRONG - Ends with transition (causes hard cut):
+React.createElement(TransitionSeries.Sequence, {...video...}),
+React.createElement(TransitionSeries.Transition, {presentation: fade()})  // Hard cut!
+
+// ✅ CORRECT - Fade to final sequence:
+React.createElement(TransitionSeries.Sequence, {...video...}),
+React.createElement(TransitionSeries.Transition, {
+  timing: linearTiming({durationInFrames: timeToFrames(1)}),
+  presentation: fade()
+}),
+React.createElement(TransitionSeries.Sequence, {
+  durationInFrames: timeToFrames(2)  // Final sequence duration
+}, React.createElement('div', {style: {backgroundColor: '#000000', width: '100%', height: '100%'}}))
+```
+**RULE:** Transitions need a target sequence to fade INTO. For fade endings, create a final sequence with appropriate content.
+
+
 **Transition Functions Available:**
 • fade(): Simple opacity transition between scenes
 • slide(): Slide transition with direction: {direction: "from-left" | "from-right" | "from-top" | "from-bottom"}
@@ -1596,7 +1632,7 @@ async def generate_composition_with_validation(
         else:
             # Use standard Gemini API
             response = gemini_api.models.generate_content(
-                model="gemini-2.5-pro",
+                model="gemini-2.5-flash",
                 contents=user_prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,

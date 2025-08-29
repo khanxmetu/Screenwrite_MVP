@@ -296,7 +296,7 @@ ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or referenc
         )
         
         response = gemini_api.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -490,7 +490,7 @@ ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or referenc
         )
         
         response = gemini_api.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-pro",
             contents=content_parts,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
