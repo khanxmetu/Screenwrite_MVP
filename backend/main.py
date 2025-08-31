@@ -30,15 +30,12 @@ USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "false").lower() == "true"
 
 # Use Vertex AI if flag is set
 if USE_VERTEX_AI:
-    # Initialize Vertex AI client
-    gemini_api = genai.Client(
-        vertexai=True,
-        project=os.getenv("VERTEX_PROJECT_ID"),
-        location=os.getenv("VERTEX_LOCATION", "europe-west1")
-    )
+    # For Vertex AI fine-tuned models, we'll initialize in code_generator.py
+    # Keep a dummy client here for compatibility
+    gemini_api = genai.Client(api_key=GEMINI_API_KEY)  # Fallback client
     # Cloud Storage will be imported when needed
-    storage_bucket_name = f"{os.getenv('VERTEX_PROJECT_ID')}-screenwrite-uploads"
-    print(f"🔥 Using Vertex AI - Project: {os.getenv('VERTEX_PROJECT_ID')}, Location: {os.getenv('VERTEX_LOCATION', 'europe-west1')}")
+    storage_bucket_name = f"{os.getenv('VERTEX_PROJECT_ID', '24816576653')}-screenwrite-uploads"
+    print(f"🔥 Using Vertex AI Fine-tuned Model - Project: {os.getenv('VERTEX_PROJECT_ID', '24816576653')}, Location: {os.getenv('VERTEX_LOCATION', 'europe-west1')}")
 else:
     # Use regular Gemini API
     gemini_api = genai.Client(api_key=GEMINI_API_KEY)
