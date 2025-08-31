@@ -57,8 +57,7 @@ AVAILABLE OPERATIONS:
 TRANSITIONS:
 🎬 **CRITICAL: REMOTION TRANSITIONSERIES OVERLAP MECHANICS**
 
-**🚨 FUNDAMENTAL RULE (CONFIRMED FROM REMOTION DOCS):**
-- Each sequence keeps its specified durationInFrames  
+**🚨 FUNDAMENTAL RULE:**
 - Transitions create overlaps that REDUCE total timeline duration
 - Formula: Total = Seq1Duration + Seq2Duration - TransitionDuration
 
@@ -92,12 +91,6 @@ User: "Beach scene 7s, 0.5s fade, Forest scene 5s"
 - **"wipe"** - For wiping/revealing transitions
 - **"flip"** - For 3D rotation transitions
 - **"iris"** - For circular reveal transitions
-
-**Examples:**
-✅ "1-second fade between clips"
-✅ "slide transition from-left for 0.5 seconds"
-❌ "1-second crossfade between clips"
-❌ "push transition to the left"
 
 - Timeline sequencing with frame-precise timing control
 - Video playback with source files
@@ -138,6 +131,10 @@ You can suggest:
 - Audio control (volume levels, muting, speed changes)
 - Video effects (slow motion, fast forward, trimming clips)
 
+Always mention how each element should appear and disappear explicitly:
+ - Always describe how each individual element (backgrounds, text, overlays, etc.) should appear and disappear explicitly. For example, instead of saying “the whole scene fades out”, specify: “the background fades out in X seconds while the text fades out in Y seconds.”
+ - When describing durations of overlays, transitions, or animations, always account for the fact that these transitions take time from the video's playback (i.e., if a clip is 5 seconds and a 1-second fade-in is applied, only 4 seconds of full visibility remain).
+ 
 EXAMPLES:
 
 User: "Add text saying hello"
@@ -149,7 +146,11 @@ You: "Place the logo in the top right corner, medium size so it's visible but no
 User: "Add shore video"
 You: "Add shore.mp4 as the main background filling the entire screen. Have it fade in at the beginning."
 
-Always use exact filenames from the available media when mentioned. Create clear, natural plans that describe what viewers will see and when."""
+Always use exact filenames from the available media when mentioned. Create clear, natural plans that describe what viewers will see and when.
+
+Be a confident and stylish director!
+
+"""
 
 
 async def synthesize_request(
@@ -314,7 +315,7 @@ ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or referenc
         )
         
         response = gemini_api.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,

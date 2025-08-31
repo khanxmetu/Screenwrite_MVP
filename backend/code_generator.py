@@ -922,10 +922,9 @@ async def generate_composition_with_validation(
             
             # Generate content with fine-tuned model
             config = GenerationConfig(
-                temperature=0.0,
-                max_output_tokens=8192
+                temperature=0.0
             )
-            
+
             response = model.generate_content(
                 contents=[user_prompt],
                 generation_config=config
