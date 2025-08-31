@@ -7,6 +7,7 @@ import { slide } from "@remotion/transitions/slide";
 import { wipe } from "@remotion/transitions/wipe";
 import { flip } from "@remotion/transitions/flip";
 import { iris } from "@remotion/transitions/iris";
+import { none } from "@remotion/transitions/none";
 
 // Destructure commonly used components for convenience
 const { 
@@ -95,6 +96,7 @@ export function DynamicComposition({
       'wipe', // Pass wipe transition
       'flip', // Pass flip transition
       'iris', // Pass iris transition
+      'none', // Pass none transition
       'linearTiming', // Pass linearTiming
       'springTiming', // Pass springTiming
       'frame', // Pass frame directly as global variable
@@ -119,7 +121,7 @@ export function DynamicComposition({
       } = Remotion;
       
       // Transition functions are now directly available:
-      // fade, slide, wipe, flip, iris, linearTiming, springTiming
+      // fade, slide, wipe, flip, iris, none, linearTiming, springTiming
       // TransitionSeries is also directly available
       
       // Note: Transition functions usage:
@@ -186,6 +188,7 @@ export function DynamicComposition({
       wipe, // Pass wipe transition
       flip, // Pass flip transition
       iris, // Pass iris transition
+      none, // Pass none transition
       linearTiming, // Pass linearTiming
       springTiming, // Pass springTiming
       frame, // Pass the actual frame value

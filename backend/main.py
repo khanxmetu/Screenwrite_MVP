@@ -220,7 +220,8 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
         current_composition=request.current_generated_code,
         media_library=request.media_library,
         preview_settings=request.preview_settings,
-        gemini_api=gemini_api
+        gemini_api=gemini_api,
+        use_vertex_ai=USE_VERTEX_AI
     )
     
     print(f"🧠 Main: Enhanced Synth completed - Final request: '{enhanced_request[:150]}...'")

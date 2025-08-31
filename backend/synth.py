@@ -158,7 +158,8 @@ async def synthesize_request(
     current_composition: Optional[str],
     media_library: Optional[List[Dict[str, Any]]],
     preview_settings: Dict[str, Any],
-    gemini_api: Any
+    gemini_api: Any,
+    use_vertex_ai: bool = False
 ) -> str:
     """
     Enhanced Synth: Route to appropriate enhancement function based on @ syntax detection
@@ -227,7 +228,7 @@ async def synthesize_request(
         # Valid @filename mentions found - use enhanced enhancement with media analysis
         return await enhance_with_media(
             user_request, conversation_history, current_composition,
-            valid_files, media_library, preview_settings, gemini_api
+            valid_files, media_library, preview_settings, gemini_api, use_vertex_ai
         )
 
 
@@ -341,7 +342,8 @@ async def enhance_with_media(
     relevant_media_files: List[str],
     media_library: Optional[List[Dict[str, Any]]],
     preview_settings: Dict[str, Any],
-    gemini_api: Any
+    gemini_api: Any,
+    use_vertex_ai: bool = False
 ) -> str:
     """Enhanced enhancement with media content analysis"""
     
@@ -457,64 +459,122 @@ ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or referenc
         
         # Add media files with Gemini file IDs or Cloud Storage URIs
         if media_library:
+            # First, determine if we have any GCS URIs to decide the client approach
+            has_gcs_uris = False
             for media_name in relevant_media_files:
                 media_item = next((m for m in media_library if m.get('name') == media_name), None)
                 if media_item and media_item.get('gemini_file_id'):
-                    try:
-                        file_ref = media_item['gemini_file_id']
-                        
-                        # Check if it's a Cloud Storage URI (Vertex AI) or file ID (standard API)
-                        if file_ref.startswith('gs://'):
-                            # Vertex AI: Use Cloud Storage URI directly
-                            from google.genai.types import Part
-                            # Extract MIME type from media item or guess from extension
-                            mime_type = media_item.get('mime_type') or media_item.get('type', 'video/mp4')
-                            content_parts.append(Part.from_uri(file_uri=file_ref, mime_type=mime_type))
-                            print(f"🧠 Synth: Added {media_name} from Cloud Storage for analysis")
-                        else:
-                            # Standard API: Use Files API
-                            # Retry mechanism for files not yet ACTIVE
-                            max_retries = 10
-                            retry_delay = 2  # seconds
+                    if media_item['gemini_file_id'].startswith('gs://'):
+                        has_gcs_uris = True
+                        break
+            
+            # If we have GCS URIs, we MUST use Vertex AI for all media to maintain consistency
+            if has_gcs_uris and not use_vertex_ai:
+                print("⚠️ Synth: GCS URIs detected but Vertex AI not enabled, skipping media analysis")
+            else:
+                force_vertex_ai = has_gcs_uris  # Use Vertex AI if any GCS URIs exist
+                
+                for media_name in relevant_media_files:
+                    media_item = next((m for m in media_library if m.get('name') == media_name), None)
+                    if media_item and media_item.get('gemini_file_id'):
+                        try:
+                            file_ref = media_item['gemini_file_id']
                             
-                            for attempt in range(max_retries):
-                                gemini_file = gemini_api.files.get(name=file_ref)
-                                
-                                if gemini_file.state.name == 'ACTIVE':
-                                    content_parts.append(gemini_file)
-                                    print(f"🧠 Synth: Added {media_name} for analysis (ready after {attempt + 1} attempts)")
-                                    break
-                                elif gemini_file.state.name == 'FAILED':
-                                    print(f"❌ Synth: {media_name} failed to process, skipping")
-                                    break
-                                else:
-                                    print(f"⏳ Synth: {media_name} not ready (state: {gemini_file.state.name}), retrying in {retry_delay}s... ({attempt + 1}/{max_retries})")
-                                    if attempt < max_retries - 1:  # Don't sleep on last attempt
-                                        import asyncio
-                                        await asyncio.sleep(retry_delay)
+                            # Check if it's a Cloud Storage URI (Vertex AI) or file ID (standard API)
+                            if file_ref.startswith('gs://'):
+                                # GCS URI - requires Vertex AI
+                                import vertexai
+                                from vertexai.generative_models import Part
+                                # Extract MIME type from media item or guess from extension
+                                mime_type = media_item.get('mime_type') or media_item.get('type', 'video/mp4')
+                                content_parts.append(Part.from_uri(uri=file_ref, mime_type=mime_type))
+                                print(f"🧠 Synth: Added {media_name} from Cloud Storage for Vertex AI analysis")
                             else:
-                                # All retries exhausted
-                                print(f"⚠️ Synth: {media_name} not ready after {max_retries} attempts, proceeding without analysis")
-                            
-                    except Exception as e:
-                        print(f"⚠️ Synth: Failed to load {media_name}: {e}")        # Extract thinking budget from preview settings  
+                                # Standard file ID
+                                if force_vertex_ai or use_vertex_ai:
+                                    # Skip regular files when using Vertex AI to avoid part type conflicts
+                                    print(f"⚠️ Synth: Skipping regular file {media_name} in Vertex AI mode - only GCS URIs supported")
+                                    continue
+                                else:
+                                    # Standard API: Use Files API
+                                    # Retry mechanism for files not yet ACTIVE
+                                    max_retries = 10
+                                    retry_delay = 2  # seconds
+                                    
+                                    for attempt in range(max_retries):
+                                        gemini_file = gemini_api.files.get(name=file_ref)
+                                        
+                                        if gemini_file.state.name == 'ACTIVE':
+                                            content_parts.append(gemini_file)
+                                            print(f"🧠 Synth: Added {media_name} for analysis (ready after {attempt + 1} attempts)")
+                                            break
+                                        elif gemini_file.state.name == 'FAILED':
+                                            print(f"❌ Synth: {media_name} failed to process, skipping")
+                                            break
+                                        else:
+                                            print(f"⏳ Synth: {media_name} not ready (state: {gemini_file.state.name}), retrying in {retry_delay}s... ({attempt + 1}/{max_retries})")
+                                            if attempt < max_retries - 1:  # Don't sleep on last attempt
+                                                import asyncio
+                                                await asyncio.sleep(retry_delay)
+                                    else:
+                                        # All retries exhausted
+                                        print(f"⚠️ Synth: {media_name} not ready after {max_retries} attempts, proceeding without analysis")
+                                    
+                        except Exception as e:
+                            print(f"⚠️ Synth: Failed to load {media_name}: {e}")
+                        
+        # Extract thinking budget from preview settings  
         synth_thinking_budget = preview_settings.get('synthThinkingBudget', 2000)
         
-        # Create thinking config
-        thinking_config = types.ThinkingConfig(
-            include_thoughts=True,
-            thinking_budget=synth_thinking_budget
+        # Check if we have any GCS URIs that require Vertex AI
+        has_gcs_uris = any(
+            media_item.get('gemini_file_id', '').startswith('gs://') 
+            for media_name in relevant_media_files 
+            for media_item in [next((m for m in (media_library or []) if m.get('name') == media_name), {})]
         )
         
-        response = gemini_api.models.generate_content(
-            model="gemini-2.5-pro",
-            contents=content_parts,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=1.0,
-                thinking_config=thinking_config
+        # Use different API approaches based on URI types and settings
+        if use_vertex_ai or has_gcs_uris:
+            # Use Vertex AI client for GCS URIs (but NOT the fine-tuned model)
+            import vertexai
+            from vertexai.generative_models import GenerativeModel, GenerationConfig
+            
+            # Initialize Vertex AI 
+            vertexai.init(project="24816576653", location="europe-west1")
+            
+            # Use regular Gemini model with Vertex AI client (NOT fine-tuned)
+            model = GenerativeModel(
+                model_name="gemini-2.5-pro",
+                system_instruction=system_instruction
             )
-        )
+            
+            config = GenerationConfig(
+                temperature=1.0,
+                max_output_tokens=8192
+            )
+            
+            response = model.generate_content(
+                contents=content_parts,
+                generation_config=config
+            )
+            
+        else:
+            # Use regular Gemini API
+            # Create thinking config
+            thinking_config = types.ThinkingConfig(
+                include_thoughts=True,
+                thinking_budget=synth_thinking_budget
+            )
+            
+            response = gemini_api.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=content_parts,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=1.0,
+                    thinking_config=thinking_config
+                )
+            )
         
         if response and response.text:
             enhanced = response.text.strip()
