@@ -140,16 +140,12 @@ class ServiceManager:
     
     def start_all_services(self):
         """Start all three services"""
-        # Get the project root directory
-        project_root = "/home/idrees-mustafa/Dev/screenwrite"
+        # Use current working directory as project root
+        project_root = os.getcwd()
         backend_dir = os.path.join(project_root, "backend")
         
         # Check if directories exist
-        if not os.path.exists(project_root):
-            colored_print(f"❌ Project directory not found: {project_root}", Colors.PURPLE)
-            return False
-            
-        if not os.path.exists(backend_dir):
+        if not os.path.exists("backend"):
             colored_print(f"❌ Backend directory not found: {backend_dir}", Colors.PURPLE)
             return False
         
@@ -164,19 +160,19 @@ class ServiceManager:
             {
                 "name": "Backend API",
                 "command": "uv run uvicorn main:app --reload --host 0.0.0.0 --port 8001",
-                "cwd": backend_dir,
+                "cwd": "backend",
                 "color": Colors.RED
             },
             {
                 "name": "Video Render",
                 "command": "npx tsx app/videorender/videorender.ts",
-                "cwd": project_root,
+                "cwd": ".",
                 "color": Colors.GREEN
             },
             {
                 "name": "Frontend Dev",
                 "command": "npm run dev",
-                "cwd": project_root,
+                "cwd": ".",
                 "color": Colors.BLUE
             }
         ]
@@ -184,10 +180,12 @@ class ServiceManager:
         # Start all services
         started_services = 0
         for service in services:
+            # Convert relative path to absolute for subprocess
+            service_cwd = os.path.abspath(service["cwd"])
             process = self.run_service(
                 service["name"],
                 service["command"],
-                service["cwd"],
+                service_cwd,
                 service["color"]
             )
             if process:
