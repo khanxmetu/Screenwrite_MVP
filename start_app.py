@@ -171,7 +171,7 @@ class ServiceManager:
             },
             {
                 "name": "Frontend Dev",
-                "command": "npm run dev",
+                "command": "npm run dev -- --host 0.0.0.0 --port 5173",
                 "cwd": ".",
                 "color": Colors.BLUE
             }
