@@ -575,8 +575,6 @@ React.createElement(TransitionSeries.Sequence, {
 • wipe(): Slide over transition (wipe effect)
 • flip(): 3D rotation transition
 • iris(): Circular reveal transition
-• none(): when you want a hard cut (no transition effect), you still need to explicitly add a transition with presentation: none() and timing with durationInFrames: 1. Without any transition element between sequences, the TransitionSeries creates gaps or unexpected behavior.
-
 
 **Timing Functions Available:**
 • linearTiming({durationInFrames: number, easing?: Easing}): Linear timing with optional easing
@@ -850,6 +848,724 @@ CODE:
 ✅ CORRECT: `return React.createElement(AbsoluteFill, {}, ...)`
 ❌ WRONG: `React.createElement(AbsoluteFill, {}, ...)` (missing return)
 
+# Complete Remotion Composition Template
+
+## EXAMPLE RESPONSE:
+DURATION: 12
+CODE:
+
+return React.createElement(AbsoluteFill, {
+  style: { backgroundColor: '#000000' }
+},
+  // Your composition content here
+  React.createElement('div', {
+    style: {
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      color: 'white',
+      fontSize: '48px'
+    }
+  }, 'Sample Content')
+);
+
+const { width, height, fps } = useVideoConfig();
+
+// 🚨 CRITICAL: In Sequence children, use the 'frame' variable directly - it's already available
+// ✅ CORRECT: Use frame variable directly in Sequences
+// React.createElement(Sequence, {}, (() => {
+//   const opacity = interpolate(frame, [0, 30], [0, 1]);
+//   return React.createElement('div', {style: {opacity}}, 'Text');
+// })())
+//
+// ❌ WRONG: Never call useCurrentFrame() inside Sequence children
+// React.createElement(Sequence, {}, (() => {
+//   const currentFrame = useCurrentFrame(); // ❌ FORBIDDEN - breaks Rules of Hooks
+// })())
+//
+// ❌ WRONG: Never define frame variable - it's already available
+// const frame = useCurrentFrame(); // ❌ FORBIDDEN - already defined
+
+// TIMING CONSTANTS - Standard durations for consistency
+const FADE_DURATION = 20;          // Standard fade in/out
+const QUICK_TRANSITION = 10;       // Fast transitions
+const CROSS_FADE_OVERLAP = 15;     // Overlap between sequences
+const SPRING_DELAY = 30;           // Delay before spring animations
+
+// CONTAINER CONSTANTS - Prevent size jumping
+const TITLE_CONTAINER_HEIGHT = 120;
+const SUBTITLE_CONTAINER_HEIGHT = 80;
+const SAFE_ZONE_PADDING = 60;     // Safe area padding
+const CARD_PADDING = 40;          // Internal card padding
+
+// Z-INDEX LAYERS - Visual hierarchy
+const Z_BACKGROUND = 1;
+const Z_CONTENT = 2;
+const Z_OVERLAY = 3;
+const Z_UI = 4;
+
+// SPRING CONFIG - Consistent easing
+const STANDARD_SPRING = { damping: 12, stiffness: 80 };
+const GENTLE_SPRING = { damping: 15, stiffness: 60 };
+const BOUNCY_SPRING = { damping: 8, stiffness: 100 };
+
+// FRAME CALCULATION HELPERS - Pre-defined functions
+// timeToFrames(timeInSeconds) is already available - do not redefine
+
+// === BACKGROUND LAYER WITH TRANSITIONS ===
+
+// Use TransitionSeries for video sequences with proper transitions
+React.createElement(TransitionSeries, {},
+  // First video sequence
+  React.createElement(TransitionSeries.Sequence, {
+    durationInFrames: timeToFrames(3)
+  }, React.createElement(Video, {
+    src: 'https://example.com/video1.mp4',
+    trimBefore: timeToFrames(5),   // Start at 5 seconds using timeToFrames
+    trimAfter: timeToFrames(13),   // End at 13 seconds using timeToFrames
+    style: {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover'
+    }
+  })),
+  
+  // Transition between sequences
+  React.createElement(TransitionSeries.Transition, {
+    timing: linearTiming({durationInFrames: FADE_DURATION}),
+    presentation: fade()
+  }),
+  
+  // Second video sequence
+  React.createElement(TransitionSeries.Sequence, {
+    durationInFrames: timeToFrames(3)
+  }, React.createElement(Video, {
+    src: 'https://example.com/video2.mp4',
+    trimBefore: timeToFrames(10),  // Start at 10 seconds using timeToFrames
+    trimAfter: timeToFrames(20),   // End at 20 seconds using timeToFrames
+    style: {
+      width: '100%',
+      height: '100%',
+      objectFit: 'cover'
+    }
+  })),
+  
+  // Another transition
+  React.createElement(TransitionSeries.Transition, {
+    timing: linearTiming({durationInFrames: FADE_DURATION}),
+    presentation: slide({direction: "from-left"})
+  }),
+  
+  // Third video sequence  
+  React.createElement(TransitionSeries.Sequence, {
+    durationInFrames: timeToFrames(4)
+  }, React.createElement(Video, {
+    src: 'https://example.com/background.mp4',
+    style: {
+      width: '100%',
+      height: '100%', 
+      objectFit: 'cover',
+      opacity: 0.6 // Reduced opacity for background
+    }
+  }))
+),
+
+// Background audio
+React.createElement(Audio, {
+  src: 'https://example.com/audio.mp3',
+  trimBefore: 0,   // MODERN PROP - start from beginning
+  trimAfter: timeToFrames(12)   // MODERN PROP - end at 12 seconds
+}),
+
+// === CONTENT LAYER (Z-INDEX 2) ===
+
+// === POSITIONING EXAMPLES - Core Patterns ===
+
+// PATTERN 1: CENTER ELEMENT - Perfect centering with fade transition
+React.createElement(Sequence, {
+  from: 0,
+  durationInFrames: timeToFrames(2),
+  children: (() => {
+    const centerOpacity = interpolate(frame, [0, 15, timeToFrames(1.5), timeToFrames(2)], [0, 1, 1, 0]);
+    const centerScale = interpolate(frame, [0, 20], [0.8, 1]);
+    
+    return React.createElement('div', {
+      style: {
+        // STANDARD CENTER PATTERN - Use this for perfect centering
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: `translate(-50%, -50%) scale(${centerScale})`,
+        width: '300px',
+        height: '100px',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        border: '2px solid rgba(255, 255, 255, 0.3)',
+        borderRadius: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '18px',
+        color: '#FFFFFF',
+        opacity: centerOpacity,
+        zIndex: Z_CONTENT
+      }
+    }, 'Perfect Center');
+  })()
+}),
+
+// PATTERN 2: FILL WITH PADDING - Responsive containers with slide-in
+React.createElement(Sequence, {
+  from: timeToFrames(0.67),
+  durationInFrames: timeToFrames(2),
+  children: (() => {
+    const fillOpacity = interpolate(frame, [timeToFrames(0.67), timeToFrames(1.17), timeToFrames(2.17), timeToFrames(2.67)], [0, 1, 1, 0]);
+    const fillY = interpolate(frame, [timeToFrames(0.67), timeToFrames(1.33)], [20, 0]);
+    
+    return React.createElement('div', {
+      style: {
+        // FILL WITH PADDING PATTERN - Responsive to screen size
+        position: 'absolute',
+        top: '60px',
+        left: '60px',
+        right: '60px',
+        bottom: '60px',
+        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+        border: '2px solid rgba(255, 255, 255, 0.2)',
+        borderRadius: '12px',
+        padding: '20px',
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'flex-end',
+        fontSize: '16px',
+        color: '#FFFFFF',
+        opacity: fillOpacity,
+        transform: `translateY(${fillY}px)`,
+        zIndex: Z_CONTENT
+      }
+    }, 'Fill Container');
+  })()
+}),
+
+// PATTERN 3: SAFE ZONE POSITIONING - All corner and edge placements
+React.createElement(Sequence, {
+  from: timeToFrames(0.33),
+  durationInFrames: timeToFrames(2.67),
+  children: (() => {
+    const safeOpacity = interpolate(frame, [timeToFrames(0.33), timeToFrames(0.83), timeToFrames(2.5), timeToFrames(3)], [0, 1, 1, 0]);
+    const safeScale = interpolate(frame, [timeToFrames(0.33), timeToFrames(1)], [0.9, 1]);
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        opacity: safeOpacity,
+        transform: `scale(${safeScale})`,
+        zIndex: Z_CONTENT
+      }
+    },
+      // TOP-LEFT: Brand/Logo placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          top: `${SAFE_ZONE_PADDING / 2}px`,      // 30px from top
+          left: `${SAFE_ZONE_PADDING / 2}px`,     // 30px from left
+          width: '120px',
+          height: '40px',
+          backgroundColor: 'rgba(76, 205, 196, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'TOP-LEFT'),
+
+      // TOP-RIGHT: Status/Info placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          top: `${SAFE_ZONE_PADDING / 2}px`,      // 30px from top
+          right: `${SAFE_ZONE_PADDING / 2}px`,    // 30px from right
+          width: '120px',
+          height: '40px',
+          backgroundColor: 'rgba(255, 107, 107, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'TOP-RIGHT'),
+
+      // BOTTOM-LEFT: Secondary info placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          bottom: `${SAFE_ZONE_PADDING / 2}px`,   // 30px from bottom
+          left: `${SAFE_ZONE_PADDING / 2}px`,     // 30px from left
+          width: '120px',
+          height: '40px',
+          backgroundColor: 'rgba(255, 195, 0, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'BOTTOM-LEFT'),
+
+      // BOTTOM-RIGHT: CTA/Action placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          bottom: `${SAFE_ZONE_PADDING / 2}px`,   // 30px from bottom
+          right: `${SAFE_ZONE_PADDING / 2}px`,    // 30px from right
+          width: '120px',
+          height: '40px',
+          backgroundColor: 'rgba(138, 43, 226, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'BOTTOM-RIGHT'),
+
+      // TOP-CENTER: Title/Header placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          top: `${SAFE_ZONE_PADDING / 2}px`,      // 30px from top
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '200px',
+          height: '40px',
+          backgroundColor: 'rgba(0, 123, 255, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'TOP-CENTER'),
+
+      // BOTTOM-CENTER: Progress/Status placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          bottom: `${SAFE_ZONE_PADDING / 2}px`,   // 30px from bottom
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '200px',
+          height: '40px',
+          backgroundColor: 'rgba(40, 167, 69, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '12px',
+          color: '#FFFFFF',
+          fontWeight: 'bold'
+        }
+      }, 'BOTTOM-CENTER'),
+
+      // LEFT-CENTER: Navigation placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          left: `${SAFE_ZONE_PADDING / 2}px`,     // 30px from left
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: '80px',
+          height: '100px',
+          backgroundColor: 'rgba(108, 117, 125, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '10px',
+          color: '#FFFFFF',
+          fontWeight: 'bold',
+          writingMode: 'vertical-rl'
+        }
+      }, 'LEFT-CENTER'),
+
+      // RIGHT-CENTER: Sidebar placement
+      React.createElement('div', {
+        style: {
+          position: 'absolute',
+          right: `${SAFE_ZONE_PADDING / 2}px`,    // 30px from right
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: '80px',
+          height: '100px',
+          backgroundColor: 'rgba(220, 53, 69, 0.9)',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '10px',
+          color: '#FFFFFF',
+          fontWeight: 'bold',
+          writingMode: 'vertical-rl'
+        }
+      }, 'RIGHT-CENTER')
+    );
+  })()
+}),
+
+// === CONTENT LAYER ANIMATIONS ===
+// For individual element animations, use interpolate() for complex effects
+
+// Slide-in animation example using interpolate()
+React.createElement(Sequence, {
+  from: timeToFrames(1),
+  durationInFrames: timeToFrames(2),
+  children: (() => {
+    const slideX = interpolate(
+      frame, 
+      [timeToFrames(1), timeToFrames(1.5)], 
+      [width, 0], 
+      {easing: Easing.out(Easing.quad)}
+    );
+    const slideOpacity = interpolate(
+      frame,
+      [timeToFrames(1), timeToFrames(1.3)],
+      [0, 1]
+    );
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: '20%',
+        left: '50%',
+        transform: `translateX(calc(-50% + ${slideX}px))`,
+        width: '300px',
+        height: '80px',
+        backgroundColor: 'rgba(255, 123, 0, 0.9)',
+        borderRadius: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '18px',
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+        opacity: slideOpacity,
+        zIndex: Z_CONTENT
+      }
+    }, 'Slide Animation');
+  })()
+}),
+
+// Scale animation example using spring()
+React.createElement(Sequence, {
+  from: timeToFrames(3.5),
+  durationInFrames: timeToFrames(1.5),
+  children: (() => {
+    const scaleValue = spring({
+      frame: frame - timeToFrames(3.5),
+      fps: fps,
+      config: BOUNCY_SPRING
+    });
+    const fadeOpacity = interpolate(
+      frame,
+      [timeToFrames(3.5), timeToFrames(3.8)],
+      [0, 1]
+    );
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: '80%',
+        left: '50%',
+        transform: `translate(-50%, -50%) scale(${Math.max(0.1, scaleValue)})`,
+        width: '400px',
+        height: '60px',
+        backgroundColor: 'rgba(138, 43, 226, 0.9)',
+        borderRadius: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '16px',
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+        opacity: fadeOpacity,
+        zIndex: Z_CONTENT
+      }
+    }, 'Scale Animation');
+  })()
+}),
+
+// Main title with fixed container - prevents size jumping
+React.createElement(Sequence, {
+  from: SPRING_DELAY,
+  durationInFrames: timeToFrames(5),
+  children: React.createElement('div', {
+    style: {
+      position: 'absolute',
+      top: '30%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: '80%',
+      height: `${TITLE_CONTAINER_HEIGHT}px`, // Fixed height prevents jumping
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: Z_CONTENT
+    }
+  }, React.createElement('div', {
+    style: {
+      fontSize: '72px',
+      fontWeight: 'bold',
+      color: '#FFFFFF',
+      textAlign: 'center',
+      textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+      opacity: interpolate(frame, [SPRING_DELAY, SPRING_DELAY + FADE_DURATION], [0, 1]),
+      transform: `scale(${Math.max(0.1, spring({
+        frame: frame - SPRING_DELAY,
+        fps: fps,
+        config: STANDARD_SPRING
+      }))})`, // Prevent scale(0) artifacts
+      lineHeight: '1.1'
+    }
+  }, 'Professional Title'))
+}),
+
+// Typing effect with stable container
+React.createElement(Sequence, {
+  from: timeToFrames(2),
+  durationInFrames: timeToFrames(4),
+  children: (() => {
+    const typingProgress = interpolate(
+      frame,
+      [timeToFrames(2), timeToFrames(4)],
+      [0, 1],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+    );
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '70%',
+        height: `${SUBTITLE_CONTAINER_HEIGHT}px`, // Fixed container height
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        borderRadius: '12px',
+        padding: `${CARD_PADDING}px`,
+        zIndex: Z_CONTENT
+      }
+    }, React.createElement('div', {
+      style: {
+        fontSize: '32px',
+        color: '#FFFFFF',
+        textAlign: 'center',
+        fontWeight: '500',
+        width: '100%' // Takes full container width
+      }
+    }, 'Dynamic Content Here'.substring(0, Math.floor(typingProgress * 'Dynamic Content Here'.length))));
+  })()
+}),
+
+// Subtitle with smooth slide-in
+React.createElement(Sequence, {
+  from: timeToFrames(3),
+  durationInFrames: timeToFrames(6),
+  children: (() => {
+    const subtitleY = interpolate(
+      frame,
+      [timeToFrames(3), timeToFrames(3.67)],
+      [40, 0],
+      { easing: Easing.inOut(Easing.quad) }  // CORRECT EASING SYNTAX
+    );
+
+    const subtitleOpacity = interpolate(
+      frame,
+      [timeToFrames(3), timeToFrames(3.67)],
+      [0, 1],
+      { easing: Easing.ease }  // CORRECT EASING SYNTAX
+    );
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: '70%',
+        left: '50%',
+        transform: `translate(-50%, calc(-50% + ${subtitleY}px))`,
+        width: '60%',
+        textAlign: 'center',
+        fontSize: '28px',
+        color: '#FFFFFF',
+        opacity: subtitleOpacity,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        padding: `${CARD_PADDING / 2}px ${CARD_PADDING}px`,
+        borderRadius: '8px',
+        zIndex: Z_CONTENT
+      }
+    }, 'Supporting Information');
+  })()
+}),
+
+// === OVERLAY LAYER (Z-INDEX 3) ===
+
+// Sliding card container with proper positioning
+React.createElement(Sequence, {
+  from: timeToFrames(5),
+  durationInFrames: timeToFrames(4),
+  children: (() => {
+    const cardX = interpolate(
+      frame,
+      [timeToFrames(5), timeToFrames(6.33)],
+      [-400, 0],
+      { easing: Easing.out(Easing.cubic) }  // CORRECT EASING SYNTAX
+    );
+
+    const cardOpacity = interpolate(
+      frame,
+      [timeToFrames(5), timeToFrames(5.67)],
+      [0, 1],
+      { easing: Easing.bezier(0.4, 0.0, 0.2, 1) }  // CORRECT BEZIER EASING
+    );
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: `${SAFE_ZONE_PADDING}px`,
+        left: `${SAFE_ZONE_PADDING}px`,
+        right: `${SAFE_ZONE_PADDING}px`,
+        bottom: `${SAFE_ZONE_PADDING}px`,
+        pointerEvents: 'none',
+        zIndex: Z_OVERLAY
+      }
+    }, React.createElement('div', {
+      style: {
+        position: 'absolute',
+        bottom: '0',
+        right: '0',
+        width: '400px',
+        height: '200px',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderRadius: '16px',
+        padding: `${CARD_PADDING}px`,
+        transform: `translateX(${cardX}px)`,
+        opacity: cardOpacity,
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center'
+      }
+    }, 
+      React.createElement('div', {
+        style: {
+          fontSize: '24px',
+          fontWeight: 'bold',
+          color: '#333333',
+          marginBottom: '12px'
+        }
+      }, 'Key Information'),
+      React.createElement('div', {
+        style: {
+          fontSize: '18px',
+          color: '#666666',
+          lineHeight: '1.4'
+        }
+      }, 'Supporting details with proper spacing and hierarchy')
+    ));
+  })()
+}),
+
+// === UI LAYER (Z-INDEX 4) ===
+
+// Logo with spring animation - top-right safe zone
+React.createElement(Sequence, {
+  from: timeToFrames(6),
+  durationInFrames: timeToFrames(6),
+  children: (() => {
+    const logoScale = spring({
+      frame: frame - timeToFrames(6),
+      fps: fps,
+      config: GENTLE_SPRING
+    });
+
+    const logoOpacity = interpolate(
+      frame,
+      [timeToFrames(6), timeToFrames(6.67)],
+      [0, 1],
+      { easing: Easing.in(Easing.sine) }  // CORRECT EASING SYNTAX
+    );
+    
+    return React.createElement('div', {
+      style: {
+        position: 'absolute',
+        top: `${SAFE_ZONE_PADDING / 2}px`,
+        right: `${SAFE_ZONE_PADDING / 2}px`,
+        width: '120px',
+        height: '120px',
+        backgroundColor: '#FF6B6B',
+        borderRadius: '50%',
+        transform: `scale(${Math.max(0.1, logoScale)})`,
+        opacity: logoOpacity,
+        zIndex: Z_UI,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)'
+      }
+    }, React.createElement('div', {
+      style: {
+        color: '#FFFFFF',
+        fontSize: '24px',
+        fontWeight: 'bold'
+      }
+    }, 'LOGO'));
+  })()
+}),
+
+// Progress indicator with smooth animation
+React.createElement(Sequence, {
+  from: 0,
+  durationInFrames: timeToFrames(12),
+  children: React.createElement('div', {
+    style: {
+      position: 'absolute',
+      bottom: `${SAFE_ZONE_PADDING / 3}px`,
+      left: `${SAFE_ZONE_PADDING}px`,
+      right: `${SAFE_ZONE_PADDING}px`,
+      height: '4px',
+      backgroundColor: 'rgba(255, 255, 255, 0.3)',
+      borderRadius: '2px',
+      zIndex: Z_UI
+    }
+  }, React.createElement('div', {
+    style: {
+      width: `${(frame / timeToFrames(12)) * 100}%`,
+      height: '100%',
+      backgroundColor: '#4ECDC4',
+      borderRadius: '2px',
+      transition: 'width 0.1s ease'
+    }
+  }))
+})
+
+);
 
 **CRITICAL**: DO NOT include any import statements in your code. All necessary imports (React, useCurrentFrame, useVideoConfig, spring, interpolate, AbsoluteFill, fade, slide, wipe, TransitionSeries, etc.) are already provided. Start your code directly with variable declarations and function calls."""
 
@@ -861,6 +1577,7 @@ USER REQUEST: {request.get('user_request', '')}
 {media_section}"""
 
     return system_instruction, user_prompt
+
 
 
 async def generate_composition_with_validation(
@@ -910,9 +1627,16 @@ async def generate_composition_with_validation(
             PROJECT_ID = "24816576653"
             REGION = "europe-west1"
             vertexai.init(project=PROJECT_ID, location=REGION)
-            
+
             # Use the endpoint ID for your deployed fine-tuned model
-            ENDPOINT_NAME = "projects/24816576653/locations/europe-west1/endpoints/3373543566574878720"
+            # fine-tuned flash with 40 epochs
+            #ENDPOINT_NAME = "projects/24816576653/locations/europe-west1/endpoints/3373543566574878720"
+
+            # fine-tuned pro with 40 epochs
+            ENDPOINT_NAME = "projects/24816576653/locations/europe-west1/endpoints/6998941266608128000"
+
+            # fine-tuned pro with 80 epochs
+            # ENDPOINT_NAME = "projects/24816576653/locations/europe-west1/endpoints/2477327240728150016"
             
             # Create the fine-tuned model instance with system instruction
             model = GenerativeModel(
