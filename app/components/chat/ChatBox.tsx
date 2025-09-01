@@ -245,7 +245,7 @@ export function ChatBox({
         
         const aiMessage: Message = {
           id: (Date.now() + 1).toString(),
-          content: success ? "✨ I've updated your composition based on your request!" : "❌ Sorry, I couldn't generate the composition. Please try rephrasing your request.",
+          content: success ? "✨ I've updated your composition based on your request!" : "❌ Error connecting to AI service.",
           isUser: false,
           timestamp: new Date(),
         };

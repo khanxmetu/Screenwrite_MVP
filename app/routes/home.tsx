@@ -1,5 +1,13 @@
 import React, { useRef, useEffect, useCallback, useState } from "react";
 import type { PlayerRef } from "@remotion/player";
+import * as Remotion from "remotion";
+import { TransitionSeries, linearTiming, springTiming } from "@remotion/transitions";
+import { fade } from "@remotion/transitions/fade";
+import { slide } from "@remotion/transitions/slide";
+import { wipe } from "@remotion/transitions/wipe";
+import { flip } from "@remotion/transitions/flip";
+import { iris } from "@remotion/transitions/iris";
+import { none } from "@remotion/transitions/none";
 import {
   Moon,
   Sun,
@@ -70,6 +78,134 @@ export default function TimelineEditor() {
   // video player media selection state
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
 
+  // VERBATIM copy of DynamicComposition execution logic for validation
+  const validateTsxCode = useCallback((tsxCode: string): boolean => {
+    try {
+      console.log('🧪 Validating AI-generated code:', tsxCode.slice(0, 200) + '...');
+
+      // VERBATIM COPY - DO NOT MODIFY
+      // Apply safeInterpolate wrapper to prevent monotonic errors
+      const safeCode = tsxCode.replace(/\binterpolate\b/g, 'safeInterpolate');
+      
+      // Log if we're applying safe interpolation
+      if (safeCode !== tsxCode) {
+        console.log('🛡️ Applied safeInterpolate wrapper to prevent monotonic errors');
+      }
+
+      // Create the wrapper code as a string
+      const wrapperCode = `
+        // Available components and functions
+        const { createElement } = React;
+        
+        // Destructure everything from Remotion
+        const {
+          AbsoluteFill,
+          interpolate,
+          Sequence,
+          Img,
+          Video,
+          Audio,
+          spring,
+          Easing,
+        } = Remotion;
+        
+        // Safe interpolate wrapper that sorts inputRange and removes duplicates
+        const safeInterpolate = (frameValue, inputRange, outputRange, options = {}) => {
+          // Create paired array of [input, output] to maintain correspondence
+          const paired = inputRange.map((input, index) => ({
+            input: input,
+            output: outputRange[index] !== undefined ? outputRange[index] : outputRange[outputRange.length - 1]
+          }));
+          
+          // Remove duplicates based on input values
+          const uniquePaired = [];
+          const seenInputs = new Set();
+          
+          for (const pair of paired) {
+            if (!seenInputs.has(pair.input)) {
+              seenInputs.add(pair.input);
+              uniquePaired.push(pair);
+            }
+          }
+          
+          // Sort by input values
+          uniquePaired.sort((a, b) => a.input - b.input);
+          
+          // If we only have one unique value, create a minimal valid range
+          if (uniquePaired.length === 1) {
+            const singleValue = uniquePaired[0];
+            return interpolate(
+              frameValue,
+              [singleValue.input, singleValue.input + 1],
+              [singleValue.output, singleValue.output],
+              options
+            );
+          }
+          
+          // Extract sorted arrays
+          const safeInputRange = uniquePaired.map(pair => pair.input);
+          const safeOutputRange = uniquePaired.map(pair => pair.output);
+          
+          return interpolate(frameValue, safeInputRange, safeOutputRange, options);
+        };
+        
+        // Create helper functions that use the passed values
+        const useVideoConfig = () => videoConfigValue;
+        const useCurrentScale = () => currentScaleValue;
+        
+        // Pre-defined utility function for frame calculations
+        const timeToFrames = (timeInSeconds) => timeInSeconds * videoConfigValue.fps;
+        
+        // Execute the AI-generated code with safe interpolation
+        ${safeCode}
+      `;
+
+      // Create a function that evaluates the JavaScript code
+      const executeCode = new Function(
+        'React',
+        'Remotion',
+        'TransitionSeries',
+        'fade',
+        'slide', 
+        'wipe',
+        'flip',
+        'iris',
+        'none',
+        'linearTiming',
+        'springTiming',
+        'frame',
+        'videoConfigValue',
+        'currentScaleValue',
+        'Player',
+        wrapperCode
+      );
+
+      const generatedJSX = executeCode(
+        React,
+        Remotion,
+        TransitionSeries,
+        fade,
+        slide,
+        wipe,
+        flip,
+        iris,
+        none,
+        linearTiming,
+        springTiming,
+        0, // dummy frame
+        { fps: 30, width: 1920, height: 1080 }, // dummy videoConfig
+        1, // dummy currentScale
+        null // Player - not needed for validation
+      );
+
+      console.log('✅ Code validation passed');
+      return true;
+    } catch (error) {
+      console.log('❌ Code validation failed:', (error as Error).message);
+      return false;
+    }
+  }, []);
+
   const {
     mediaBinItems,
     handleAddMediaToBin,
@@ -102,7 +238,7 @@ export default function TimelineEditor() {
     retryWithFix,
     clearError,
     handleExecutionError,
-  } = useStandalonePreview(setDurationInFrames);
+  } = useStandalonePreview(setDurationInFrames, validateTsxCode);
 
   // Wrapper function for AI composition generation with media library context
   // Function to explain composition changes

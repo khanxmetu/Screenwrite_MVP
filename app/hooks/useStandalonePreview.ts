@@ -51,7 +51,7 @@ return React.createElement(AbsoluteFill, {
 });`;
 
 // Hook to manage standalone preview content
-export function useStandalonePreview(onDurationUpdate?: (durationInFrames: number) => void) {
+export function useStandalonePreview(onDurationUpdate?: (durationInFrames: number) => void, validateTsxCode?: (code: string) => boolean) {
   const [previewContent, setPreviewContent] = useState<PreviewContent[]>([]);
   const [generatedTsxCode, setGeneratedTsxCode] = useState<string>(BOILERPLATE_COMPOSITION);
   const [previewSettings, setPreviewSettings] = useState<PreviewSettings>({
@@ -227,6 +227,21 @@ export function useStandalonePreview(onDurationUpdate?: (durationInFrames: numbe
         console.log("✅ AI TSX generation successful:", response.composition_code);
         console.log("🎬 AI-determined duration:", response.duration, "seconds");
         
+        // VALIDATE CODE BEFORE APPLYING
+        const isCodeValid = validateTsxCode ? validateTsxCode(response.composition_code) : true;
+        
+        if (!isCodeValid) {
+          console.log("❌ Code validation failed - keeping original state");
+          setGenerationError({
+            hasError: true,
+            errorMessage: "Oops! Something went wrong.",
+            brokenCode: response.composition_code,
+            originalRequest: userRequest,
+            canRetry: true,
+          });
+          return false;
+        }
+        
         // Set the code directly - errors will be caught by DynamicComposition
         setGeneratedTsxCode(response.composition_code);
         setLastAiExplanation(response.explanation);
@@ -241,7 +256,7 @@ export function useStandalonePreview(onDurationUpdate?: (durationInFrames: numbe
           canRetry: false,
         });
 
-        // Update duration in the parent component
+        // Update duration in the parent component ONLY after validation passes
         if (onDurationUpdate && response.duration && response.duration > 0) {
           const durationInFrames = Math.round(response.duration * previewSettings.fps);
           console.log("🎯 Updating frontend duration to:", durationInFrames, "frames");

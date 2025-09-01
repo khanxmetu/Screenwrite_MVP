@@ -213,6 +213,43 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
     
     print(f"🎬 Main: Processing request: '{request.user_request}'")
     
+    # TESTING: Return broken code to test frontend fallback system
+    if False:  # Change to False to disable testing
+        broken_composition = """DURATION: 20
+        CODE: return React.createElement(AbsoluteFill, {
+  style: { backgroundColor: '#ff0000' }
+}, 
+  React.createElement('div', {
+    style: {
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      color: 'white',
+      fontSize: '32px'
+    }
+  }, 'BROKEN TEST'),
+  
+  React.createElement('div', {
+    style: {
+      opacity: interpolate(frame, [0, 30], [0, 1], {
+        easing: [Easing.out(Easing.quad), Easing.linear, Easing.in(Easing.quad)]
+      })
+    }
+  }, 'This will break')
+);"""
+        
+        print("🧪 TESTING: Returning broken composition for fallback testing")
+        
+        return CompositionResponse(
+            composition_code=broken_composition,
+            content_data=[],
+            explanation="Testing broken composition - invalid easing array",
+            duration=3.0,
+            success=True,
+            error_message=None
+        )
+    
     # Step 1: Enhanced Synth - Transform request with @ syntax-based media analysis
     enhanced_request = await synthesize_request(
         user_request=request.user_request,
