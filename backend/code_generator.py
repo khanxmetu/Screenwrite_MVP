@@ -1589,6 +1589,9 @@ async def generate_composition_with_validation(
     """
     Generate a composition without backend validation - let frontend handle errors.
     """
+    import os
+    import time
+    
     try:
         print(f"Generation attempt (no validation)")
         
@@ -1622,12 +1625,17 @@ async def generate_composition_with_validation(
             raw_response = response.content[0].text.strip()
             
         elif use_vertex_ai:
-            # Use Vertex AI fine-tuned model with endpoint ID
-            # Initialize Vertex AI with your project and region
-            PROJECT_ID = "24816576653"
-            REGION = "europe-west1"
-            vertexai.init(project=PROJECT_ID, location=REGION)
-
+            # Use Vertex AI fine-tuned model with thinking budget
+            from google import genai
+            from google.genai.types import GenerateContentConfig, ThinkingConfig
+            
+            # Set environment variables for Vertex AI
+            os.environ['GOOGLE_CLOUD_PROJECT'] = "24816576653"
+            os.environ['GOOGLE_CLOUD_LOCATION'] = "europe-west1"
+            os.environ['GOOGLE_GENAI_USE_VERTEXAI'] = "True"
+            
+            client = genai.Client()
+            
             # Use the endpoint ID for your deployed fine-tuned model
             # fine-tuned flash with 40 epochs
             #ENDPOINT_NAME = "projects/24816576653/locations/europe-west1/endpoints/3373543566574878720"
@@ -1638,30 +1646,26 @@ async def generate_composition_with_validation(
             # fine-tuned pro with 80 epochs
             # ENDPOINT_NAME = "projects/24816576653/locations/europe-west1/endpoints/2477327240728150016"
             
-            # Create the fine-tuned model instance with system instruction
-            model = GenerativeModel(
-                model_name=ENDPOINT_NAME,
-                system_instruction=system_instruction
-            )
-            
-            # Generate content with fine-tuned model
-            config = GenerationConfig(
-                temperature=0.0
-            )
-
-            response = model.generate_content(
-                contents=[user_prompt],
-                generation_config=config
+            response = client.models.generate_content(
+                model=ENDPOINT_NAME,
+                contents=user_prompt,
+                config=GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.0,
+                    thinking_config=ThinkingConfig(
+                        thinking_budget=1200,  # 1200 tokens for complex code generation
+                    )
+                ),
             )
             raw_response = response.text.strip()
         else:
-            # Use standard Gemini API
+            # Use standard Gemini API with thinking budget
             response = gemini_api.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=user_prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
-                    temperature=0.3,
+                    temperature=0.3
                 )
             )
             raw_response = response.text.strip()
