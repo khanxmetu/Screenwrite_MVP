@@ -435,6 +435,8 @@ def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
 
 🚨 **CRITICAL TIMING RULE: GLOBAL vs SEQUENCE-RELATIVE FRAMES**
 
+  !!durationInFrames can NEVER be less than 1!!
+
 **⚠️ MOST COMMON BUG: Using sequence-relative timing in interpolate()**
 
 The `frame` variable in `interpolate()` is ALWAYS the GLOBAL frame number, NOT relative to the Sequence start!
@@ -549,6 +551,19 @@ React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(6
 ```
 **RULE:** Every TransitionSeries.Sequence MUST contain child elements AND durationInFrames should match the actual content duration (NOT content + transition duration)
 
+**🚨 CRITICAL: DURATION MINIMUM VALUE**
+**durationInFrames must NEVER be zero - minimum value is 1**
+```javascript
+// ❌ WRONG - Zero duration (causes runtime error):
+React.createElement(Sequence, {durationInFrames: 0})
+React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(0)})
+
+// ✅ CORRECT - Minimum 1 frame duration:
+React.createElement(Sequence, {durationInFrames: 1})  // Minimum 1 frame
+React.createElement(TransitionSeries.Sequence, {durationInFrames: timeToFrames(0.1)})  // At least 0.1 seconds
+```
+**RULE:** ALL durationInFrames parameters must be >= 1. For very short durations, use timeToFrames(0.1) or higher.
+
 **🚨 CRITICAL: FADE ENDINGS**
 **For fade endings, you MUST include a final sequence after the transition!**
 ```javascript
@@ -646,7 +661,7 @@ React.createElement(TransitionSeries, {},
 // Linear timing with easing
 linearTiming({
   durationInFrames: timeToFrames(2),
-  easing: Easing.inOut(Easing.ease)
+  easing: Easing.inOut(Easing.quad)
 })
 
 // Spring timing with custom config
@@ -659,7 +674,6 @@ springTiming({
 
 **EASING FUNCTIONS** - Use EXACT syntax:
 ✅ CORRECT: easing: Easing.linear, easing: Easing.ease, easing: Easing.quad, easing: Easing.cubic
-✅ CORRECT: easing: Easing.sin, easing: Easing.circle, easing: Easing.exp, easing: Easing.bounce
 ✅ CORRECT: easing: Easing.in(Easing.quad), easing: Easing.out(Easing.quad), easing: Easing.inOut(Easing.quad)
 ✅ CORRECT: easing: Easing.bezier(0.4, 0.0, 0.2, 1)
 ❌ WRONG: easing: 'ease-in-out', easing: 'easeInOut', easing: 'linear'
@@ -668,6 +682,46 @@ springTiming({
 - Code executes in React.createElement environment with Function() constructor
 - Use React.createElement syntax, not JSX
 - Use 'div' elements for text (no Text component in Remotion)
+
+🚨 **PRE-DEFINED VARIABLES - NEVER DEFINE THESE:**
+
+**CORE VARIABLES (Already Available):**
+• `frame` - Current frame number (NEVER call useCurrentFrame())
+• `videoConfigValue` - Video config object {width, height, fps, durationInFrames}
+• `currentScaleValue` - Current player scale value
+• `React` - React library with createElement
+• `Remotion` - Complete Remotion namespace
+
+**ACCESS PATTERN FOR VIDEO CONFIG:**
+```javascript
+// ✅ CORRECT - Use videoConfigValue directly:
+const { width, height, fps, durationInFrames } = videoConfigValue;
+ALL THESE MUST BE DEFINED BEFORE USING THEM!
+
+// ❌ WRONG - Never call useVideoConfig():
+const { width, height, fps } = useVideoConfig(); // ❌ FORBIDDEN
+```
+
+**REMOTION COMPONENTS (Already Available):**
+• `AbsoluteFill`, `Sequence`, `Img`, `Video`, `Audio`
+• `interpolate`, `safeInterpolate`, `spring`, `Easing`
+
+**TRANSITION SYSTEM (Already Available):**
+• `TransitionSeries`, `fade`, `slide`, `wipe`, `flip`, `iris`, `none`
+• `linearTiming`, `springTiming`
+
+**HELPER FUNCTIONS (Already Available):**
+• `timeToFrames(seconds)` - Convert seconds to frames
+• `useVideoConfig()` - Returns videoConfigValue (but use videoConfigValue directly)
+• `useCurrentScale()` - Returns currentScaleValue (but use currentScaleValue directly)
+
+⚠️ **CRITICAL VARIABLE RULES:**
+1. **NEVER define frame** - Use `frame` variable directly
+2. **NEVER call useCurrentFrame()** - frame is pre-defined
+3. **NEVER define fps** - Use `const { fps } = videoConfigValue;`
+4. **NEVER define timeToFrames** - Function is pre-available
+5. **NEVER import anything** - All components pre-imported
+
 ⚠️ **CRITICAL RULES:**
 
 1. **🚨 FRAME USAGE IN SEQUENCES - Use 'frame' variable directly:**
@@ -828,9 +882,13 @@ Before submitting your code, verify:
 - [ ] 🚨 Code MUST start with `return` statement - function must return JSX
 - [ ] 🚨 NO useCurrentFrame() calls inside Sequence children - USE 'frame' variable directly
 - [ ] 🚨 NO frame variable definition - it's already available in execution environment
+- [ ] 🚨 MUST extract fps from videoConfigValue: `const { fps } = videoConfigValue;`
+- [ ] 🚨 NO useVideoConfig() calls - use videoConfigValue directly
+- [ ] 🚨 NO durationInFrames=0 anywhere - minimum value is 1 frame
 - [ ] 🚨 NO manual interpolation for fade/slide/wipe on Video/Audio - USE TransitionSeries.Transition ALWAYS
 - [ ] 🚨 NO style: { opacity: interpolate(...) } on Video/Audio components
 - [ ] No import statements included
+- [ ] All variables properly defined before use (except pre-defined ones)
 - [ ] NO timeToFrames() function definition - it's already provided
 - [ ] All constants use UPPER_SNAKE_CASE, variables use camelCase
 - [ ] NO abbreviations used anywhere (full descriptive names only)
@@ -854,6 +912,8 @@ CODE:
 DURATION: 12
 CODE:
 
+const { width, height, fps, durationInFrames } = videoConfigValue;
+
 return React.createElement(AbsoluteFill, {
   style: { backgroundColor: '#000000' }
 },
@@ -870,7 +930,8 @@ return React.createElement(AbsoluteFill, {
   }, 'Sample Content')
 );
 
-const { width, height, fps } = useVideoConfig();
+// ✅ CORRECT - Extract values from pre-defined videoConfigValue:
+const { width, height, fps, durationInFrames } = videoConfigValue;
 
 // 🚨 CRITICAL: In Sequence children, use the 'frame' variable directly - it's already available
 // ✅ CORRECT: Use frame variable directly in Sequences
@@ -1509,7 +1570,7 @@ React.createElement(Sequence, {
       frame,
       [timeToFrames(6), timeToFrames(6.67)],
       [0, 1],
-      { easing: Easing.in(Easing.sine) }  // CORRECT EASING SYNTAX
+      { easing: Easing.in(Easing.quad) }  // CORRECT EASING SYNTAX
     );
     
     return React.createElement('div', {
@@ -1611,8 +1672,8 @@ async def generate_composition_with_validation(
             
             response = client.messages.create(
                 max_tokens=8192,
-                #model="claude-sonnet-4-20250514",
-                model="claude-3-5-haiku-20241022",
+                model="claude-sonnet-4-20250514",
+                #model="claude-3-5-haiku-20241022",
                 temperature=0.3,
                 system=system_instruction,
                 messages=[
@@ -1652,10 +1713,10 @@ async def generate_composition_with_validation(
                 config=GenerateContentConfig(
                     system_instruction=system_instruction,
                     temperature=0.0,
-                    thinking_config=ThinkingConfig(
-                        thinking_budget=1200,  # 1200 tokens for complex code generation
-                    )
-                ),
+#                    thinking_config=ThinkingConfig(
+#                        thinking_budget=1200
+#                    ),
+                )
             )
             raw_response = response.text.strip()
         else:

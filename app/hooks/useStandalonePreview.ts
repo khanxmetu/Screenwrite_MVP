@@ -40,7 +40,7 @@ const improveErrorMessage = (error: Error): string => {
 };
 
 // Default boilerplate Remotion composition - matches AI output format
-const BOILERPLATE_COMPOSITION = `const { fps } = useVideoConfig();
+const BOILERPLATE_COMPOSITION = `const { width, height, fps, durationInFrames } = videoConfigValue;
 
 return React.createElement(AbsoluteFill, {
   style: {
