@@ -5,4 +5,9 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
   plugins: [tailwindcss(), reactRouter(), tsconfigPaths()],
+  resolve: {
+    alias: {
+      "remotion-animated": "/node_modules/remotion-animated-root/packages/remotion-animated/dist/index.js"
+    }
+  }
 });

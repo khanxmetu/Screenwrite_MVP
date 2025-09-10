@@ -39,14 +39,16 @@ const improveErrorMessage = (error: Error): string => {
   return message;
 };
 
-// Default boilerplate Remotion composition - matches AI output format
-const BOILERPLATE_COMPOSITION = `const { width, height, fps, durationInFrames } = videoConfigValue;
-
-return React.createElement(AbsoluteFill, {
+// Default boilerplate composition - empty canvas for users to start with
+const BOILERPLATE_COMPOSITION = `return React.createElement('div', {
   style: {
+    width: '100%',
+    height: '100%',
     backgroundColor: '#000000',
+    display: 'flex',
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    position: 'relative'
   }
 });`;
 

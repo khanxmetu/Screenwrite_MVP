@@ -18,7 +18,6 @@ from typing import List, Dict, Any, Optional
 # Import code generation functionality
 import code_generator
 from code_generator import generate_composition_with_validation
-from synth import synthesize_request
 
 load_dotenv()
 
@@ -250,34 +249,21 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
             error_message=None
         )
     
-    # Step 1: Enhanced Synth - Transform request with @ syntax-based media analysis
-    enhanced_request = await synthesize_request(
-        user_request=request.user_request,
-        conversation_history=request.conversation_history,
-        current_composition=request.current_generated_code,
-        media_library=request.media_library,
-        preview_settings=request.preview_settings,
-        gemini_api=gemini_api,
-        use_vertex_ai=USE_VERTEX_AI
-    )
-    
-    print(f"🧠 Main: Enhanced Synth completed - Final request: '{enhanced_request[:150]}...'")
-    
-    # Step 2: Generate composition using enhanced request
-    print(f"⚙️ Main: Generating composition with enhanced request")
+    # Step 1: Direct Code Generation (Synth bypassed)
+    print(f"⚙️ Main: Generating composition directly (skipping synth)")
     
     # Convert to dict format expected by code generator
-    enhanced_request_dict = {
-        "user_request": enhanced_request,  # Use enhanced request instead of original
+    request_dict = {
+        "user_request": request.user_request,  # Use original request directly
         "preview_settings": request.preview_settings,
         "media_library": request.media_library,
         "current_generated_code": request.current_generated_code,
         "conversation_history": request.conversation_history
     }
     
-    # Call the existing code generation module
+    # Call the existing code generation module directly
     result = await generate_composition_with_validation(
-        enhanced_request_dict, 
+        request_dict, 
         gemini_api,
         USE_VERTEX_AI
     )

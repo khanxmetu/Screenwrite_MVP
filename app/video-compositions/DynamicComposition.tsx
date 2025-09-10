@@ -1,13 +1,8 @@
 import React, { useState, useEffect } from "react";
 import * as Remotion from "remotion";
 import { Player, type PlayerRef } from "@remotion/player";
-import { TransitionSeries, linearTiming, springTiming } from "@remotion/transitions";
-import { fade } from "@remotion/transitions/fade";
-import { slide } from "@remotion/transitions/slide";
-import { wipe } from "@remotion/transitions/wipe";
-import { flip } from "@remotion/transitions/flip";
-import { iris } from "@remotion/transitions/iris";
-import { none } from "@remotion/transitions/none";
+import { Animated } from "remotion-animated";
+import { Move, Scale, Rotate, Fade, Ease } from "remotion-animated";
 
 // Destructure commonly used components for convenience
 const { 
@@ -35,17 +30,11 @@ export function DynamicComposition({
   tsxCode,
   backgroundColor = "#000000",
 }: DynamicCompositionProps) {
-  const [currentCode, setCurrentCode] = useState(tsxCode);
-
-  // Update current code when tsxCode prop changes
-  useEffect(() => {
-    setCurrentCode(tsxCode);
-  }, [tsxCode]);
 
   // If no TSX code, show placeholder
-  if (!currentCode) {
+  if (!tsxCode) {
     return (
-      <AbsoluteFill style={{ backgroundColor }}>
+      <div style={{ backgroundColor, width: "100%", height: "100%" }}>
         <div
           style={{
             width: "100%",
@@ -58,152 +47,176 @@ export function DynamicComposition({
             fontFamily: "Arial, sans-serif",
           }}
         >
-          <div style={{ textAlign: "center" }}>
-            <p>AI Composition Mode</p>
-            <p style={{ fontSize: "16px", opacity: 0.7, marginTop: "10px" }}>
-              Describe what you want to see and AI will generate Remotion code
-            </p>
-          </div>
+          No content to display
         </div>
-      </AbsoluteFill>
+      </div>
     );
   }
 
-  // Execute the AI-generated TSX code
+  // SIMPLIFIED EXECUTION - Only execute the generated code with minimal setup
   try {
-    console.log('Executing AI-generated code directly:', currentCode.slice(0, 200) + '...');
+    console.log("Executing AI-generated code directly:", tsxCode.slice(0, 100) + "...");
 
-    // Call hooks at component level (Rules of Hooks)
-    const frame = useCurrentFrame();
-    const videoConfig = useVideoConfig();
-    const currentScale = useCurrentScale();
-
-    // Apply safeInterpolate wrapper to prevent monotonic errors
-    const safeCode = currentCode.replace(/\binterpolate\b/g, 'safeInterpolate');
+    // Use the imported components directly
+    const AnimatedFade = Fade;
     
-    // Log if we're applying safe interpolation
-    if (safeCode !== currentCode) {
-      console.log('🛡️ Applied safeInterpolate wrapper to prevent monotonic errors');
-    }
+    // Helper function to convert seconds to frames
+    const inSeconds = (seconds: number): number => {
+      return Math.round(seconds * 30); // 30 FPS
+    };
 
-    // Create a function that evaluates the JavaScript code that returns JSX
+    // Essential Positioning Helpers - Return CSS style objects
+    
+    // Screen Anchors (9 fundamental positions)
+    const TopLeft = (margin = 0) => ({
+      position: 'absolute' as const,
+      top: margin,
+      left: margin
+    });
+
+    const TopCenter = (margin = 0) => ({
+      position: 'absolute' as const,
+      top: margin,
+      left: '50%',
+      transform: 'translateX(-50%)'
+    });
+
+    const TopRight = (margin = 0) => ({
+      position: 'absolute' as const,
+      top: margin,
+      right: margin
+    });
+
+    const CenterLeft = (margin = 0) => ({
+      position: 'absolute' as const,
+      top: '50%',
+      left: margin,
+      transform: 'translateY(-50%)'
+    });
+
+    const CenterScreen = () => ({
+      position: 'absolute' as const,
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)'
+    });
+
+    const CenterRight = (margin = 0) => ({
+      position: 'absolute' as const,
+      top: '50%',
+      right: margin,
+      transform: 'translateY(-50%)'
+    });
+
+    const BottomLeft = (margin = 0) => ({
+      position: 'absolute' as const,
+      bottom: margin,
+      left: margin
+    });
+
+    const BottomCenter = (margin = 0) => ({
+      position: 'absolute' as const,
+      bottom: margin,
+      left: '50%',
+      transform: 'translateX(-50%)'
+    });
+
+    const BottomRight = (margin = 0) => ({
+      position: 'absolute' as const,
+      bottom: margin,
+      right: margin
+    });
+
+    // Relative Positioning (simplified for now - conceptual)
+    const Above = (elementId: string, spacing = 20) => ({
+      position: 'absolute' as const,
+      bottom: `calc(var(--${elementId}-top) + ${spacing}px)`,
+      left: `var(--${elementId}-left)`
+    });
+
+    const Below = (elementId: string, spacing = 20) => ({
+      position: 'absolute' as const,
+      top: `calc(var(--${elementId}-bottom) + ${spacing}px)`,
+      left: `var(--${elementId}-left)`
+    });
+
+    const LeftOf = (elementId: string, spacing = 20) => ({
+      position: 'absolute' as const,
+      top: `var(--${elementId}-top)`,
+      right: `calc(var(--${elementId}-left) + ${spacing}px)`
+    });
+
+    const RightOf = (elementId: string, spacing = 20) => ({
+      position: 'absolute' as const,
+      top: `var(--${elementId}-top)`,
+      left: `calc(var(--${elementId}-right) + ${spacing}px)`
+    });
+
+    const CenterOn = (elementId: string) => ({
+      position: 'absolute' as const,
+      top: `var(--${elementId}-center-y)`,
+      left: `var(--${elementId}-center-x)`,
+      transform: 'translate(-50%, -50%)'
+    });
+
+    // Simple execution - just the generated code
     const executeCode = new Function(
       'React',
-      'Remotion', // Pass entire Remotion namespace
-      'TransitionSeries', // Pass TransitionSeries specifically
-      'fade', // Pass fade transition
-      'slide', // Pass slide transition
-      'wipe', // Pass wipe transition
-      'flip', // Pass flip transition
-      'iris', // Pass iris transition
-      'none', // Pass none transition
-      'linearTiming', // Pass linearTiming
-      'springTiming', // Pass springTiming
-      'frame', // Pass frame directly as global variable
-      'videoConfigValue', // Renamed to avoid conflicts
-      'currentScaleValue', // Renamed to avoid conflicts
-      'Player',
-      `
-      // Available components and functions
-      const { createElement } = React;
-      
-      // Destructure everything from Remotion
-      const {
-        AbsoluteFill,
-        interpolate,
-        Sequence,
-        Img,
-        Video,
-        Audio,
-        spring,
-        Easing,
-        // Add more as needed
-      } = Remotion;
-      
-      // Transition functions are now directly available:
-      // fade, slide, wipe, flip, iris, none, linearTiming, springTiming
-      // TransitionSeries is also directly available
-      
-      // Note: Transition functions usage:
-      // fade() returns a transition object to use with TransitionSeries.Transition
-      
-      // Safe interpolate wrapper that sorts inputRange and removes duplicates
-      const safeInterpolate = (frameValue, inputRange, outputRange, options = {}) => {
-        // Create paired array of [input, output] to maintain correspondence
-        const paired = inputRange.map((input, index) => ({
-          input: input,
-          output: outputRange[index] !== undefined ? outputRange[index] : outputRange[outputRange.length - 1]
-        }));
-        
-        // Remove duplicates based on input values
-        const uniquePaired = [];
-        const seenInputs = new Set();
-        
-        for (const pair of paired) {
-          if (!seenInputs.has(pair.input)) {
-            seenInputs.add(pair.input);
-            uniquePaired.push(pair);
-          }
-        }
-        
-        // Sort by input values
-        uniquePaired.sort((a, b) => a.input - b.input);
-        
-        // If we only have one unique value, create a minimal valid range
-        if (uniquePaired.length === 1) {
-          const singleValue = uniquePaired[0];
-          return interpolate(
-            frameValue,
-            [singleValue.input, singleValue.input + 1],
-            [singleValue.output, singleValue.output],
-            options
-          );
-        }
-        
-        // Extract sorted arrays
-        const safeInputRange = uniquePaired.map(pair => pair.input);
-        const safeOutputRange = uniquePaired.map(pair => pair.output);
-        
-        return interpolate(frameValue, safeInputRange, safeOutputRange, options);
-      };
-      
-      // Create helper functions that use the passed values
-      const useVideoConfig = () => videoConfigValue;
-      const useCurrentScale = () => currentScaleValue;
-      
-      // Pre-defined utility function for frame calculations
-      const timeToFrames = (timeInSeconds) => timeInSeconds * videoConfigValue.fps;
-      
-      // Execute the AI-generated code with safe interpolation
-      ${safeCode}
-      `
+      'Animated', 
+      'Move', 
+      'Scale', 
+      'Rotate', 
+      'AnimatedFade',
+      'inSeconds',
+      'Ease',
+      'TopLeft',
+      'TopCenter', 
+      'TopRight',
+      'CenterLeft',
+      'CenterScreen',
+      'CenterRight',
+      'BottomLeft',
+      'BottomCenter',
+      'BottomRight',
+      'Above',
+      'Below',
+      'LeftOf',
+      'RightOf',
+      'CenterOn',
+      tsxCode
     );
 
     const generatedJSX = executeCode(
       React,
-      Remotion, // Pass entire namespace
-      TransitionSeries, // Pass TransitionSeries specifically
-      fade, // Pass fade transition
-      slide, // Pass slide transition
-      wipe, // Pass wipe transition
-      flip, // Pass flip transition
-      iris, // Pass iris transition
-      none, // Pass none transition
-      linearTiming, // Pass linearTiming
-      springTiming, // Pass springTiming
-      frame, // Pass the actual frame value
-      videoConfig, // Pass the config object
-      currentScale, // Pass the scale value
-      Player
+      Animated,
+      Move,
+      Scale,
+      Rotate,
+      AnimatedFade,
+      inSeconds,
+      Ease,
+      TopLeft,
+      TopCenter,
+      TopRight,
+      CenterLeft,
+      CenterScreen,
+      CenterRight,
+      BottomLeft,
+      BottomCenter,
+      BottomRight,
+      Above,
+      Below,
+      LeftOf,
+      RightOf,
+      CenterOn
     );
 
     return generatedJSX;
   } catch (error) {
     console.error("Error executing AI-generated code:", error);
 
-    // Show simple error message
     return (
-      <AbsoluteFill style={{ backgroundColor: "#1a1a1a" }}>
+      <div style={{ backgroundColor: "#1a1a1a", width: "100%", height: "100%" }}>
         <div
           style={{
             width: "100%",
@@ -223,12 +236,9 @@ export function DynamicComposition({
             <p style={{ fontSize: "14px", opacity: 0.8, marginTop: "10px" }}>
               {error instanceof Error ? error.message : "Unknown error"}
             </p>
-            <p style={{ fontSize: "12px", opacity: 0.6, marginTop: "20px" }}>
-              Try rephrasing your request or ask for something simpler
-            </p>
           </div>
         </div>
-      </AbsoluteFill>
+      </div>
     );
   }
 }

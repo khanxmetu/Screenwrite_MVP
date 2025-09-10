@@ -8,6 +8,7 @@ import { wipe } from "@remotion/transitions/wipe";
 import { flip } from "@remotion/transitions/flip";
 import { iris } from "@remotion/transitions/iris";
 import { none } from "@remotion/transitions/none";
+import { Animated, Move, Scale, Fade as AnimatedFade, Rotate } from "remotion-animated";
 import {
   Moon,
   Sun,
@@ -81,127 +82,84 @@ export default function TimelineEditor() {
   // VERBATIM copy of DynamicComposition execution logic for validation
   const validateTsxCode = useCallback((tsxCode: string): boolean => {
     try {
-      console.log('🧪 Validating AI-generated code:', tsxCode.slice(0, 200) + '...');
+      console.log('🧪 Validating AI-generated code:', tsxCode.slice(0, 100) + '...');
 
-      // VERBATIM COPY - DO NOT MODIFY
-      // Apply safeInterpolate wrapper to prevent monotonic errors
-      const safeCode = tsxCode.replace(/\binterpolate\b/g, 'safeInterpolate');
-      
-      // Log if we're applying safe interpolation
-      if (safeCode !== tsxCode) {
-        console.log('🛡️ Applied safeInterpolate wrapper to prevent monotonic errors');
-      }
+      // Helper function to convert seconds to frames (same as DynamicComposition)
+      const inSeconds = (seconds: number): number => {
+        return Math.round(seconds * 30); // 30 FPS
+      };
 
-      // Create the wrapper code as a string
-      const wrapperCode = `
-        // Available components and functions
-        const { createElement } = React;
-        
-        // Destructure everything from Remotion
-        const {
-          AbsoluteFill,
-          interpolate,
-          Sequence,
-          Img,
-          Video,
-          Audio,
-          spring,
-          Easing,
-        } = Remotion;
-        
-        // Safe interpolate wrapper that sorts inputRange and removes duplicates
-        const safeInterpolate = (frameValue, inputRange, outputRange, options = {}) => {
-          // Create paired array of [input, output] to maintain correspondence
-          const paired = inputRange.map((input, index) => ({
-            input: input,
-            output: outputRange[index] !== undefined ? outputRange[index] : outputRange[outputRange.length - 1]
-          }));
-          
-          // Remove duplicates based on input values
-          const uniquePaired = [];
-          const seenInputs = new Set();
-          
-          for (const pair of paired) {
-            if (!seenInputs.has(pair.input)) {
-              seenInputs.add(pair.input);
-              uniquePaired.push(pair);
-            }
-          }
-          
-          // Sort by input values
-          uniquePaired.sort((a, b) => a.input - b.input);
-          
-          // If we only have one unique value, create a minimal valid range
-          if (uniquePaired.length === 1) {
-            const singleValue = uniquePaired[0];
-            return interpolate(
-              frameValue,
-              [singleValue.input, singleValue.input + 1],
-              [singleValue.output, singleValue.output],
-              options
-            );
-          }
-          
-          // Extract sorted arrays
-          const safeInputRange = uniquePaired.map(pair => pair.input);
-          const safeOutputRange = uniquePaired.map(pair => pair.output);
-          
-          return interpolate(frameValue, safeInputRange, safeOutputRange, options);
-        };
-        
-        // Create helper functions that use the passed values
-        const useVideoConfig = () => videoConfigValue;
-        const useCurrentScale = () => currentScaleValue;
-        
-        // Pre-defined utility function for frame calculations
-        const timeToFrames = (timeInSeconds) => timeInSeconds * videoConfigValue.fps;
-        
-        // Execute the AI-generated code with safe interpolation
-        ${safeCode}
-      `;
+      // Ease object with common easing functions (same as DynamicComposition)
+      const Ease = {
+        Linear: (t: number) => t,
+        QuadraticIn: (t: number) => t * t,
+        QuadraticOut: (t: number) => 1 - (1 - t) * (1 - t),
+        QuadraticInOut: (t: number) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
+        CubicIn: (t: number) => t * t * t,
+        CubicOut: (t: number) => 1 - Math.pow(1 - t, 3),
+        CubicInOut: (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+        QuarticIn: (t: number) => t * t * t * t,
+        QuarticOut: (t: number) => 1 - Math.pow(1 - t, 4),
+        QuarticInOut: (t: number) => t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2,
+        QuinticIn: (t: number) => t * t * t * t * t,
+        QuinticOut: (t: number) => 1 - Math.pow(1 - t, 5),
+        QuinticInOut: (t: number) => t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2,
+        SinusoidalIn: (t: number) => 1 - Math.cos((t * Math.PI) / 2),
+        SinusoidalOut: (t: number) => Math.sin((t * Math.PI) / 2),
+        SinusoidalInOut: (t: number) => -(Math.cos(Math.PI * t) - 1) / 2,
+        CircularIn: (t: number) => 1 - Math.sqrt(1 - Math.pow(t, 2)),
+        CircularOut: (t: number) => Math.sqrt(1 - Math.pow(t - 1, 2)),
+        CircularInOut: (t: number) => t < 0.5 ? (1 - Math.sqrt(1 - Math.pow(2 * t, 2))) / 2 : (Math.sqrt(1 - Math.pow(-2 * t + 2, 2)) + 1) / 2,
+        ExponentialIn: (t: number) => t === 0 ? 0 : Math.pow(2, 10 * (t - 1)),
+        ExponentialOut: (t: number) => t === 1 ? 1 : 1 - Math.pow(2, -10 * t),
+        ExponentialInOut: (t: number) => t === 0 ? 0 : t === 1 ? 1 : t < 0.5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2,
+        BounceIn: (t: number) => 1 - Ease.BounceOut(1 - t),
+        BounceOut: (t: number) => {
+          const n1 = 7.5625;
+          const d1 = 2.75;
+          if (t < 1 / d1) return n1 * t * t;
+          if (t < 2 / d1) return n1 * (t -= 1.5 / d1) * t + 0.75;
+          if (t < 2.5 / d1) return n1 * (t -= 2.25 / d1) * t + 0.9375;
+          return n1 * (t -= 2.625 / d1) * t + 0.984375;
+        },
+        BounceInOut: (t: number) => t < 0.5 ? (1 - Ease.BounceOut(1 - 2 * t)) / 2 : (1 + Ease.BounceOut(2 * t - 1)) / 2,
+        Bezier: (x1: number, y1: number, x2: number, y2: number) => {
+          // Simplified bezier function - for full implementation would need cubic-bezier
+          return (t: number) => {
+            // Linear interpolation approximation for simplicity
+            return t < 0.5 ? 2 * t * t * (3 - 2 * t) : 1 - 2 * (1 - t) * (1 - t) * (3 - 2 * (1 - t));
+          };
+        }
+      };
 
-      // Create a function that evaluates the JavaScript code
+      // SIMPLIFIED VALIDATION - Match DynamicComposition exactly
       const executeCode = new Function(
         'React',
-        'Remotion',
-        'TransitionSeries',
-        'fade',
-        'slide', 
-        'wipe',
-        'flip',
-        'iris',
-        'none',
-        'linearTiming',
-        'springTiming',
-        'frame',
-        'videoConfigValue',
-        'currentScaleValue',
-        'Player',
-        wrapperCode
+        'Animated', 
+        'Move', 
+        'Scale', 
+        'Rotate', 
+        'AnimatedFade',
+        'inSeconds',
+        'Ease',
+        tsxCode
       );
 
       const generatedJSX = executeCode(
         React,
-        Remotion,
-        TransitionSeries,
-        fade,
-        slide,
-        wipe,
-        flip,
-        iris,
-        none,
-        linearTiming,
-        springTiming,
-        0, // dummy frame
-        { fps: 30, width: 1920, height: 1080 }, // dummy videoConfig
-        1, // dummy currentScale
-        null // Player - not needed for validation
+        Animated,
+        Move,
+        Scale,
+        Rotate,
+        AnimatedFade,
+        inSeconds,
+        Ease
       );
 
-      console.log('✅ Code validation passed');
+      console.log('✅ Validation passed');
       return true;
     } catch (error) {
-      console.log('❌ Code validation failed:', (error as Error).message);
+      console.error('❌ Validation failed:', error);
       return false;
     }
   }, []);
