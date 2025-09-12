@@ -8,7 +8,7 @@ import { wipe } from "@remotion/transitions/wipe";
 import { flip } from "@remotion/transitions/flip";
 import { iris } from "@remotion/transitions/iris";
 import { none } from "@remotion/transitions/none";
-import { Animated, Move, Scale, Fade as AnimatedFade, Rotate } from "remotion-animated";
+import { interp } from "../utils/animations";
 import {
   Moon,
   Sun,
@@ -132,28 +132,23 @@ export default function TimelineEditor() {
         }
       };
 
+      // Extract AbsoluteFill from Remotion namespace
+      const { AbsoluteFill } = Remotion;
+
       // SIMPLIFIED VALIDATION - Match DynamicComposition exactly
       const executeCode = new Function(
         'React',
-        'Animated', 
-        'Move', 
-        'Scale', 
-        'Rotate', 
-        'AnimatedFade',
+        'AbsoluteFill',
+        'interp',
         'inSeconds',
-        'Ease',
         tsxCode
       );
 
       const generatedJSX = executeCode(
         React,
-        Animated,
-        Move,
-        Scale,
-        Rotate,
-        AnimatedFade,
-        inSeconds,
-        Ease
+        AbsoluteFill,
+        interp,
+        inSeconds
       );
 
       console.log('✅ Validation passed');
@@ -546,17 +541,11 @@ export default function TimelineEditor() {
                         {generatedTsxCode || useSampleCode ? (
                           <DynamicVideoPlayer
                             tsxCode={generatedTsxCode}
-                            useSampleCode={useSampleCode}
                             compositionWidth={previewSettings.width}
                             compositionHeight={previewSettings.height}
                             backgroundColor={previewSettings.backgroundColor}
                             playerRef={playerRef}
                             durationInFrames={durationInFrames}
-                            onCodeFixed={(fixedCode) => {
-                              console.log('🔧 Code automatically fixed, updating state...');
-                              setGeneratedTsxCode(fixedCode);
-                            }}
-                            onError={handleVideoPlayerError}
                           />
                         ) : (
                           <StandaloneVideoPlayer

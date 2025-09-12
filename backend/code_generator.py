@@ -12,245 +12,153 @@ import anthropic
 # Could any hell be more horrible than now and here?
 
 # ANIMATION SYSTEM INSTRUCTION MODULE
-ANIMATION_INSTRUCTION = """**OUR CUSTOM ANIMATION API - USE THESE EXACTLY:**
+SIMPLE_ANIMATION_INSTRUCTION = """
+You are an expert at creating engaging video animations using Remotion with a simple interpolation wrapper function.
 
-**GLOBAL TIMING HELPER FUNCTION:**
-- inSeconds(seconds): Converts seconds to frames (MANDATORY for ALL timing values across ALL components)
-  - Example: inSeconds(2.5) = 75 frames at 30fps
-  - Example: inSeconds(1) = 30 frames at 30fps
-  - This is a GLOBAL utility - use it everywhere timing is needed
-  - NEVER use raw frame numbers anywhere in the code
+CRITICAL REQUIREMENTS:
+1. ALWAYS use inSeconds() helper for timing - never use raw frame numbers
+2. ALWAYS use AbsoluteFill as the base container for proper viewport setup
+3. Use flexbox positioning (items-center, justify-center) for layout
+4. Use the `interp(startTime, endTime, fromValue, toValue, easing?)` function for all animations
+5. Apply animations via inline styles using CSS properties
 
-**ANIMATED COMPONENT:**
-- Animated: Main animation container with these props:
-  - animations: Array of animation objects (required)
-  - style?: React.CSSProperties for CSS styling
-  - children: React.ReactNode content to animate
+AVAILABLE ANIMATION FUNCTION:
+- interp(startTime, endTime, fromValue, toValue, easing?) - General interpolation function
+  - startTime: When animation starts (seconds)
+  - endTime: When animation ends (seconds) 
+  - fromValue: Starting value (number)
+  - toValue: Ending value (number)
+  - easing: 'linear', 'in', 'out', 'inOut' (optional, default: 'out')
 
-**ANIMATION HELPER FUNCTIONS:**
-- Move: Position animations
-  - x?: number (pixels to move right, positive = right, negative = left)
-  - y?: number (pixels to move down, positive = down, negative = up)
-  - start: number (frame to start animation, required - USE inSeconds())
-  - duration?: number (animation length in frames, defaults to inSeconds(1))
+ANIMATION EXAMPLES:
 
-- Scale: Size animations
-  - by: number (scale factor, required - 1 = same size, 2 = double, 0.5 = half)
-  - start: number (frame to start animation, required - USE inSeconds())
-  - duration?: number (animation length in frames, defaults to inSeconds(1))
-
-- Rotate: Rotation animations
-  - degrees: number (rotation in degrees, required - 360 = full rotation)
-  - start: number (frame to start animation, required - USE inSeconds())
-  - duration?: number (animation length in frames, defaults to inSeconds(1))
-
-- AnimatedFade: Opacity animations
-  - to: number (target opacity 0-1, required - 0 = invisible, 1 = fully visible)
-  - start: number (frame to start animation, required - USE inSeconds())
-  - duration?: number (animation length in frames, defaults to inSeconds(1))
-
-**ANIMATION EASING - MAKE YOUR ANIMATIONS FEEL NATURAL:**
-
-**SPRING ANIMATIONS (DEFAULT & RECOMMENDED):**
-- Spring physics provide the most natural-looking animations
-- Default behavior: smooth, realistic motion with slight overshoot
-- Customize spring behavior with these options:
-  - mass: number (heavier = slower, lighter = faster)
-  - damping: number (higher = less bouncy, lower = more bouncy)
-  - stiffness: number (higher = faster, lower = slower)
-  - overshootClamping: boolean (true = no overshoot, false = natural bounce)
-
-**SPRING EXAMPLES:**
-```javascript
-// Default spring (recommended for most cases)
-Move({ x: 200, start: inSeconds(0) })
-
-// Custom bouncy spring
-Move({ x: 200, start: inSeconds(0), mass: 1, damping: 10, stiffness: 100 })
-
-// Smooth, no-overshoot spring
-Scale({ by: 1.5, start: inSeconds(1), damping: 20, overshootClamping: true })
-```
-
-**CLASSIC EASING FUNCTIONS:**
-Use these for specific animation feels:
-
-- **Linear**: Constant speed (robotic, use sparingly)
-  - Ease.Linear
-
-- **Quadratic**: Gentle acceleration/deceleration (subtle, elegant)
-  - Ease.QuadraticIn (slow start, fast end)
-  - Ease.QuadraticOut (fast start, slow end) 
-  - Ease.QuadraticInOut (smooth both ends)
-
-- **Cubic**: Moderate curves (good for UI transitions)
-  - Ease.CubicIn, Ease.CubicOut, Ease.CubicInOut
-
-- **Quartic**: Strong curves (dramatic, fluid motion)
-  - Ease.QuarticIn, Ease.QuarticOut, Ease.QuarticInOut
-
-- **Bounce**: Playful bouncing effect
-  - Ease.BounceIn, Ease.BounceOut, Ease.BounceInOut
-
-- **Circular**: Sharp acceleration based on circle geometry
-  - Ease.CircularIn, Ease.CircularOut, Ease.CircularInOut
-
-**EASING EXAMPLES:**
-```javascript
-// Smooth slide-in with cubic easing
-Move({ x: 200, start: inSeconds(0), ease: Ease.CubicOut })
-
-// Bouncy scale animation
-Scale({ by: 1.5, start: inSeconds(1), ease: Ease.BounceOut })
-
-// Custom bezier curve
-Rotate({ degrees: 180, start: inSeconds(2), ease: Ease.Bezier(0.33, 1, 0.68, 1) })
-```
-
-**EASING BEST PRACTICES:**
-- Use spring animations for most cases (they feel natural)
-- QuadraticOut/CubicOut for UI elements appearing
-- QuadraticIn/CubicIn for UI elements disappearing  
-- BounceOut for playful, attention-grabbing effects
-- Linear only for mechanical/robotic movements
-- Avoid overly complex easing that distracts from content
-
-**CORRECT ANIMATION SYNTAX (ALWAYS USE inSeconds):**
-```javascript
-React.createElement(Animated, {
-  animations: [
-    // Spring animations (default, most natural)
-    Move({ x: 200, y: -50, start: inSeconds(0), duration: inSeconds(1) }),
-    Scale({ by: 1.5, start: inSeconds(0.5), duration: inSeconds(1.5) }),
-    
-    // Custom easing for specific effects
-    AnimatedFade({ to: 0.8, start: inSeconds(2), duration: inSeconds(1), ease: Ease.CubicOut }),
-    Rotate({ degrees: 180, start: inSeconds(3), duration: inSeconds(2), ease: Ease.BounceOut })
-  ],
+### Fade Animation (Opacity)
+React.createElement('div', {
   style: {
-    position: 'absolute',
-    backgroundColor: '#FF6B6B',
-    color: 'white',
-    fontSize: '24px',
-    padding: '20px',
-    borderRadius: '8px'
-  }
-}, 'Your content here')
-```
-
-**ANIMATION BEHAVIOR:**
-- All animations start from default values (position 0,0, scale 1, opacity 1, rotation 0)
-- Animations interpolate smoothly from start to target values
-- Multiple animations on same element combine (e.g., move + scale + fade)
-- start: When animation begins (required for each animation - USE inSeconds())
-- duration: Length of animation (optional, defaults to inSeconds(1) = 1 second)
-
-**TIMING EXAMPLES (ALWAYS use inSeconds helper):**
-- start: inSeconds(0), duration: inSeconds(1) = animate from 0 to 1 second
-- start: inSeconds(1), duration: inSeconds(0.5) = animate from 1s to 1.5s
-- start: inSeconds(2) = animate from 2 seconds for default duration (1 second)
-- start: inSeconds(2.5) = start at 2.5 seconds
-- start: inSeconds(0.25) = start at quarter second
-
-**MANDATORY RULES:**
-- EVERY animated element MUST use Animated wrapper
-- Use React.createElement syntax only (no JSX)
-- Animation helpers (Move, Scale, Rotate, AnimatedFade) are pre-imported
-- start parameter is REQUIRED for all animations
-- GLOBAL REQUIREMENT: ALWAYS use inSeconds() for ALL timing values across ALL components
-- Video components: src, startFrom, endAt - use inSeconds()
-- Audio components: src, startFrom, endAt - use inSeconds() 
-- Animated components: start, duration - use inSeconds()
-- ANY timing value anywhere in code - use inSeconds()
-- NEVER use raw frame numbers in any component or context
-- Focus on smooth, professional motion design
-
-**COMMON PATTERNS (using inSeconds + smart easing):**
-- Entrance (smooth appear): AnimatedFade({ to: 1, start: inSeconds(0), ease: Ease.CubicOut }) with initial opacity 0 in style
-- Exit (gentle disappear): AnimatedFade({ to: 0, start: inSeconds(3), ease: Ease.CubicIn })
-- Slide in (from left): Move({ x: -100, start: inSeconds(0), ease: Ease.QuadraticOut }) (comes from left)
-- Bounce scale up: Scale({ by: 1.2, start: inSeconds(1), ease: Ease.BounceOut })
-- Smooth rotation: Rotate({ degrees: 360, start: inSeconds(2) }) (spring default)
-- Attention-grabbing bounce: Scale({ by: 1.1, start: inSeconds(0), ease: Ease.BounceOut })
-- UI element slide: Move({ y: 50, start: inSeconds(0), ease: Ease.CubicOut })
-- Playful wiggle: Rotate({ degrees: 15, start: inSeconds(1), ease: Ease.BounceInOut })
-
-**ESSENTIAL POSITIONING HELPERS - PROFESSIONAL LAYOUTS:**
-
-**SCREEN ANCHORS (9 fundamental positions):**
-These helpers return CSS style objects for clean, semantic positioning:
-
-- TopLeft(margin) - Top-left corner with optional margin
-- TopCenter(margin) - Top center with optional margin  
-- TopRight(margin) - Top-right corner with optional margin
-- CenterLeft(margin) - Middle left edge with optional margin
-- CenterScreen() - Perfect center of screen
-- CenterRight(margin) - Middle right edge with optional margin
-- BottomLeft(margin) - Bottom-left corner with optional margin
-- BottomCenter(margin) - Bottom center with optional margin
-- BottomRight(margin) - Bottom-right corner with optional margin
-
-**RELATIVE POSITIONING (element relationships):**
-Position elements relative to other elements (conceptual):
-
-- Above(elementId, spacing) - Position above another element
-- Below(elementId, spacing) - Position below another element  
-- LeftOf(elementId, spacing) - Position to the left of element
-- RightOf(elementId, spacing) - Position to the right of element
-- CenterOn(elementId) - Center exactly on another element
-
-**POSITIONING EXAMPLES (SEMANTIC vs MANUAL):**
-```javascript
-// ✅ CLEAN: Semantic positioning with helpers
-React.createElement(Animated, {
-  animations: [Move({ x: 0, y: 0, start: inSeconds(0) })],
-  style: {
-    ...TopCenter(40),        // Semantic: top center, 40px margin
-    fontSize: '32px',
-    fontWeight: 'bold'
-  }
-}, 'Professional Title')
-
-// ✅ CLEAN: Bottom watermark
-React.createElement(Animated, {
-  animations: [AnimatedFade({ to: 1, start: inSeconds(0) })],
-  style: {
-    ...BottomRight(20),      // Semantic: bottom-right, 20px margin
-    fontSize: '12px',
-    opacity: 0.7
-  }
-}, '© 2025 Company')
-
-// ✅ CLEAN: Perfect center with fade
-React.createElement(Animated, {
-  animations: [
-    AnimatedFade({ to: 1, start: inSeconds(0.5), ease: Ease.CubicOut })
-  ],
-  style: {
-    ...CenterScreen(),       // Semantic: perfect center
+    opacity: interp(1, 3, 0, 1), // Fade from 0 to 1 between 1s and 3s
     fontSize: '48px',
-    opacity: 0
+    color: 'white'
   }
-}, 'Main Message')
+}, 'Fading Text')
 
-// ❌ AVOID: Manual pixel calculations
-React.createElement(Animated, {
+### Scale Animation  
+React.createElement('div', {
   style: {
-    position: 'absolute',
-    top: '40px',             // Manual positioning
-    left: '50%',            // Manual calculation
-    transform: 'translateX(-50%)'  // Manual transform
+    transform: `scale(${interp(0.5, 2, 0.8, 1.2)})`, // Scale from 0.8 to 1.2 between 0.5s and 2s
+    fontSize: '36px'
   }
-}, 'Title')
-```
+}, 'Scaling Text')
 
-**POSITIONING BEST PRACTICES:**
-- Use spread operator (...TopCenter(20)) to merge with other styles
-- Helpers handle position, transform, and centering automatically
-- No manual pixel calculations needed
-- Semantic naming makes code self-documenting
-- Consistent spacing with margin parameters
-- Professional layouts with minimal code"""
+### Move Animation (Translation)
+React.createElement('div', {
+  style: {
+    transform: `translateX(${interp(1, 2.5, -100, 50)}px) translateY(${interp(1.2, 2.8, 30, -20)}px)`,
+    fontSize: '24px'
+  }
+}, 'Moving Element')
+
+### Rotation Animation
+React.createElement('div', {
+  style: {
+    transform: `rotate(${interp(0, 4, 0, 360)}deg)`,
+    fontSize: '32px'
+  }
+}, 'Rotating Text')
+
+### Combined Animations
+React.createElement('div', {
+  style: {
+    opacity: interp(0, 1.5, 0, 1),
+    transform: `scale(${interp(0.2, 1.8, 0.5, 1)}) translateY(${interp(0.5, 2, -50, 0)}px) rotate(${interp(1, 3, 0, 15)}deg)`,
+    fontSize: '52px',
+    color: 'white'
+  }
+}, 'Complex Animation')
+
+### Custom Properties (Width, Height, etc.)
+React.createElement('div', {
+  style: {
+    width: `${interp(1, 3, 50, 300)}px`,
+    height: `${interp(1.2, 3.2, 10, 100)}px`,
+    backgroundColor: 'blue',
+    borderRadius: `${interp(2, 4, 0, 50)}px`
+  }
+})
+
+## COMPLETE EXAMPLE STRUCTURE:
+
+React.createElement(AbsoluteFill, {
+  style: { backgroundColor: '#000000' }
+}, [
+  // Main title section
+  React.createElement(AbsoluteFill, {
+    className: 'items-center justify-center'
+  }, [
+    React.createElement('h1', {
+      style: {
+        opacity: interp(0.5, 2, 0, 1),
+        transform: `scale(${interp(0.7, 2.2, 0.8, 1)}) translateY(${interp(1, 2, -30, 0)}px)`,
+        fontSize: '64px',
+        color: 'white',
+        textAlign: 'center',
+        fontWeight: 'bold'
+      }
+    }, 'Welcome')
+  ]),
+  
+  // Subtitle section  
+  React.createElement(AbsoluteFill, {
+    className: 'items-center justify-center'
+  }, [
+    React.createElement('p', {
+      style: {
+        opacity: interp(2, 3, 0, 1),
+        transform: `translateY(${interp(2.2, 3.2, 20, 0)}px)`,
+        fontSize: '28px',
+        color: '#cccccc',
+        textAlign: 'center',
+        marginTop: '100px'
+      }
+    }, 'Subtitle text')
+  ]),
+
+  // Animated shape
+  React.createElement(AbsoluteFill, {
+    className: 'items-center justify-center'
+  }, [
+    React.createElement('div', {
+      style: {
+        width: `${interp(3, 5, 0, 200)}px`,
+        height: '4px',
+        backgroundColor: 'white',
+        transform: `scaleX(${interp(3.2, 4.5, 0, 1)}) rotate(${interp(4, 6, 0, 180)}deg)`,
+        marginTop: '60px'
+      }
+    })
+  ])
+])
+
+## EASING OPTIONS:
+- 'linear': Constant speed throughout
+- 'in': Slow start, fast end  
+- 'out': Fast start, slow end (default, most natural)
+- 'inOut': Slow start and end, fast middle
+
+## KEY PRINCIPLES:
+1. Use AbsoluteFill for viewport structure
+2. Use flexbox classes for positioning (items-center, justify-center, etc.)
+3. Apply animations through inline styles on regular HTML elements
+4. Use the single `interp()` function for any numeric animation
+5. Combine multiple animations by composing them in CSS properties
+6. Use semantic timing - start animations when they make visual sense
+7. Default to 'out' easing for natural motion
+
+Create professional, smooth animations using this simple, predictable interpolation function for any property you need to animate.
+"""
+
+# POSITIONING AND STYLING INSTRUCTION MODULE
+POSITIONING_STYLING_INSTRUCTION = """
+"""
 
 def parse_ai_response(response_text: str) -> Tuple[float, str]:
     """
@@ -328,6 +236,7 @@ def parse_ai_response(response_text: str) -> Tuple[float, str]:
         return estimated_duration, response_text.strip()
 
 
+
 def build_edit_prompt(request: Dict[str, Any]) -> tuple[str, str]:
     """Build system instruction and user prompt for first attempt"""
     
@@ -384,7 +293,7 @@ Your ONLY job is to create beautiful animations using the Animated component wit
 
 **CRITICAL EXECUTION REQUIREMENTS:**
 • Code is executed as a function body - must start with return statement
-• Animated, Move, Scale, Rotate, AnimatedFade are pre-imported and ready to use
+• AbsoluteFill, Animated, Move, Scale, Rotate, Fade, Size are pre-imported and ready to use
 • React.createElement is available for creating elements
 • NO import statements - everything needed is already available"""
 
@@ -396,7 +305,7 @@ CODE:
 [raw JavaScript code - no markdown blocks]"""
 
     # Concatenate all instruction modules
-    system_instruction = main_instruction + "\n\n" + ANIMATION_INSTRUCTION + execution_instruction + response_format
+    system_instruction = main_instruction + "\n\n" + SIMPLE_ANIMATION_INSTRUCTION + execution_instruction + response_format
 
     # User prompt with specific context
     user_prompt = f"""CURRENT COMPOSITION CODE:

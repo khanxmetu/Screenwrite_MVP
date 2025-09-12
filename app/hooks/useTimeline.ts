@@ -444,6 +444,7 @@ export const useTimeline = () => {
         media_height: item.media_height,
         text: item.text,
         sourceMediaBinId: item.id,
+        gemini_file_id: item.gemini_file_id || null,
 
         // the following are the properties of the scrubber in <Player>
         left_player: 100, // default values TODO: maybe move it to the center of the <Player> initially
