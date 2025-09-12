@@ -24,6 +24,7 @@ import { StandaloneVideoPlayer } from "~/video-compositions/StandalonePreview";
 import { DynamicVideoPlayer } from "~/video-compositions/DynamicComposition";
 import { sampleBlueprint, complexTestBlueprint } from "~/video-compositions/TestBlueprint";
 import { edgeCaseTestBlueprint } from "~/video-compositions/EdgeCaseTestBlueprint";
+import { allTransitionsTestBlueprint } from "~/video-compositions/AllTransitionsTestBlueprint";
 import type { CompositionBlueprint } from "~/video-compositions/BlueprintTypes";
 import { RenderStatus } from "~/components/timeline/RenderStatus";
 import { Button } from "~/components/ui/button";
@@ -79,6 +80,19 @@ export default function TimelineEditor() {
   // Blueprint testing state
   const [useBlueprintMode, setUseBlueprintMode] = useState<boolean>(false);
   const [testBlueprint, setTestBlueprint] = useState<CompositionBlueprint>(() => edgeCaseTestBlueprint);
+  const [currentTestType, setCurrentTestType] = useState<'orphaned' | 'all-transitions'>('orphaned');
+
+  // Function to switch between different test blueprints
+  const switchTestBlueprint = (testType: 'orphaned' | 'all-transitions') => {
+    setCurrentTestType(testType);
+    if (testType === 'orphaned') {
+      setTestBlueprint(edgeCaseTestBlueprint);
+      setDurationInFrames(32 * 30); // 32 seconds for orphaned transitions test
+    } else {
+      setTestBlueprint(allTransitionsTestBlueprint);
+      setDurationInFrames(18 * 30); // 18 seconds for all transitions test
+    }
+  };
 
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
@@ -532,6 +546,19 @@ export default function TimelineEditor() {
                         >
                           {useBlueprintMode ? "✓ Blueprint" : "Test Blueprint"}
                         </Button>
+                        {useBlueprintMode && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const newTestType = currentTestType === 'orphaned' ? 'all-transitions' : 'orphaned';
+                              switchTestBlueprint(newTestType);
+                            }}
+                            className="text-xs h-6"
+                          >
+                            {currentTestType === 'orphaned' ? 'Orphaned Tests' : 'All Transitions'}
+                          </Button>
+                        )}
                         <Button
                           variant={useSampleCode ? "default" : "outline"}
                           size="sm"

@@ -4,6 +4,9 @@ import { TransitionSeries, linearTiming, springTiming } from "@remotion/transiti
 import { fade } from "@remotion/transitions/fade";
 import { slide } from "@remotion/transitions/slide";
 import { wipe } from "@remotion/transitions/wipe";
+import { flip } from "@remotion/transitions/flip";
+import { clockWipe } from "@remotion/transitions/clock-wipe";
+import { iris } from "@remotion/transitions/iris";
 import { interp } from "../utils/animations";
 import type { 
   CompositionBlueprint, 
@@ -249,7 +252,7 @@ function SegmentRenderer({
       sequences.push(
         <TransitionSeries.Transition
           key="orphaned-start-transition"
-          presentation={getTransitionPresentation('fade')}
+          presentation={getTransitionPresentation({ type: 'fade', durationInSeconds: 0 })}
           timing={linearTiming({ durationInFrames: transitionDuration })}
         />
       );
@@ -320,7 +323,7 @@ function SegmentRenderer({
           sequences.push(
             <TransitionSeries.Transition
               key={`trans-${clip.id}`}
-              presentation={getTransitionPresentation(clip.transitionToNext!.type)}
+              presentation={getTransitionPresentation(clip.transitionToNext!)}
               timing={linearTiming({ durationInFrames: transitionDuration })}
             />
           );
@@ -337,7 +340,7 @@ function SegmentRenderer({
       sequences.push(
         <TransitionSeries.Transition
           key="orphaned-end-transition"
-          presentation={getTransitionPresentation('fade')}
+          presentation={getTransitionPresentation({ type: 'fade', durationInSeconds: 0 })}
           timing={linearTiming({ durationInFrames: transitionDuration })}
         />
       );
@@ -379,14 +382,48 @@ function calculateTransitionGroupDuration(clips: Clip[], fps: number): number {
 }
 
 /**
- * Helper function to get Remotion presentation from transition type
+ * Helper function to get Remotion presentation from transition configuration
  */
-function getTransitionPresentation(transitionType: 'fade') {
-  switch (transitionType) {
+function getTransitionPresentation(
+  transitionConfig: import('./BlueprintTypes').TransitionConfig
+): any {
+  const { width, height } = useVideoConfig();
+  const { type, direction, perspective } = transitionConfig;
+  
+  switch (type) {
     case 'fade':
       return fade({
         shouldFadeOutExitingScene: true // Enable proper cross-fade
       });
+      
+    case 'slide':
+      return slide({
+        direction: (direction as any) || 'from-left'
+      });
+      
+    case 'wipe':
+      return wipe({
+        direction: (direction as any) || 'from-left'
+      });
+      
+    case 'flip':
+      return flip({
+        direction: (direction as any) || 'from-left',
+        perspective: perspective || 1000
+      });
+      
+    case 'clockWipe':
+      return clockWipe({
+        width,
+        height
+      });
+      
+    case 'iris':
+      return iris({
+        width,
+        height
+      });
+      
     default:
       return fade({
         shouldFadeOutExitingScene: true
