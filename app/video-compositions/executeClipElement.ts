@@ -88,15 +88,16 @@ export function executeClipElement(
 
 /**
  * Calculate total composition duration from blueprint
+ * Works with intelligent track system that respects actual timing
  */
-export function calculateBlueprintDuration(tracks: import('./BlueprintTypes').Track[]): number {
+export function calculateBlueprintDuration(blueprint: import('./BlueprintTypes').CompositionBlueprint): number {
   let maxDuration = 0;
 
-  for (const track of tracks) {
+  // Find the latest end time across all tracks and clips
+  for (const track of blueprint) {
     for (const clip of track.clips) {
-      const clipEnd = clip.startTime + clip.duration;
-      if (clipEnd > maxDuration) {
-        maxDuration = clipEnd;
+      if (clip.endTimeInSeconds > maxDuration) {
+        maxDuration = clip.endTimeInSeconds;
       }
     }
   }

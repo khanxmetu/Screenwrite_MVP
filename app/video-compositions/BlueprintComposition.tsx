@@ -1,11 +1,14 @@
 import React from "react";
-import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, Freeze } from "remotion";
+import { TransitionSeries, linearTiming, springTiming } from "@remotion/transitions";
+import { fade } from "@remotion/transitions/fade";
+import { slide } from "@remotion/transitions/slide";
+import { wipe } from "@remotion/transitions/wipe";
 import { interp } from "../utils/animations";
 import type { 
   CompositionBlueprint, 
   Track, 
   Clip,
-  TransitionSeries,
   BlueprintExecutionContext 
 } from "./BlueprintTypes";
 import { executeClipElement } from "./executeClipElement";
@@ -15,11 +18,10 @@ export interface BlueprintCompositionProps {
 }
 
 /**
- * Main blueprint composition renderer
- * This component renders a structured blueprint-based composition
+ * Main blueprint composition renderer using proper Remotion TransitionSeries
+ * Implements the freeze technique for intuitive duration calculation
  */
 export function BlueprintComposition({ blueprint }: BlueprintCompositionProps) {
-  const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
   // Create execution context with helper functions
@@ -28,13 +30,13 @@ export function BlueprintComposition({ blueprint }: BlueprintCompositionProps) {
     inSeconds: (seconds: number): number => Math.round(seconds * fps),
   };
 
-  console.log("BlueprintComposition rendering at frame:", frame, "with", blueprint.tracks.length, "tracks");
+  console.log("BlueprintComposition rendering with", blueprint.length, "tracks");
 
   return (
-    <AbsoluteFill style={{ backgroundColor: blueprint.backgroundColor || "#000000" }}>
-      {blueprint.tracks.map((track) => (
+    <AbsoluteFill style={{ backgroundColor: "#000000" }}>
+      {blueprint.map((track, trackIndex) => (
         <TrackRenderer
-          key={track.id}
+          key={trackIndex}
           track={track}
           executionContext={executionContext}
         />
@@ -44,7 +46,9 @@ export function BlueprintComposition({ blueprint }: BlueprintCompositionProps) {
 }
 
 /**
- * Renders a single track with all its clips
+ * Intelligent track renderer that respects startTime/endTime while detecting adjacent clips for transitions
+ * - Non-adjacent clips: rendered with Sequence at their exact timing
+ * - Adjacent clips with transitions: grouped into TransitionSeries with freeze technique
  */
 function TrackRenderer({ 
   track, 
@@ -53,13 +57,19 @@ function TrackRenderer({
   track: Track; 
   executionContext: BlueprintExecutionContext;
 }) {
+  const { fps } = useVideoConfig();
+  
+  // Group clips into segments: either individual clips or transition groups
+  const segments = groupClipsIntoSegments(track.clips);
+  
   return (
     <AbsoluteFill>
-      {track.clips.map((clip) => (
-        <ClipRenderer
-          key={clip.id}
-          clip={clip}
+      {segments.map((segment, segmentIndex) => (
+        <SegmentRenderer
+          key={`segment-${segmentIndex}`}
+          segment={segment}
           executionContext={executionContext}
+          fps={fps}
         />
       ))}
     </AbsoluteFill>
@@ -67,39 +77,200 @@ function TrackRenderer({
 }
 
 /**
- * Renders a single clip with proper timing and transitions
+ * Groups clips into segments based on adjacency and transitions
  */
-function ClipRenderer({ 
-  clip, 
-  executionContext 
-}: { 
-  clip: Clip; 
-  executionContext: BlueprintExecutionContext;
-}) {
-  const { fps } = useVideoConfig();
+function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
+  const segments: ClipSegment[] = [];
+  let i = 0;
   
-  // Convert seconds to frames
-  const startFrame = Math.round(clip.startTime * fps);
-  const durationInFrames = Math.round(clip.duration * fps);
+  while (i < clips.length) {
+    const currentClip = clips[i];
+    
+    // Check if this clip starts a transition group
+    if (currentClip.transitionToNext && i < clips.length - 1) {
+      const nextClip = clips[i + 1];
+      // Check if clips are adjacent (current end time == next start time)
+      if (Math.abs(currentClip.endTimeInSeconds - nextClip.startTimeInSeconds) < 0.001) {
+        // Start building a transition group
+        const transitionGroup: Clip[] = [currentClip];
+        let j = i + 1;
+        
+        // Add subsequent adjacent clips with transitions
+        while (j < clips.length) {
+          const clip = clips[j];
+          const prevClip = clips[j - 1];
+          
+          // Check adjacency
+          if (Math.abs(prevClip.endTimeInSeconds - clip.startTimeInSeconds) < 0.001) {
+            transitionGroup.push(clip);
+            // If this clip doesn't have a transition to next, or it's the last clip, stop
+            if (!clip.transitionToNext || j === clips.length - 1) {
+              break;
+            }
+            j++;
+          } else {
+            break;
+          }
+        }
+        
+        segments.push({
+          type: 'transition-group',
+          clips: transitionGroup,
+          startTime: currentClip.startTimeInSeconds
+        });
+        
+        i = j + 1;
+      } else {
+        // Not adjacent, treat as individual clip
+        segments.push({
+          type: 'individual',
+          clips: [currentClip],
+          startTime: currentClip.startTimeInSeconds
+        });
+        i++;
+      }
+    } else {
+      // Individual clip (no transition or last clip)
+      segments.push({
+        type: 'individual',
+        clips: [currentClip],
+        startTime: currentClip.startTimeInSeconds
+      });
+      i++;
+    }
+  }
+  
+  return segments;
+}
 
-  console.log(`Rendering clip ${clip.id}: start=${startFrame}f, duration=${durationInFrames}f`);
+type ClipSegment = {
+  type: 'individual' | 'transition-group';
+  clips: Clip[];
+  startTime: number;
+};
 
-  return (
-    <Sequence
-      from={startFrame}
-      durationInFrames={durationInFrames}
-      layout="none"
-    >
-      <ClipContent 
-        clip={clip} 
-        executionContext={executionContext} 
-      />
-    </Sequence>
-  );
+/**
+ * Renders a segment (either individual clip or transition group)
+ */
+function SegmentRenderer({
+  segment,
+  executionContext,
+  fps
+}: {
+  segment: ClipSegment;
+  executionContext: BlueprintExecutionContext;
+  fps: number;
+}) {
+  const startFrame = Math.round(segment.startTime * fps);
+  
+  if (segment.type === 'individual') {
+    // Render single clip at its specified time
+    const clip = segment.clips[0];
+    const durationInFrames = Math.round(
+      (clip.endTimeInSeconds - clip.startTimeInSeconds) * fps
+    );
+    
+    return (
+      <Sequence
+        from={startFrame}
+        durationInFrames={durationInFrames}
+        layout="none"
+      >
+        <ClipContent clip={clip} executionContext={executionContext} />
+      </Sequence>
+    );
+  } else {
+    // Render transition group using TransitionSeries ONLY with proper freeze technique
+    return (
+      <Sequence
+        from={startFrame}
+        durationInFrames={calculateTransitionGroupDuration(segment.clips, fps)}
+        layout="none"
+      >
+        <TransitionSeries>
+          {segment.clips.map((clip, index) => {
+            const clipDurationFrames = Math.round(
+              (clip.endTimeInSeconds - clip.startTimeInSeconds) * fps
+            );
+            
+            // Apply freeze technique: extend clip duration by transition duration
+            const hasTransitionToNext = clip.transitionToNext && index < segment.clips.length - 1;
+            const transitionDuration = hasTransitionToNext 
+              ? Math.round(clip.transitionToNext!.durationInSeconds * fps)
+              : 0;
+            
+            const sequenceDurationFrames = clipDurationFrames + transitionDuration;
+            
+            const elements: React.ReactElement[] = [];
+            
+            // Add the sequence with proper freeze technique
+            console.log(`Setting up TransitionSeries.Sequence for ${clip.id}: duration=${sequenceDurationFrames}, freezeAfter=${clipDurationFrames}`);
+            
+            elements.push(
+              <TransitionSeries.Sequence 
+                key={`seq-${clip.id}`}
+                durationInFrames={sequenceDurationFrames}
+              >
+                <ClipContentWithFreeze 
+                  clip={clip} 
+                  executionContext={executionContext} 
+                  freezeAfterFrames={clipDurationFrames}
+                  totalSequenceDuration={sequenceDurationFrames}
+                />
+              </TransitionSeries.Sequence>
+            );
+            
+            // Add transition if this clip has one and it's not the last clip
+            if (hasTransitionToNext) {
+              elements.push(
+                <TransitionSeries.Transition
+                  key={`trans-${clip.id}`}
+                  presentation={getTransitionPresentation(clip.transitionToNext!.type)}
+                  timing={linearTiming({ durationInFrames: transitionDuration })}
+                />
+              );
+            }
+            
+            return elements;
+          }).flat()}
+        </TransitionSeries>
+      </Sequence>
+    );
+  }
 }
 
 /**
- * Renders the actual content of a clip with transitions
+ * Calculate total duration for a transition group (intuitive timing)
+ */
+function calculateTransitionGroupDuration(clips: Clip[], fps: number): number {
+  if (clips.length === 0) return 0;
+  
+  const startTime = clips[0].startTimeInSeconds;
+  const endTime = clips[clips.length - 1].endTimeInSeconds;
+  return Math.round((endTime - startTime) * fps);
+}
+
+/**
+ * Helper function to get Remotion presentation from transition type
+ */
+function getTransitionPresentation(transitionType: 'fade') {
+  switch (transitionType) {
+    case 'fade':
+      return fade({
+        shouldFadeOutExitingScene: true // Enable proper cross-fade
+      });
+    default:
+      return fade({
+        shouldFadeOutExitingScene: true
+      });
+  }
+}
+
+
+
+/**
+ * Renders the actual content of a clip using executeClipElement
+ * This is used within TransitionSeries.Sequence components
  */
 function ClipContent({ 
   clip, 
@@ -108,141 +279,53 @@ function ClipContent({
   clip: Clip; 
   executionContext: BlueprintExecutionContext;
 }) {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  // Execute the clip's element string as TSX
+  const clipElement = executeClipElement(clip.element, executionContext);
   
-  // Execute the clip's TSX code
-  const clipElement = executeClipElement(clip.code, executionContext);
-  
-  // Apply transitions if specified
-  if (clip.transition && clip.transition.type !== 'none') {
-    return (
-      <TransitionWrapper
-        clip={clip}
-        frame={frame}
-        fps={fps}
-      >
-        {clipElement}
-      </TransitionWrapper>
-    );
-  }
-
   return clipElement;
 }
 
 /**
- * Applies transition effects to clip content
+ * Renders clip content with proper freeze technique for TransitionSeries
+ * When freezeAfterFrames is reached, video content freezes at last frame
  */
-function TransitionWrapper({
-  clip,
-  frame,
-  fps,
-  children
-}: {
-  clip: Clip;
-  frame: number;
-  fps: number;
-  children: React.ReactElement;
+function ClipContentWithFreeze({ 
+  clip, 
+  executionContext,
+  freezeAfterFrames,
+  totalSequenceDuration
+}: { 
+  clip: Clip; 
+  executionContext: BlueprintExecutionContext;
+  freezeAfterFrames: number;
+  totalSequenceDuration: number;
 }) {
-  if (!clip.transition || clip.transition.type === 'none') {
-    return children;
-  }
-
-  const transitionFrames = Math.round(clip.transition.duration * fps);
-  const clipDurationFrames = Math.round(clip.duration * fps);
+  const frame = useCurrentFrame();
   
-  let style: React.CSSProperties = {};
-
-  switch (clip.transition.type) {
-    case 'fade':
-      // Fade in at start, fade out at end
-      if (frame < transitionFrames) {
-        // Fade in
-        const opacity = interp(0, transitionFrames, 0, 1);
-        style.opacity = opacity;
-      } else if (frame > clipDurationFrames - transitionFrames) {
-        // Fade out
-        const opacity = interp(clipDurationFrames - transitionFrames, clipDurationFrames, 1, 0);
-        style.opacity = opacity;
-      }
-      break;
-      
-    case 'slide':
-      // Slide in from left
-      if (frame < transitionFrames) {
-        const translateX = interp(0, transitionFrames, -100, 0);
-        style.transform = `translateX(${translateX}%)`;
-      }
-      break;
-      
-    case 'scale':
-      // Scale in from small
-      if (frame < transitionFrames) {
-        const scale = interp(0, transitionFrames, 0.8, 1);
-        style.transform = `scale(${scale})`;
-      }
-      break;
-  }
-
-  return (
-    <div style={{ ...style, width: '100%', height: '100%' }}>
-      {children}
-    </div>
-  );
-}
-
-/**
- * Renders clips in sequential mode (TransitionSeries)
- * Each clip plays after the previous one ends
- */
-export function renderTransitionSeries(
-  series: TransitionSeries,
-  executionContext: BlueprintExecutionContext
-): React.ReactElement {
-  let currentStartTime = 0;
+  console.log(`ClipContentWithFreeze - Clip: ${clip.id}, Frame: ${frame}, FreezeAfter: ${freezeAfterFrames}`);
   
-  return (
-    <AbsoluteFill>
-      {series.clips.map((clip, index) => {
-        const clipStartTime = currentStartTime;
-        const clipWithTransition = {
-          ...clip,
-          startTime: clipStartTime,
-          transition: clip.transition || series.defaultTransition
-        };
-        
-        // Update start time for next clip
-        currentStartTime += clip.duration;
-        
-        return (
-          <ClipRenderer
-            key={clip.id}
-            clip={clipWithTransition}
-            executionContext={executionContext}
-          />
+  // Simplest approach: extend the video duration from the start to avoid any jumps
+  if (clip.element.includes('Video')) {
+    const endAtMatch = clip.element.match(/endAt:\s*(\d+)/);
+    
+    if (endAtMatch) {
+      const originalEndFrame = parseInt(endAtMatch[1]);
+      
+      // If we need to extend beyond the original video duration, just repeat the last frame
+      if (totalSequenceDuration > freezeAfterFrames) {
+        const extendedElement = clip.element.replace(
+          /endAt:\s*\d+/,
+          `endAt: ${originalEndFrame + (totalSequenceDuration - freezeAfterFrames)}`
         );
-      })}
-    </AbsoluteFill>
-  );
+        
+        console.log(`Pre-extended video to cover full sequence duration: ${totalSequenceDuration} frames`);
+        return executeClipElement(extendedElement, executionContext);
+      }
+    }
+  }
+  
+  // Normal rendering for non-video or no extension needed
+  return executeClipElement(clip.element, executionContext);
 }
 
-/**
- * Renders clips in overlay mode (Sequence)
- * All clips play simultaneously, stacked on top of each other
- */
-export function renderSequence(
-  sequence: import('./BlueprintTypes').Sequence,
-  executionContext: BlueprintExecutionContext
-): React.ReactElement {
-  return (
-    <AbsoluteFill>
-      {sequence.clips.map((clip) => (
-        <ClipRenderer
-          key={clip.id}
-          clip={clip}
-          executionContext={executionContext}
-        />
-      ))}
-    </AbsoluteFill>
-  );
-}
+

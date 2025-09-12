@@ -42,13 +42,10 @@ export function DynamicComposition({
 
   // Blueprint-based rendering
   if (mode === 'blueprint' && blueprint) {
-    console.log("Rendering blueprint composition with", blueprint.tracks.length, "tracks");
+    console.log("Rendering blueprint composition with", blueprint.length, "tracks");
     return (
       <BlueprintComposition 
-        blueprint={{
-          ...blueprint,
-          backgroundColor: blueprint.backgroundColor || backgroundColor
-        }} 
+        blueprint={blueprint} 
       />
     );
   }
@@ -154,12 +151,12 @@ export function DynamicVideoPlayer({
   playerRef,
   durationInFrames,
 }: DynamicVideoPlayerProps) {
-  console.log("DynamicVideoPlayer - Mode:", renderingMode, "TSX length:", tsxCode?.length || 0, "Blueprint tracks:", blueprint?.tracks?.length || 0);
+  console.log("DynamicVideoPlayer - Mode:", renderingMode, "TSX length:", tsxCode?.length || 0, "Blueprint tracks:", blueprint?.length || 0);
 
   // Calculate duration based on rendering mode
   const calculatedDuration = React.useMemo(() => {
     if (renderingMode === 'blueprint' && blueprint) {
-      return calculateBlueprintDuration(blueprint.tracks);
+      return calculateBlueprintDuration(blueprint);
     }
     return durationInFrames || 300; // Default 10 seconds at 30fps
   }, [renderingMode, blueprint, durationInFrames]);
