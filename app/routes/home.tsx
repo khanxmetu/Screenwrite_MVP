@@ -23,6 +23,7 @@ import LeftPanel from "~/components/editor/LeftPanel";
 import { StandaloneVideoPlayer } from "~/video-compositions/StandalonePreview";
 import { DynamicVideoPlayer } from "~/video-compositions/DynamicComposition";
 import { sampleBlueprint, complexTestBlueprint } from "~/video-compositions/TestBlueprint";
+import { edgeCaseTestBlueprint } from "~/video-compositions/EdgeCaseTestBlueprint";
 import type { CompositionBlueprint } from "~/video-compositions/BlueprintTypes";
 import { RenderStatus } from "~/components/timeline/RenderStatus";
 import { Button } from "~/components/ui/button";
@@ -77,7 +78,7 @@ export default function TimelineEditor() {
 
   // Blueprint testing state
   const [useBlueprintMode, setUseBlueprintMode] = useState<boolean>(false);
-  const [testBlueprint, setTestBlueprint] = useState<CompositionBlueprint>(() => complexTestBlueprint);
+  const [testBlueprint, setTestBlueprint] = useState<CompositionBlueprint>(() => edgeCaseTestBlueprint);
 
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)

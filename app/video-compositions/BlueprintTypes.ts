@@ -10,6 +10,10 @@ export interface Clip {
     type: 'fade'; // For now, we'll just support fade
     durationInSeconds: number;
   };
+  transitionFromPrevious?: {
+    type: 'fade'; // For now, we'll just support fade
+    durationInSeconds: number;
+  };
 }
 
 export interface Track {

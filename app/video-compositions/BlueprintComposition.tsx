@@ -78,6 +78,7 @@ function TrackRenderer({
 
 /**
  * Groups clips into segments based on adjacency and transitions
+ * Now handles orphaned transitions (transitionToNext/transitionFromPrevious without adjacent clips)
  */
 function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
   const segments: ClipSegment[] = [];
@@ -86,7 +87,18 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
   while (i < clips.length) {
     const currentClip = clips[i];
     
-    // Check if this clip starts a transition group
+    // Check for any transitions (including orphaned ones)
+    const hasOrphanedTransitionTo = currentClip.transitionToNext && (
+      i >= clips.length - 1 || 
+      Math.abs(currentClip.endTimeInSeconds - clips[i + 1].startTimeInSeconds) > 0.001
+    );
+    
+    const hasOrphanedTransitionFrom = currentClip.transitionFromPrevious && (
+      i === 0 || 
+      Math.abs(clips[i - 1].endTimeInSeconds - currentClip.startTimeInSeconds) > 0.001
+    );
+    
+    // Check if this clip starts a regular adjacent transition group
     if (currentClip.transitionToNext && i < clips.length - 1) {
       const nextClip = clips[i + 1];
       // Check if clips are adjacent (current end time == next start time)
@@ -116,25 +128,57 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
         segments.push({
           type: 'transition-group',
           clips: transitionGroup,
-          startTime: currentClip.startTimeInSeconds
+          startTime: currentClip.startTimeInSeconds,
+          hasOrphanedStart: false,
+          hasOrphanedEnd: false
         });
         
         i = j + 1;
       } else {
-        // Not adjacent, treat as individual clip
-        segments.push({
-          type: 'individual',
-          clips: [currentClip],
-          startTime: currentClip.startTimeInSeconds
-        });
+        // Adjacent transition failed, check for orphaned transitions
+        if (hasOrphanedTransitionTo || hasOrphanedTransitionFrom) {
+          // This clip has orphaned transitions, needs TransitionSeries with empty divs
+          segments.push({
+            type: 'transition-group',
+            clips: [currentClip],
+            startTime: hasOrphanedTransitionFrom ? 
+              currentClip.startTimeInSeconds - currentClip.transitionFromPrevious!.durationInSeconds :
+              currentClip.startTimeInSeconds,
+            hasOrphanedStart: !!hasOrphanedTransitionFrom,
+            hasOrphanedEnd: !!hasOrphanedTransitionTo
+          });
+        } else {
+          // No transitions, individual clip
+          segments.push({
+            type: 'individual',
+            clips: [currentClip],
+            startTime: currentClip.startTimeInSeconds,
+            hasOrphanedStart: false,
+            hasOrphanedEnd: false
+          });
+        }
         i++;
       }
+    } else if (hasOrphanedTransitionTo || hasOrphanedTransitionFrom) {
+      // This clip has orphaned transitions but no adjacent clips
+      segments.push({
+        type: 'transition-group',
+        clips: [currentClip],
+        startTime: hasOrphanedTransitionFrom ? 
+          currentClip.startTimeInSeconds - currentClip.transitionFromPrevious!.durationInSeconds :
+          currentClip.startTimeInSeconds,
+        hasOrphanedStart: !!hasOrphanedTransitionFrom,
+        hasOrphanedEnd: !!hasOrphanedTransitionTo
+      });
+      i++;
     } else {
-      // Individual clip (no transition or last clip)
+      // Individual clip (no transition)
       segments.push({
         type: 'individual',
         clips: [currentClip],
-        startTime: currentClip.startTimeInSeconds
+        startTime: currentClip.startTimeInSeconds,
+        hasOrphanedStart: false,
+        hasOrphanedEnd: false
       });
       i++;
     }
@@ -147,6 +191,8 @@ type ClipSegment = {
   type: 'individual' | 'transition-group';
   clips: Clip[];
   startTime: number;
+  hasOrphanedStart: boolean;
+  hasOrphanedEnd: boolean;
 };
 
 /**
@@ -180,59 +226,141 @@ function SegmentRenderer({
       </Sequence>
     );
   } else {
-    // Render transition group using TransitionSeries ONLY with proper freeze technique
+    // Render transition group using TransitionSeries with support for orphaned transitions
+    const sequences: React.ReactElement[] = [];
+    let totalDurationFrames = 0;
+    
+    // Handle orphaned fade-in at the start
+    if (segment.hasOrphanedStart && segment.clips[0].transitionFromPrevious) {
+      const transitionDuration = Math.round(segment.clips[0].transitionFromPrevious.durationInSeconds * fps);
+      totalDurationFrames += transitionDuration;
+      
+      // Add empty div sequence
+      sequences.push(
+        <TransitionSeries.Sequence
+          key="orphaned-start-empty"
+          durationInFrames={transitionDuration}
+        >
+          <AbsoluteFill style={{ backgroundColor: '#000000' }} />
+        </TransitionSeries.Sequence>
+      );
+      
+      // Add transition
+      sequences.push(
+        <TransitionSeries.Transition
+          key="orphaned-start-transition"
+          presentation={getTransitionPresentation('fade')}
+          timing={linearTiming({ durationInFrames: transitionDuration })}
+        />
+      );
+    }
+    
+    // Process clips (regular adjacent logic or single orphaned clip)
+    if (segment.clips.length === 1 && (segment.hasOrphanedStart || segment.hasOrphanedEnd)) {
+      // Single clip with orphaned transitions
+      const clip = segment.clips[0];
+      const clipDurationFrames = Math.round((clip.endTimeInSeconds - clip.startTimeInSeconds) * fps);
+      
+      let clipSequenceDurationFrames = clipDurationFrames;
+      if (segment.hasOrphanedEnd && clip.transitionToNext) {
+        clipSequenceDurationFrames += Math.round(clip.transitionToNext.durationInSeconds * fps);
+      }
+      
+      totalDurationFrames += clipSequenceDurationFrames;
+      
+      sequences.push(
+        <TransitionSeries.Sequence 
+          key={`seq-${clip.id}`}
+          durationInFrames={clipSequenceDurationFrames}
+        >
+          <ClipContentWithFreeze 
+            clip={clip} 
+            executionContext={executionContext} 
+            freezeAfterFrames={clipDurationFrames}
+            totalSequenceDuration={clipSequenceDurationFrames}
+          />
+        </TransitionSeries.Sequence>
+      );
+    } else {
+      // Regular adjacent clips logic (existing code)
+      totalDurationFrames += calculateTransitionGroupDuration(segment.clips, fps);
+      
+      segment.clips.forEach((clip, index) => {
+        const clipDurationFrames = Math.round(
+          (clip.endTimeInSeconds - clip.startTimeInSeconds) * fps
+        );
+        
+        // Apply freeze technique: extend clip duration by transition duration
+        const hasTransitionToNext = clip.transitionToNext && index < segment.clips.length - 1;
+        const transitionDuration = hasTransitionToNext 
+          ? Math.round(clip.transitionToNext!.durationInSeconds * fps)
+          : 0;
+        
+        const sequenceDurationFrames = clipDurationFrames + transitionDuration;
+        
+        // Add the sequence with proper freeze technique
+        console.log(`Setting up TransitionSeries.Sequence for ${clip.id}: duration=${sequenceDurationFrames}, freezeAfter=${clipDurationFrames}`);
+        
+        sequences.push(
+          <TransitionSeries.Sequence 
+            key={`seq-${clip.id}`}
+            durationInFrames={sequenceDurationFrames}
+          >
+            <ClipContentWithFreeze 
+              clip={clip} 
+              executionContext={executionContext} 
+              freezeAfterFrames={clipDurationFrames}
+              totalSequenceDuration={sequenceDurationFrames}
+            />
+          </TransitionSeries.Sequence>
+        );
+        
+        // Add transition if this clip has one and it's not the last clip
+        if (hasTransitionToNext) {
+          sequences.push(
+            <TransitionSeries.Transition
+              key={`trans-${clip.id}`}
+              presentation={getTransitionPresentation(clip.transitionToNext!.type)}
+              timing={linearTiming({ durationInFrames: transitionDuration })}
+            />
+          );
+        }
+      });
+    }
+    
+    // Handle orphaned fade-out at the end
+    if (segment.hasOrphanedEnd && segment.clips[segment.clips.length - 1].transitionToNext) {
+      const transitionDuration = Math.round(segment.clips[segment.clips.length - 1].transitionToNext!.durationInSeconds * fps);
+      totalDurationFrames += transitionDuration;
+      
+      // Add transition
+      sequences.push(
+        <TransitionSeries.Transition
+          key="orphaned-end-transition"
+          presentation={getTransitionPresentation('fade')}
+          timing={linearTiming({ durationInFrames: transitionDuration })}
+        />
+      );
+      
+      // Add empty div sequence
+      sequences.push(
+        <TransitionSeries.Sequence
+          key="orphaned-end-empty"
+          durationInFrames={transitionDuration}
+        >
+          <AbsoluteFill style={{ backgroundColor: '#000000' }} />
+        </TransitionSeries.Sequence>
+      );
+    }
+    
     return (
       <Sequence
         from={startFrame}
-        durationInFrames={calculateTransitionGroupDuration(segment.clips, fps)}
+        durationInFrames={totalDurationFrames}
         layout="none"
       >
         <TransitionSeries>
-          {segment.clips.map((clip, index) => {
-            const clipDurationFrames = Math.round(
-              (clip.endTimeInSeconds - clip.startTimeInSeconds) * fps
-            );
-            
-            // Apply freeze technique: extend clip duration by transition duration
-            const hasTransitionToNext = clip.transitionToNext && index < segment.clips.length - 1;
-            const transitionDuration = hasTransitionToNext 
-              ? Math.round(clip.transitionToNext!.durationInSeconds * fps)
-              : 0;
-            
-            const sequenceDurationFrames = clipDurationFrames + transitionDuration;
-            
-            const elements: React.ReactElement[] = [];
-            
-            // Add the sequence with proper freeze technique
-            console.log(`Setting up TransitionSeries.Sequence for ${clip.id}: duration=${sequenceDurationFrames}, freezeAfter=${clipDurationFrames}`);
-            
-            elements.push(
-              <TransitionSeries.Sequence 
-                key={`seq-${clip.id}`}
-                durationInFrames={sequenceDurationFrames}
-              >
-                <ClipContentWithFreeze 
-                  clip={clip} 
-                  executionContext={executionContext} 
-                  freezeAfterFrames={clipDurationFrames}
-                  totalSequenceDuration={sequenceDurationFrames}
-                />
-              </TransitionSeries.Sequence>
-            );
-            
-            // Add transition if this clip has one and it's not the last clip
-            if (hasTransitionToNext) {
-              elements.push(
-                <TransitionSeries.Transition
-                  key={`trans-${clip.id}`}
-                  presentation={getTransitionPresentation(clip.transitionToNext!.type)}
-                  timing={linearTiming({ durationInFrames: transitionDuration })}
-                />
-              );
-            }
-            
-            return elements;
-          }).flat()}
+          {sequences}
         </TransitionSeries>
       </Sequence>
     );
