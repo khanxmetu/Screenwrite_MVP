@@ -22,6 +22,8 @@ import { useTheme } from "next-themes";
 import LeftPanel from "~/components/editor/LeftPanel";
 import { StandaloneVideoPlayer } from "~/video-compositions/StandalonePreview";
 import { DynamicVideoPlayer } from "~/video-compositions/DynamicComposition";
+import { sampleBlueprint } from "~/video-compositions/TestBlueprint";
+import type { CompositionBlueprint } from "~/video-compositions/BlueprintTypes";
 import { RenderStatus } from "~/components/timeline/RenderStatus";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
@@ -72,6 +74,10 @@ export default function TimelineEditor() {
 
   // Sample code toggle state
   const [useSampleCode, setUseSampleCode] = useState<boolean>(false);
+
+  // Blueprint testing state
+  const [useBlueprintMode, setUseBlueprintMode] = useState<boolean>(false);
+  const [testBlueprint, setTestBlueprint] = useState<CompositionBlueprint>(() => sampleBlueprint);
 
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
@@ -511,6 +517,20 @@ export default function TimelineEditor() {
                     >
                       {/* Sample Content Button */}
                       <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
+                        <Badge variant="outline" className="text-xs">
+                          {useBlueprintMode ? "Blueprint Mode" : (generatedTsxCode || useSampleCode) ? "String Mode" : "Standalone Mode"}
+                        </Badge>
+                        <Button
+                          variant={useBlueprintMode ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => {
+                            console.log("Toggling blueprint mode:", !useBlueprintMode);
+                            setUseBlueprintMode(!useBlueprintMode);
+                          }}
+                          className="text-xs h-6"
+                        >
+                          {useBlueprintMode ? "✓ Blueprint" : "Test Blueprint"}
+                        </Button>
                         <Button
                           variant={useSampleCode ? "default" : "outline"}
                           size="sm"
@@ -532,15 +552,26 @@ export default function TimelineEditor() {
                         {/* Debug console log */}
                         {(() => {
                           console.log("=== RENDER DEBUG ===");
+                          console.log("Blueprint mode:", useBlueprintMode);
                           console.log("Generated TSX code:", generatedTsxCode?.slice(0, 100) + "...");
                           console.log("Preview content:", previewContent);
                           console.log("Preview settings:", previewSettings);
                           console.log("==================");
                           return null;
                         })()}
-                        {generatedTsxCode || useSampleCode ? (
+                        {useBlueprintMode ? (
+                          <DynamicVideoPlayer
+                            blueprint={testBlueprint}
+                            renderingMode="blueprint"
+                            compositionWidth={previewSettings.width}
+                            compositionHeight={previewSettings.height}
+                            backgroundColor={previewSettings.backgroundColor}
+                            playerRef={playerRef}
+                          />
+                        ) : generatedTsxCode || useSampleCode ? (
                           <DynamicVideoPlayer
                             tsxCode={generatedTsxCode}
+                            renderingMode="string"
                             compositionWidth={previewSettings.width}
                             compositionHeight={previewSettings.height}
                             backgroundColor={previewSettings.backgroundColor}

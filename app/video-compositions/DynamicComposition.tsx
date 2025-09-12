@@ -2,6 +2,9 @@ import React, { useState, useEffect } from "react";
 import * as Remotion from "remotion";
 import { Player, type PlayerRef } from "@remotion/player";
 import { interp } from "../utils/animations";
+import { BlueprintComposition } from "./BlueprintComposition";
+import { calculateBlueprintDuration } from "./executeClipElement";
+import type { CompositionBlueprint, RenderingMode } from "./BlueprintTypes";
 
 // Destructure commonly used components for convenience
 const { 
@@ -19,17 +22,38 @@ const {
 } = Remotion;
 
 export interface DynamicCompositionProps {
-  tsxCode: string;
+  tsxCode?: string;
+  blueprint?: CompositionBlueprint;
+  renderingMode?: RenderingMode;
   backgroundColor?: string;
   fps?: number;
 }
 
-// Dynamic composition that executes AI-generated TSX code
+// Dynamic composition that executes AI-generated TSX code OR blueprint-based compositions
 export function DynamicComposition({
   tsxCode,
+  blueprint,
+  renderingMode = 'string',
   backgroundColor = "#000000",
 }: DynamicCompositionProps) {
 
+  // Determine rendering mode based on props
+  const mode: RenderingMode = renderingMode === 'blueprint' && blueprint ? 'blueprint' : 'string';
+
+  // Blueprint-based rendering
+  if (mode === 'blueprint' && blueprint) {
+    console.log("Rendering blueprint composition with", blueprint.tracks.length, "tracks");
+    return (
+      <BlueprintComposition 
+        blueprint={{
+          ...blueprint,
+          backgroundColor: blueprint.backgroundColor || backgroundColor
+        }} 
+      />
+    );
+  }
+
+  // String-based rendering (existing logic)
   // If no TSX code, show placeholder
   if (!tsxCode) {
     return (
@@ -109,7 +133,9 @@ export function DynamicComposition({
 
 // Props for the dynamic video player
 export interface DynamicVideoPlayerProps {
-  tsxCode: string;
+  tsxCode?: string;
+  blueprint?: CompositionBlueprint;
+  renderingMode?: RenderingMode;
   compositionWidth: number;
   compositionHeight: number;
   backgroundColor?: string;
@@ -120,13 +146,23 @@ export interface DynamicVideoPlayerProps {
 // The dynamic video player component
 export function DynamicVideoPlayer({
   tsxCode,
+  blueprint,
+  renderingMode = 'string',
   compositionWidth,
   compositionHeight,
   backgroundColor = "#000000",
   playerRef,
-  durationInFrames = 300, // Default 10 seconds at 30fps
+  durationInFrames,
 }: DynamicVideoPlayerProps) {
-  console.log("DynamicVideoPlayer - TSX Code length:", tsxCode?.length || 0);
+  console.log("DynamicVideoPlayer - Mode:", renderingMode, "TSX length:", tsxCode?.length || 0, "Blueprint tracks:", blueprint?.tracks?.length || 0);
+
+  // Calculate duration based on rendering mode
+  const calculatedDuration = React.useMemo(() => {
+    if (renderingMode === 'blueprint' && blueprint) {
+      return calculateBlueprintDuration(blueprint.tracks);
+    }
+    return durationInFrames || 300; // Default 10 seconds at 30fps
+  }, [renderingMode, blueprint, durationInFrames]);
 
   return (
     <Player
@@ -134,9 +170,11 @@ export function DynamicVideoPlayer({
       component={DynamicComposition}
       inputProps={{
         tsxCode,
+        blueprint,
+        renderingMode,
         backgroundColor,
       }}
-      durationInFrames={durationInFrames}
+      durationInFrames={calculatedDuration}
       compositionWidth={compositionWidth}
       compositionHeight={compositionHeight}
       fps={30}
