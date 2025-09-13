@@ -1,5 +1,6 @@
 import React from 'react';
 import type { CompositionBlueprint } from "~/video-compositions/BlueprintTypes";
+import { ScrollArea, ScrollBar } from "~/components/ui/scroll-area";
 
 export interface TimelineViewProps {
   blueprint: CompositionBlueprint;
@@ -8,6 +9,8 @@ export interface TimelineViewProps {
 
 // Fresh component name to avoid any stale Vite graph node collisions.
 export default function TimelineView({ blueprint, className = "" }: TimelineViewProps) {
+  const [zoomLevel, setZoomLevel] = React.useState(60); // pixels per second
+
   // Derive total timeline duration
   let maxEnd = 0;
   for (const track of blueprint) {
@@ -17,8 +20,38 @@ export default function TimelineView({ blueprint, className = "" }: TimelineView
   }
   const totalDuration = Math.max(maxEnd, 10);
 
-  const pixelsPerSecond = 60;
+  const pixelsPerSecond = zoomLevel;
   const timelineWidth = totalDuration * pixelsPerSecond;
+
+  // Slider styling for zoom control
+  React.useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .slider::-webkit-slider-thumb {
+        appearance: none;
+        height: 10px;
+        width: 10px;
+        border-radius: 2px;
+        background: hsl(var(--foreground));
+        cursor: pointer;
+        border: none;
+      }
+      .slider::-moz-range-thumb {
+        height: 10px;
+        width: 10px;
+        border-radius: 2px;
+        background: hsl(var(--foreground));
+        cursor: pointer;
+        border: none;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      if (document.head.contains(style)) {
+        document.head.removeChild(style);
+      }
+    };
+  }, []);
 
   return (
     <div className={`bg-background border border-border rounded-lg p-4 ${className}`}>
@@ -29,9 +62,8 @@ export default function TimelineView({ blueprint, className = "" }: TimelineView
         </p>
       </div>
       <div className="relative border border-border rounded overflow-hidden" style={{ height: 'calc(100% - 80px)' }}>
-        <div className="h-full flex flex-col">
-          <div className="flex-1 overflow-auto">
-            <div style={{ width: Math.max(timelineWidth + 100, 800) }}>
+        <ScrollArea className="h-full w-full">
+          <div style={{ width: Math.max(timelineWidth + 100, 800), minHeight: '100%' }} className="relative">
               <div className="h-8 bg-muted border-b border-border relative flex-shrink-0 sticky top-0 z-10">
                 {Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => (
                   <div
@@ -78,13 +110,28 @@ export default function TimelineView({ blueprint, className = "" }: TimelineView
                 ))}
               </div>
             </div>
-          </div>
-        </div>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
       </div>
-      <div className="mt-3 flex gap-4 text-xs text-muted-foreground">
-        <span>Total Clips: {blueprint.reduce((s, t) => s + t.clips.length, 0)}</span>
-        <span>Tracks: {blueprint.length}</span>
-        <span>Duration: {totalDuration.toFixed(1)}s</span>
+      <div className="mt-3 flex items-center justify-between">
+        <div className="flex gap-4 text-xs text-muted-foreground">
+          <span>Total Clips: {blueprint.reduce((s, t) => s + t.clips.length, 0)}</span>
+          <span>Tracks: {blueprint.length}</span>
+          <span>Duration: {totalDuration.toFixed(1)}s</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Zoom:</span>
+          <input
+            type="range"
+            min="20"
+            max="200"
+            step="10"
+            value={zoomLevel}
+            onChange={(e) => setZoomLevel(Number(e.target.value))}
+            className="w-20 h-1 bg-border rounded-sm appearance-none cursor-pointer slider"
+          />
+          <span className="text-xs text-muted-foreground w-8">{Math.round((zoomLevel / 60) * 100)}%</span>
+        </div>
       </div>
     </div>
   );
