@@ -98,6 +98,9 @@ export default function TimelineEditor() {
 
   // video player media selection state
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  
+  // Video playback state for scrubber
+  const [currentFrame, setCurrentFrame] = useState<number>(0);
 
 
 
@@ -170,6 +173,42 @@ export default function TimelineEditor() {
     const calculatedDuration = calculateBlueprintDuration(testBlueprint);
     setDurationInFrames(calculatedDuration);
   }, [testBlueprint]);
+
+  // Update current frame for scrubber using player events + fallback polling
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+
+    // Get initial frame position
+    setCurrentFrame(player.getCurrentFrame());
+
+    const handleFrameUpdate = (event: { detail: { frame: number } }) => {
+      setCurrentFrame(event.detail.frame);
+    };
+
+    const handleSeeked = (event: { detail: { frame: number } }) => {
+      setCurrentFrame(event.detail.frame);
+    };
+
+    // Listen to the player's frame updates for real-time position
+    player.addEventListener('frameupdate', handleFrameUpdate);
+    player.addEventListener('seeked', handleSeeked);
+
+    // Fallback polling for smoother updates during playback
+    const interval = setInterval(() => {
+      const currentPlayerFrame = player.getCurrentFrame();
+      setCurrentFrame(prev => {
+        // Only update if there's a significant difference to avoid unnecessary re-renders
+        return Math.abs(prev - currentPlayerFrame) > 0.1 ? currentPlayerFrame : prev;
+      });
+    }, 33); // 30fps polling as fallback
+
+    return () => {
+      player.removeEventListener('frameupdate', handleFrameUpdate);
+      player.removeEventListener('seeked', handleSeeked);
+      clearInterval(interval);
+    };
+  }, [playerRef]);
 
   // Global spacebar play/pause functionality - like original
   useEffect(() => {
@@ -400,6 +439,10 @@ export default function TimelineEditor() {
                 <TimelineView
                   blueprint={testBlueprint}
                   className="h-full"
+                  playerRef={playerRef}
+                  currentFrame={currentFrame}
+                  fps={30}
+                  onFrameUpdate={setCurrentFrame}
                 />
               </div>
             </ResizablePanel>
