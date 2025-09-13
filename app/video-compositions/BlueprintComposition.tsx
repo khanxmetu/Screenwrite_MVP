@@ -104,6 +104,8 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
       Math.abs(clips[i - 1].endTimeInSeconds - currentClip.startTimeInSeconds) > 0.001
     );
     
+    console.log(`Clip ${currentClip.id} (${currentClip.startTimeInSeconds}-${currentClip.endTimeInSeconds}): orphanedTo=${hasOrphanedTransitionTo}, orphanedFrom=${hasOrphanedTransitionFrom}`);
+    
     // Check if this clip starts a regular adjacent transition group
     if (currentClip.transitionToNext && i < clips.length - 1) {
       const nextClip = clips[i + 1];
@@ -144,12 +146,11 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
         // Adjacent transition failed, check for orphaned transitions
         if (hasOrphanedTransitionTo || hasOrphanedTransitionFrom) {
           // This clip has orphaned transitions, needs TransitionSeries with empty divs
+          // For orphaned transitions, timing should be WITHIN clip boundaries, not outside
           segments.push({
             type: 'transition-group',
             clips: [currentClip],
-            startTime: hasOrphanedTransitionFrom ? 
-              currentClip.startTimeInSeconds - currentClip.transitionFromPrevious!.durationInSeconds :
-              currentClip.startTimeInSeconds,
+            startTime: currentClip.startTimeInSeconds, // Keep within clip timing boundaries
             hasOrphanedStart: !!hasOrphanedTransitionFrom,
             hasOrphanedEnd: !!hasOrphanedTransitionTo
           });
@@ -170,9 +171,7 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
       segments.push({
         type: 'transition-group',
         clips: [currentClip],
-        startTime: hasOrphanedTransitionFrom ? 
-          currentClip.startTimeInSeconds - currentClip.transitionFromPrevious!.durationInSeconds :
-          currentClip.startTimeInSeconds,
+        startTime: currentClip.startTimeInSeconds, // Keep within clip timing boundaries for orphaned transitions
         hasOrphanedStart: !!hasOrphanedTransitionFrom,
         hasOrphanedEnd: !!hasOrphanedTransitionTo
       });
@@ -238,54 +237,26 @@ function SegmentRenderer({
     const sequences: React.ReactElement[] = [];
     let totalDurationFrames = 0;
     
-    // Handle orphaned fade-in at the start
-    if (segment.hasOrphanedStart && segment.clips[0].transitionFromPrevious) {
-      const transitionDuration = Math.round(segment.clips[0].transitionFromPrevious.durationInSeconds * fps);
-      totalDurationFrames += transitionDuration;
-      
-      // Add empty div sequence
-      sequences.push(
-        <TransitionSeries.Sequence
-          key="orphaned-start-empty"
-          durationInFrames={transitionDuration}
-        >
-          <AbsoluteFill style={{ backgroundColor: '#000000' }} />
-        </TransitionSeries.Sequence>
-      );
-      
-      // Add transition
-      sequences.push(
-        <TransitionSeries.Transition
-          key="orphaned-start-transition"
-          presentation={getTransitionPresentation({ type: 'fade', durationInSeconds: 0 }, videoConfig)}
-          timing={linearTiming({ durationInFrames: transitionDuration })}
-        />
-      );
-    }
-    
     // Process clips (regular adjacent logic or single orphaned clip)
     if (segment.clips.length === 1 && (segment.hasOrphanedStart || segment.hasOrphanedEnd)) {
-      // Single clip with orphaned transitions
+      // Single clip with orphaned transitions - transitions happen WITHIN clip timing
       const clip = segment.clips[0];
       const clipDurationFrames = Math.round((clip.endTimeInSeconds - clip.startTimeInSeconds) * fps);
       
-      let clipSequenceDurationFrames = clipDurationFrames;
-      if (segment.hasOrphanedEnd && clip.transitionToNext) {
-        clipSequenceDurationFrames += Math.round(clip.transitionToNext.durationInSeconds * fps);
-      }
-      
-      totalDurationFrames += clipSequenceDurationFrames;
+      // For orphaned transitions, keep duration exactly as the clip duration (no extensions)
+      totalDurationFrames += clipDurationFrames;
       
       sequences.push(
         <TransitionSeries.Sequence 
           key={`seq-${clip.id}`}
-          durationInFrames={clipSequenceDurationFrames}
+          durationInFrames={clipDurationFrames}
         >
-          <ClipContentWithFreeze 
-            clip={clip} 
-            executionContext={executionContext} 
-            freezeAfterFrames={clipDurationFrames}
-            totalSequenceDuration={clipSequenceDurationFrames}
+          <OrphanedTransitionWrapper
+            clip={clip}
+            executionContext={executionContext}
+            hasOrphanedStart={segment.hasOrphanedStart}
+            hasOrphanedEnd={segment.hasOrphanedEnd}
+            fps={fps}
           />
         </TransitionSeries.Sequence>
       );
@@ -334,31 +305,6 @@ function SegmentRenderer({
           );
         }
       });
-    }
-    
-    // Handle orphaned fade-out at the end
-    if (segment.hasOrphanedEnd && segment.clips[segment.clips.length - 1].transitionToNext) {
-      const transitionDuration = Math.round(segment.clips[segment.clips.length - 1].transitionToNext!.durationInSeconds * fps);
-      totalDurationFrames += transitionDuration;
-      
-      // Add transition
-      sequences.push(
-        <TransitionSeries.Transition
-          key="orphaned-end-transition"
-          presentation={getTransitionPresentation({ type: 'fade', durationInSeconds: 0 }, videoConfig)}
-          timing={linearTiming({ durationInFrames: transitionDuration })}
-        />
-      );
-      
-      // Add empty div sequence
-      sequences.push(
-        <TransitionSeries.Sequence
-          key="orphaned-end-empty"
-          durationInFrames={transitionDuration}
-        >
-          <AbsoluteFill style={{ backgroundColor: '#000000' }} />
-        </TransitionSeries.Sequence>
-      );
     }
     
     return (
@@ -497,6 +443,60 @@ function ClipContentWithFreeze({
   
   // Normal rendering for non-video or no extension needed
   return executeClipElement(clip.element, executionContext);
+}
+
+/**
+ * Wrapper component for orphaned transitions that happen within clip boundaries
+ * Applies fade-in and/or fade-out effects within the clip's own duration
+ */
+function OrphanedTransitionWrapper({
+  clip,
+  executionContext,
+  hasOrphanedStart,
+  hasOrphanedEnd,
+  fps
+}: {
+  clip: Clip;
+  executionContext: BlueprintExecutionContext;
+  hasOrphanedStart: boolean;
+  hasOrphanedEnd: boolean;
+  fps: number;
+}) {
+  const frame = useCurrentFrame();
+  const clipDurationFrames = Math.round((clip.endTimeInSeconds - clip.startTimeInSeconds) * fps);
+  
+  console.log(`OrphanedTransitionWrapper ${clip.id}: frame=${frame}, clipDurationFrames=${clipDurationFrames}, hasStart=${hasOrphanedStart}, hasEnd=${hasOrphanedEnd}`);
+  
+  let opacity = 1;
+  
+  // Handle orphaned fade-in from transparent (happens at start of clip)
+  if (hasOrphanedStart && clip.transitionFromPrevious) {
+    const fadeInDurationFrames = Math.round(clip.transitionFromPrevious.durationInSeconds * fps);
+    if (frame < fadeInDurationFrames) {
+      // Fade in from 0 to 1 during the first X frames of the clip
+      opacity = frame / fadeInDurationFrames;
+    }
+  }
+  
+  // Handle orphaned fade-out to transparent (happens at end of clip)
+  if (hasOrphanedEnd && clip.transitionToNext) {
+    const fadeOutDurationFrames = Math.round(clip.transitionToNext.durationInSeconds * fps);
+    const fadeOutStartFrame = clipDurationFrames - fadeOutDurationFrames;
+    if (frame >= fadeOutStartFrame) {
+      // Fade out from 1 to 0 during the last X frames of the clip
+      const fadeOutProgress = (frame - fadeOutStartFrame) / fadeOutDurationFrames;
+      opacity *= (1 - fadeOutProgress);
+    }
+  }
+  
+  // Clamp opacity between 0 and 1
+  opacity = Math.max(0, Math.min(1, opacity));
+  
+  return (
+    <AbsoluteFill style={{ opacity }}>
+      {executeClipElement(clip.element, executionContext)}
+    </AbsoluteFill>
+  );
 }
 
 
