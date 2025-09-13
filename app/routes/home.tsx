@@ -407,7 +407,33 @@ export default function TimelineEditor() {
         </ResizablePanel>
 
         {/* Conditionally render chat panel - extends full height */}
-        {/* TODO: Add back chat when blueprint generation is implemented */}
+        {!isChatMinimized && (
+          <>
+            <ResizableHandle withHandle />
+
+            {/* Right Panel - Chat (full height) */}
+            <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
+              <div className="h-full border-l border-border">
+                <ChatBox
+                  mediaBinItems={mediaBinItems}
+                  handleDropOnTrack={() => {}} // No-op since we don't have timeline integration yet
+                  isMinimized={false}
+                  onToggleMinimize={() => setIsChatMinimized(true)}
+                  messages={chatMessages}
+                  onMessagesChange={setChatMessages}
+                  timelineState={{ tracks: [] }} // Empty timeline for now
+                  isStandalonePreview={true}
+                  onGenerateComposition={undefined} // TODO: Implement blueprint generation
+                  isGeneratingComposition={false}
+                  currentComposition={undefined}
+                  generationError={undefined}
+                  onRetryFix={undefined}
+                  onClearError={undefined}
+                />
+              </div>
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
 
       {/* Hidden file input */}

@@ -21,7 +21,11 @@ export default function TimelineView({ blueprint, className = "" }: TimelineView
   const totalDuration = Math.max(maxEnd, 10);
 
   const pixelsPerSecond = zoomLevel;
-  const timelineWidth = totalDuration * pixelsPerSecond;
+  // Extend timeline much further than content for infinite ruler effect
+  // Scale the extension based on zoom level to maintain performance
+  const extensionMultiplier = Math.max(3, Math.min(10, 1000 / pixelsPerSecond)); // More extension at higher zoom
+  const extendedDuration = Math.max(totalDuration * extensionMultiplier, 60); // At least 1 minute
+  const timelineWidth = extendedDuration * pixelsPerSecond;
 
   // Slider styling for zoom control
   React.useEffect(() => {
@@ -55,17 +59,11 @@ export default function TimelineView({ blueprint, className = "" }: TimelineView
 
   return (
     <div className={`bg-background border border-border rounded-lg p-4 ${className}`}>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-foreground">Timeline Preview</h3>
-        <p className="text-sm text-muted-foreground">
-          {blueprint.length} tracks • {totalDuration.toFixed(1)}s duration
-        </p>
-      </div>
-      <div className="relative border border-border rounded overflow-hidden" style={{ height: 'calc(100% - 80px)' }}>
+      <div className="relative border border-border rounded overflow-hidden" style={{ height: 'calc(100% - 16px)' }}>
         <ScrollArea className="h-full w-full">
           <div style={{ width: Math.max(timelineWidth + 100, 800), minHeight: '100%' }} className="relative">
               <div className="h-8 bg-muted border-b border-border relative flex-shrink-0 sticky top-0 z-10">
-                {Array.from({ length: Math.ceil(totalDuration) + 1 }, (_, i) => (
+                {Array.from({ length: Math.ceil(extendedDuration) + 1 }, (_, i) => (
                   <div
                     key={i}
                     className="absolute top-0 h-full border-l border-border flex items-center"
