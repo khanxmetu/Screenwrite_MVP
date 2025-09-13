@@ -176,39 +176,48 @@ export default function TimelineEditor() {
 
   // Update current frame for scrubber using player events + fallback polling
   useEffect(() => {
-    const player = playerRef.current;
-    if (!player) return;
+    const setupPlayerListeners = () => {
+      const player = playerRef.current;
+      if (!player) {
+        // Retry after a short delay if player isn't ready yet
+        setTimeout(setupPlayerListeners, 100);
+        return;
+      }
 
-    // Get initial frame position
-    setCurrentFrame(player.getCurrentFrame());
+      // Get initial frame position
+      setCurrentFrame(player.getCurrentFrame());
 
-    const handleFrameUpdate = (event: { detail: { frame: number } }) => {
-      setCurrentFrame(event.detail.frame);
+      const handleFrameUpdate = (event: { detail: { frame: number } }) => {
+        setCurrentFrame(event.detail.frame);
+      };
+
+      const handleSeeked = (event: { detail: { frame: number } }) => {
+        setCurrentFrame(event.detail.frame);
+      };
+
+      // Listen to the player's frame updates for real-time position
+      player.addEventListener('frameupdate', handleFrameUpdate);
+      player.addEventListener('seeked', handleSeeked);
+
+      // Continuous polling for smooth scrubber movement during playback
+      const interval = setInterval(() => {
+        const currentPlayerFrame = player.getCurrentFrame();
+        setCurrentFrame(currentPlayerFrame);
+      }, 16); // 60fps polling for smooth scrubber movement
+
+      // Return cleanup function
+      return () => {
+        player.removeEventListener('frameupdate', handleFrameUpdate);
+        player.removeEventListener('seeked', handleSeeked);
+        clearInterval(interval);
+      };
     };
 
-    const handleSeeked = (event: { detail: { frame: number } }) => {
-      setCurrentFrame(event.detail.frame);
-    };
+    const cleanup = setupPlayerListeners();
 
-    // Listen to the player's frame updates for real-time position
-    player.addEventListener('frameupdate', handleFrameUpdate);
-    player.addEventListener('seeked', handleSeeked);
-
-    // Fallback polling for smoother updates during playback
-    const interval = setInterval(() => {
-      const currentPlayerFrame = player.getCurrentFrame();
-      setCurrentFrame(prev => {
-        // Only update if there's a significant difference to avoid unnecessary re-renders
-        return Math.abs(prev - currentPlayerFrame) > 0.1 ? currentPlayerFrame : prev;
-      });
-    }, 33); // 30fps polling as fallback
-
-    return () => {
-      player.removeEventListener('frameupdate', handleFrameUpdate);
-      player.removeEventListener('seeked', handleSeeked);
-      clearInterval(interval);
-    };
-  }, [playerRef]);
+    // Return the cleanup function or a no-op if setupPlayerListeners returned undefined
+    return cleanup || (() => {});
+  }, []);
 
   // Global spacebar play/pause functionality - like original
   useEffect(() => {
