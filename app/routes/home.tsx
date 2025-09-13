@@ -20,8 +20,8 @@ import { useTheme } from "next-themes";
 
 // Components
 import LeftPanel from "~/components/editor/LeftPanel";
-import { StandaloneVideoPlayer } from "~/video-compositions/StandalonePreview";
 import { DynamicVideoPlayer } from "~/video-compositions/DynamicComposition";
+import { calculateBlueprintDuration } from "~/video-compositions/executeClipElement";
 import { sampleBlueprint, complexTestBlueprint } from "~/video-compositions/TestBlueprint";
 import { edgeCaseTestBlueprint } from "~/video-compositions/EdgeCaseTestBlueprint";
 import { allTransitionsTestBlueprint } from "~/video-compositions/AllTransitionsTestBlueprint";
@@ -43,7 +43,7 @@ import { toast } from "sonner";
 // Hooks
 import { useMediaBin } from "~/hooks/useMediaBin";
 import { useRenderer } from "~/hooks/useRenderer";
-import { useStandalonePreview } from "~/hooks/useStandalonePreview";
+
 
 // Types and constants
 import { type Transition, type MediaBinItem } from "~/components/timeline/types";
@@ -74,14 +74,10 @@ export default function TimelineEditor() {
   const [isAutoSize, setIsAutoSize] = useState<boolean>(false);
   const [isChatMinimized, setIsChatMinimized] = useState<boolean>(true);
 
-  // Video playback state
-  const [durationInFrames, setDurationInFrames] = useState<number>(1); // Minimal duration - gets updated by AI
+    // Video playback state
+  const [durationInFrames, setDurationInFrames] = useState<number>(1); // Minimal duration - gets updated by blueprint
 
-  // Sample code toggle state
-  const [useSampleCode, setUseSampleCode] = useState<boolean>(false);
-
-  // Blueprint testing state
-  const [useBlueprintMode, setUseBlueprintMode] = useState<boolean>(false);
+  // Blueprint state - now the only mode
   const [testBlueprint, setTestBlueprint] = useState<CompositionBlueprint>(() => edgeCaseTestBlueprint);
   const [currentTestType, setCurrentTestType] = useState<'orphaned' | 'all-transitions'>('orphaned');
 
@@ -103,85 +99,7 @@ export default function TimelineEditor() {
   // video player media selection state
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
 
-  // VERBATIM copy of DynamicComposition execution logic for validation
-  const validateTsxCode = useCallback((tsxCode: string): boolean => {
-    try {
-      console.log('🧪 Validating AI-generated code:', tsxCode.slice(0, 100) + '...');
 
-      // Helper function to convert seconds to frames (same as DynamicComposition)
-      const inSeconds = (seconds: number): number => {
-        return Math.round(seconds * 30); // 30 FPS
-      };
-
-      // Ease object with common easing functions (same as DynamicComposition)
-      const Ease = {
-        Linear: (t: number) => t,
-        QuadraticIn: (t: number) => t * t,
-        QuadraticOut: (t: number) => 1 - (1 - t) * (1 - t),
-        QuadraticInOut: (t: number) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
-        CubicIn: (t: number) => t * t * t,
-        CubicOut: (t: number) => 1 - Math.pow(1 - t, 3),
-        CubicInOut: (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
-        QuarticIn: (t: number) => t * t * t * t,
-        QuarticOut: (t: number) => 1 - Math.pow(1 - t, 4),
-        QuarticInOut: (t: number) => t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2,
-        QuinticIn: (t: number) => t * t * t * t * t,
-        QuinticOut: (t: number) => 1 - Math.pow(1 - t, 5),
-        QuinticInOut: (t: number) => t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2,
-        SinusoidalIn: (t: number) => 1 - Math.cos((t * Math.PI) / 2),
-        SinusoidalOut: (t: number) => Math.sin((t * Math.PI) / 2),
-        SinusoidalInOut: (t: number) => -(Math.cos(Math.PI * t) - 1) / 2,
-        CircularIn: (t: number) => 1 - Math.sqrt(1 - Math.pow(t, 2)),
-        CircularOut: (t: number) => Math.sqrt(1 - Math.pow(t - 1, 2)),
-        CircularInOut: (t: number) => t < 0.5 ? (1 - Math.sqrt(1 - Math.pow(2 * t, 2))) / 2 : (Math.sqrt(1 - Math.pow(-2 * t + 2, 2)) + 1) / 2,
-        ExponentialIn: (t: number) => t === 0 ? 0 : Math.pow(2, 10 * (t - 1)),
-        ExponentialOut: (t: number) => t === 1 ? 1 : 1 - Math.pow(2, -10 * t),
-        ExponentialInOut: (t: number) => t === 0 ? 0 : t === 1 ? 1 : t < 0.5 ? Math.pow(2, 20 * t - 10) / 2 : (2 - Math.pow(2, -20 * t + 10)) / 2,
-        BounceIn: (t: number) => 1 - Ease.BounceOut(1 - t),
-        BounceOut: (t: number) => {
-          const n1 = 7.5625;
-          const d1 = 2.75;
-          if (t < 1 / d1) return n1 * t * t;
-          if (t < 2 / d1) return n1 * (t -= 1.5 / d1) * t + 0.75;
-          if (t < 2.5 / d1) return n1 * (t -= 2.25 / d1) * t + 0.9375;
-          return n1 * (t -= 2.625 / d1) * t + 0.984375;
-        },
-        BounceInOut: (t: number) => t < 0.5 ? (1 - Ease.BounceOut(1 - 2 * t)) / 2 : (1 + Ease.BounceOut(2 * t - 1)) / 2,
-        Bezier: (x1: number, y1: number, x2: number, y2: number) => {
-          // Simplified bezier function - for full implementation would need cubic-bezier
-          return (t: number) => {
-            // Linear interpolation approximation for simplicity
-            return t < 0.5 ? 2 * t * t * (3 - 2 * t) : 1 - 2 * (1 - t) * (1 - t) * (3 - 2 * (1 - t));
-          };
-        }
-      };
-
-      // Extract AbsoluteFill from Remotion namespace
-      const { AbsoluteFill } = Remotion;
-
-      // SIMPLIFIED VALIDATION - Match DynamicComposition exactly
-      const executeCode = new Function(
-        'React',
-        'AbsoluteFill',
-        'interp',
-        'inSeconds',
-        tsxCode
-      );
-
-      const generatedJSX = executeCode(
-        React,
-        AbsoluteFill,
-        interp,
-        inSeconds
-      );
-
-      console.log('✅ Validation passed');
-      return true;
-    } catch (error) {
-      console.error('❌ Validation failed:', error);
-      return false;
-    }
-  }, []);
 
   const {
     mediaBinItems,
@@ -196,46 +114,15 @@ export default function TimelineEditor() {
 
   const { isRendering, renderStatus, handleRenderVideo } = useRenderer();
 
-  // Standalone preview hook
-  const {
-    previewContent,
-    generatedTsxCode,
-    previewSettings,
-    isGenerating,
-    lastAiExplanation,
-    generationError,
-    addPreviewContent,
-    removePreviewContent,
-    updatePreviewContent,
-    clearPreviewContent,
-    generateAiContent,
-    loadSampleContent,
-    updatePreviewSettings,
-    setGeneratedTsxCode,
-    retryWithFix,
-    clearError,
-    handleExecutionError,
-  } = useStandalonePreview(setDurationInFrames, validateTsxCode);
+  // Blueprint-only state (no more TSX execution)
+  const [previewSettings] = useState({
+    width: 1920,
+    height: 1080,
+    backgroundColor: "#000000",
+    fps: 30,
+  });
 
-  // Wrapper function for AI composition generation with media library context
-  // Function to explain composition changes
-  const handleGenerateAiComposition = useCallback(async (userRequest: string, mediaBinItems: MediaBinItem[]): Promise<boolean> => {
-    return await generateAiContent(userRequest, mediaBinItems);
-  }, [generateAiContent]);
-
-  // Store the last user request for error handling
-  const [lastUserRequest, setLastUserRequest] = useState<string>("");
-
-  // Wrapper for handling execution errors from DynamicComposition
-  const handleVideoPlayerError = useCallback((error: Error, brokenCode: string) => {
-    handleExecutionError(error, brokenCode, lastUserRequest);
-  }, [handleExecutionError, lastUserRequest]);
-
-  // Enhanced wrapper that tracks user requests
-  const handleGenerateAiCompositionWithTracking = useCallback(async (userRequest: string, mediaBinItems: MediaBinItem[]): Promise<boolean> => {
-    setLastUserRequest(userRequest); // Store for error handling
-    return await generateAiContent(userRequest, mediaBinItems);
-  }, [generateAiContent]);
+  // TODO: Add blueprint generation logic here when connecting AI
 
   // Event handlers
   const handleAddMediaClick = useCallback(() => {
@@ -277,21 +164,12 @@ export default function TimelineEditor() {
     setIsAutoSize(auto);
   }, []);
 
-  // Update duration when composition changes
+  // Update duration when blueprint changes
   useEffect(() => {
-    if (generatedTsxCode) {
-      // For generated TSX, duration is now handled by AI response callback
-      // Don't override the AI-determined duration here
-    } else if (previewContent && previewContent.length > 0) {
-      // Calculate duration from preview content
-      const maxDuration = previewContent.reduce((max, item) => {
-        return Math.max(max, item.duration || 3);
-      }, 0);
-      setDurationInFrames(Math.max(maxDuration * 30, 90)); // At least 3 seconds
-    } else {
-      setDurationInFrames(300); // Default 10 seconds
-    }
-  }, [previewContent]); // Removed generatedTsxCode dependency
+    // Calculate duration from current test blueprint
+    const calculatedDuration = calculateBlueprintDuration(testBlueprint);
+    setDurationInFrames(calculatedDuration);
+  }, [testBlueprint]);
 
   // Global spacebar play/pause functionality - like original
   useEffect(() => {
@@ -451,60 +329,7 @@ export default function TimelineEditor() {
                           </Label>
                         </div>
 
-                        {/* Preview Settings */}
-                        <div className="flex items-center gap-1 ml-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={clearPreviewContent}
-                            className="h-5 px-2 text-xs"
-                          >
-                            Clear
-                          </Button>
-                          <Input
-                            type="color"
-                            value={previewSettings.backgroundColor}
-                            onChange={(e) =>
-                              updatePreviewSettings({ backgroundColor: e.target.value })
-                            }
-                            className="h-5 w-8 p-0 border-0"
-                            title="Background Color"
-                          />
-                          
-                          {/* Thinking Budget Controls */}
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-muted-foreground">Synth:</span>
-                            <Input
-                              type="number"
-                              value={previewSettings.synthThinkingBudget}
-                              onChange={(e) => {
-                                const value = parseInt(e.target.value);
-                                // Allow 0 (no thinking), -1 (unlimited), or positive numbers
-                                if (!isNaN(value)) {
-                                  updatePreviewSettings({ synthThinkingBudget: value });
-                                }
-                              }}
-                              className="h-5 w-16 px-1 text-xs"
-                              title="Synth Thinking Budget (0=no thinking, -1=unlimited)"
-                              step="100"
-                            />
-                            <span className="text-xs text-muted-foreground">Code:</span>
-                            <Input
-                              type="number"
-                              value={previewSettings.codeGenThinkingBudget}
-                              onChange={(e) => {
-                                const value = parseInt(e.target.value);
-                                // Allow 0 (no thinking), -1 (unlimited), or positive numbers
-                                if (!isNaN(value)) {
-                                  updatePreviewSettings({ codeGenThinkingBudget: value });
-                                }
-                              }}
-                              className="h-5 w-16 px-1 text-xs"
-                              title="Code Generation Thinking Budget (0=no thinking, -1=unlimited)"
-                              step="100"
-                            />
-                          </div>
-                        </div>
+                        {/* TODO: Add blueprint-specific controls */}
 
                         {/* Show chat toggle when minimized */}
                         {isChatMinimized && (
@@ -536,89 +361,30 @@ export default function TimelineEditor() {
                       {/* Sample Content Button */}
                       <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
                         <Badge variant="outline" className="text-xs">
-                          {useBlueprintMode ? "Blueprint Mode" : (generatedTsxCode || useSampleCode) ? "String Mode" : "Standalone Mode"}
+                          Blueprint Mode
                         </Badge>
                         <Button
-                          variant={useBlueprintMode ? "default" : "outline"}
+                          variant="outline"
                           size="sm"
                           onClick={() => {
-                            console.log("Toggling blueprint mode:", !useBlueprintMode);
-                            setUseBlueprintMode(!useBlueprintMode);
+                            const newTestType = currentTestType === 'orphaned' ? 'all-transitions' : 'orphaned';
+                            switchTestBlueprint(newTestType);
                           }}
                           className="text-xs h-6"
                         >
-                          {useBlueprintMode ? "✓ Blueprint" : "Test Blueprint"}
-                        </Button>
-                        {useBlueprintMode && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const newTestType = currentTestType === 'orphaned' ? 'all-transitions' : 'orphaned';
-                              switchTestBlueprint(newTestType);
-                            }}
-                            className="text-xs h-6"
-                          >
-                            {currentTestType === 'orphaned' ? 'Orphaned Tests' : 'All Transitions'}
-                          </Button>
-                        )}
-                        <Button
-                          variant={useSampleCode ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => {
-                            console.log("Toggling sample mode:", !useSampleCode);
-                            setUseSampleCode(!useSampleCode);
-                            if (!useSampleCode) {
-                              // When enabling sample mode, set duration for structured test (12 seconds = 360 frames)
-                              setDurationInFrames(360);
-                            }
-                          }}
-                          className="text-xs h-6"
-                        >
-                          {useSampleCode ? "✓ Sample" : "Load Sample"}
+                          {currentTestType === 'orphaned' ? 'Orphaned Tests' : 'All Transitions'}
                         </Button>
                       </div>
 
                       <div className="flex-1 flex items-center justify-center w-full">
-                        {/* Debug console log */}
-                        {(() => {
-                          console.log("=== RENDER DEBUG ===");
-                          console.log("Blueprint mode:", useBlueprintMode);
-                          console.log("Generated TSX code:", generatedTsxCode?.slice(0, 100) + "...");
-                          console.log("Preview content:", previewContent);
-                          console.log("Preview settings:", previewSettings);
-                          console.log("==================");
-                          return null;
-                        })()}
-                        {useBlueprintMode ? (
-                          <DynamicVideoPlayer
-                            blueprint={testBlueprint}
-                            renderingMode="blueprint"
-                            compositionWidth={previewSettings.width}
-                            compositionHeight={previewSettings.height}
-                            backgroundColor={previewSettings.backgroundColor}
-                            playerRef={playerRef}
-                          />
-                        ) : generatedTsxCode || useSampleCode ? (
-                          <DynamicVideoPlayer
-                            tsxCode={generatedTsxCode}
-                            renderingMode="string"
-                            compositionWidth={previewSettings.width}
-                            compositionHeight={previewSettings.height}
-                            backgroundColor={previewSettings.backgroundColor}
-                            playerRef={playerRef}
-                            durationInFrames={durationInFrames}
-                          />
-                        ) : (
-                          <StandaloneVideoPlayer
-                            content={previewContent}
-                            compositionWidth={previewSettings.width}
-                            compositionHeight={previewSettings.height}
-                            backgroundColor={previewSettings.backgroundColor}
-                            playerRef={playerRef}
-                            durationInFrames={durationInFrames}
-                          />
-                        )}
+                        {/* Blueprint-only video player */}
+                        <DynamicVideoPlayer
+                          blueprint={testBlueprint}
+                          compositionWidth={previewSettings.width}
+                          compositionHeight={previewSettings.height}
+                          backgroundColor={previewSettings.backgroundColor}
+                          playerRef={playerRef}
+                        />
                       </div>
                     </div>
                   </div>
@@ -641,33 +407,7 @@ export default function TimelineEditor() {
         </ResizablePanel>
 
         {/* Conditionally render chat panel - extends full height */}
-        {!isChatMinimized && (
-          <>
-            <ResizableHandle withHandle />
-
-            {/* Right Panel - Chat (full height) */}
-            <ResizablePanel defaultSize={20} minSize={15} maxSize={35}>
-              <div className="h-full border-l border-border">
-                <ChatBox
-                  mediaBinItems={mediaBinItems}
-                  handleDropOnTrack={() => {}} // No-op since we don't have timeline
-                  isMinimized={false}
-                  onToggleMinimize={() => setIsChatMinimized(true)}
-                  messages={chatMessages}
-                  onMessagesChange={setChatMessages}
-                  timelineState={{ tracks: [] }} // Empty timeline since we don't have timeline
-                  isStandalonePreview={true}
-                  onGenerateComposition={handleGenerateAiCompositionWithTracking}
-                  isGeneratingComposition={isGenerating}
-                  currentComposition={generatedTsxCode}
-                  generationError={generationError}
-                  onRetryFix={retryWithFix}
-                  onClearError={clearError}
-                />
-              </div>
-            </ResizablePanel>
-          </>
-        )}
+        {/* TODO: Add back chat when blueprint generation is implemented */}
       </ResizablePanelGroup>
 
       {/* Hidden file input */}

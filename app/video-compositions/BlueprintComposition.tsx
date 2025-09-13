@@ -25,7 +25,8 @@ export interface BlueprintCompositionProps {
  * Implements the freeze technique for intuitive duration calculation
  */
 export function BlueprintComposition({ blueprint }: BlueprintCompositionProps) {
-  const { fps } = useVideoConfig();
+  const { fps, width, height } = useVideoConfig();
+  const videoConfig = { width, height };
 
   // Create execution context with helper functions
   const executionContext: BlueprintExecutionContext = {
@@ -60,7 +61,8 @@ function TrackRenderer({
   track: Track; 
   executionContext: BlueprintExecutionContext;
 }) {
-  const { fps } = useVideoConfig();
+  const { fps, width, height } = useVideoConfig();
+  const videoConfig = { width, height };
   
   // Group clips into segments: either individual clips or transition groups
   const segments = groupClipsIntoSegments(track.clips);
@@ -73,6 +75,7 @@ function TrackRenderer({
           segment={segment}
           executionContext={executionContext}
           fps={fps}
+          videoConfig={videoConfig}
         />
       ))}
     </AbsoluteFill>
@@ -204,11 +207,13 @@ type ClipSegment = {
 function SegmentRenderer({
   segment,
   executionContext,
-  fps
+  fps,
+  videoConfig
 }: {
   segment: ClipSegment;
   executionContext: BlueprintExecutionContext;
   fps: number;
+  videoConfig: { width: number; height: number };
 }) {
   const startFrame = Math.round(segment.startTime * fps);
   
@@ -252,7 +257,7 @@ function SegmentRenderer({
       sequences.push(
         <TransitionSeries.Transition
           key="orphaned-start-transition"
-          presentation={getTransitionPresentation({ type: 'fade', durationInSeconds: 0 })}
+          presentation={getTransitionPresentation({ type: 'fade', durationInSeconds: 0 }, videoConfig)}
           timing={linearTiming({ durationInFrames: transitionDuration })}
         />
       );
@@ -323,7 +328,7 @@ function SegmentRenderer({
           sequences.push(
             <TransitionSeries.Transition
               key={`trans-${clip.id}`}
-              presentation={getTransitionPresentation(clip.transitionToNext!)}
+              presentation={getTransitionPresentation(clip.transitionToNext!, videoConfig)}
               timing={linearTiming({ durationInFrames: transitionDuration })}
             />
           );
@@ -340,7 +345,7 @@ function SegmentRenderer({
       sequences.push(
         <TransitionSeries.Transition
           key="orphaned-end-transition"
-          presentation={getTransitionPresentation({ type: 'fade', durationInSeconds: 0 })}
+          presentation={getTransitionPresentation({ type: 'fade', durationInSeconds: 0 }, videoConfig)}
           timing={linearTiming({ durationInFrames: transitionDuration })}
         />
       );
@@ -385,9 +390,10 @@ function calculateTransitionGroupDuration(clips: Clip[], fps: number): number {
  * Helper function to get Remotion presentation from transition configuration
  */
 function getTransitionPresentation(
-  transitionConfig: import('./BlueprintTypes').TransitionConfig
+  transitionConfig: import('./BlueprintTypes').TransitionConfig,
+  videoConfig: { width: number; height: number }
 ): any {
-  const { width, height } = useVideoConfig();
+  const { width, height } = videoConfig;
   const { type, direction, perspective } = transitionConfig;
   
   switch (type) {
