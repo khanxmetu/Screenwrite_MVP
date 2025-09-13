@@ -48,6 +48,9 @@ import { useStandalonePreview } from "~/hooks/useStandalonePreview";
 // Types and constants
 import { type Transition, type MediaBinItem } from "~/components/timeline/types";
 import { useNavigate } from "react-router";
+
+// Custom Timeline
+import TimelineView from "../components/custom-timeline/TimelineView"; // direct relative path to bust alias cache
 import { ChatBox } from "~/components/chat/ChatBox";
 
 interface Message {
@@ -621,6 +624,18 @@ export default function TimelineEditor() {
                   </div>
                 </ResizablePanel>
               </ResizablePanelGroup>
+            </ResizablePanel>
+
+            <ResizableHandle withHandle />
+
+            {/* Timeline Panel - Resizable */}
+            <ResizablePanel defaultSize={35} minSize={20} maxSize={60}>
+              <div className="h-full border-t border-border bg-background p-4">
+                <TimelineView
+                  blueprint={testBlueprint}
+                  className="h-full"
+                />
+              </div>
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>
