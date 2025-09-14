@@ -83,6 +83,20 @@ export default function TimelineEditor() {
     const clipDuration = mediaItem.mediaType === 'image' ? 3 : mediaItem.durationInSeconds;
     const endTime = timeInSeconds + clipDuration;
     
+    // Check for overlaps on the target track
+    const targetTrack = currentComposition[trackIndex];
+    if (targetTrack) {
+      const hasOverlap = targetTrack.clips.some(clip => {
+        // Check if new clip would overlap with existing clip
+        return !(endTime <= clip.startTimeInSeconds || timeInSeconds >= clip.endTimeInSeconds);
+      });
+      
+      if (hasOverlap) {
+        toast.error(`Cannot add ${mediaItem.name}: would overlap with existing clip on track ${trackIndex + 1}`);
+        return; // Prevent the drop
+      }
+    }
+    
     // Generate element code based on media type
     let elementCode = '';
     if (mediaItem.mediaType === 'video') {

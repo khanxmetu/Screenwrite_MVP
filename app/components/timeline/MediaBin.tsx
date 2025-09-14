@@ -176,6 +176,33 @@ export default function MediaBin() {
             onDragStart={(e) => {
               if (!item.isUploading) {
                 e.dataTransfer.setData("application/json", JSON.stringify(item));
+                // Also store in a global variable for timeline preview
+                (window as any).__draggedMediaItem = item;
+                
+                // Create a custom drag image that's smaller and more transparent
+                const dragImage = document.createElement('div');
+                dragImage.innerHTML = item.name;
+                dragImage.style.cssText = `
+                  position: absolute;
+                  top: -1000px;
+                  left: -1000px;
+                  background: rgba(59, 130, 246, 0.8);
+                  color: white;
+                  padding: 4px 8px;
+                  border-radius: 4px;
+                  font-size: 12px;
+                  font-weight: 500;
+                  pointer-events: none;
+                  z-index: 1000;
+                `;
+                document.body.appendChild(dragImage);
+                e.dataTransfer.setDragImage(dragImage, 10, 10);
+                
+                // Clean up the drag image after a short delay
+                setTimeout(() => {
+                  document.body.removeChild(dragImage);
+                }, 0);
+                
                 console.log("Dragging item:", item.name);
               }
             }}

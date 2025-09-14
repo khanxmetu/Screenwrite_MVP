@@ -25,6 +25,12 @@ export default function TimelineView({
 }: TimelineViewProps) {
   const [zoomLevel, setZoomLevel] = React.useState(60); // pixels per second
   const [isDragging, setIsDragging] = React.useState(false);
+  const [dragPreview, setDragPreview] = React.useState<{
+    trackIndex: number;
+    startTime: number;
+    duration: number;
+    name: string;
+  } | null>(null);
   const timelineRef = React.useRef<HTMLDivElement>(null);
 
   // Derive total timeline duration
@@ -43,7 +49,7 @@ export default function TimelineView({
   const extendedDuration = Math.max(totalDuration * extensionMultiplier, 60); // At least 1 minute
   const timelineWidth = extendedDuration * pixelsPerSecond;
 
-  // Slider styling for zoom control
+    // Slider styling for zoom control
   React.useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
@@ -51,25 +57,34 @@ export default function TimelineView({
         appearance: none;
         height: 10px;
         width: 10px;
-        border-radius: 2px;
-        background: hsl(var(--foreground));
+        border-radius: 50%;
+        background: hsl(var(--primary));
         cursor: pointer;
-        border: none;
+        border: 2px solid hsl(var(--background));
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.2);
       }
-      .slider::-moz-range-thumb {
-        height: 10px;
-        width: 10px;
-        border-radius: 2px;
-        background: hsl(var(--foreground));
+      .slider::-webkit-slider-track {
+        width: 100%;
+        height: 2px;
         cursor: pointer;
-        border: none;
+        background: hsl(var(--border));
+        border-radius: 1px;
       }
     `;
     document.head.appendChild(style);
+    
+    // Clean up drag preview when dragging ends
+    const handleDragEnd = () => {
+      setDragPreview(null);
+      // Clean up global drag item
+      delete (window as any).__draggedMediaItem;
+    };
+    
+    document.addEventListener('dragend', handleDragEnd);
+    
     return () => {
-      if (document.head.contains(style)) {
-        document.head.removeChild(style);
-      }
+      document.head.removeChild(style);
+      document.removeEventListener('dragend', handleDragEnd);
     };
   }, []);
 
@@ -145,13 +160,31 @@ export default function TimelineView({
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.currentTarget.classList.add('bg-accent/20');
+                      
+                      // Show drag preview using global drag item data
+                      const draggedItem = (window as any).__draggedMediaItem;
+                      if (draggedItem) {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const dropX = e.clientX - rect.left;
+                        const timeInSeconds = Math.max(0, dropX / pixelsPerSecond);
+                        const duration = draggedItem.mediaType === 'image' ? 3 : (draggedItem.durationInSeconds || 3);
+                        
+                        setDragPreview({
+                          trackIndex,
+                          startTime: timeInSeconds,
+                          duration,
+                          name: draggedItem.name || 'Media Item'
+                        });
+                      }
                     }}
                     onDragLeave={(e) => {
                       e.currentTarget.classList.remove('bg-accent/20');
+                      setDragPreview(null);
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
                       e.currentTarget.classList.remove('bg-accent/20');
+                      setDragPreview(null);
                       
                       if (onDropMedia) {
                         try {
@@ -196,6 +229,21 @@ export default function TimelineView({
                         </div>
                       );
                     })}
+                    
+                    {/* Drag Preview */}
+                    {dragPreview && dragPreview.trackIndex === trackIndex && (
+                      <div
+                        className="absolute top-2 h-12 bg-gray-400/50 border-2 border-gray-300 border-dashed rounded flex items-center px-2 select-none pointer-events-none"
+                        style={{ 
+                          left: dragPreview.startTime * pixelsPerSecond,
+                          width: Math.max(dragPreview.duration * pixelsPerSecond, 20)
+                        }}
+                      >
+                        <span className="text-xs text-gray-600 dark:text-gray-300 font-medium truncate select-none">
+                          {dragPreview.name}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
