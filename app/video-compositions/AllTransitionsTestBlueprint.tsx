@@ -8,26 +8,46 @@ export function AllTransitionsTestBlueprintComposition() {
     // Track 1: All transition types showcase
     {
       clips: [
-        // 1. Fade transition (0s-3s)
+        // 1. Fade transition (0s-3s) - Video
         {
-          id: "fade-test",
+          id: "video-fade-test",
           startTimeInSeconds: 0,
           endTimeInSeconds: 3,
           element: `
+            const { Video } = require('remotion');
             return React.createElement('div', {
               style: {
                 width: '100%',
                 height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#ff6b6b',
-                color: 'white',
-                fontSize: '32px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold'
+                position: 'relative'
               }
-            }, 'FADE TRANSITION');
+            }, [
+              React.createElement(Video, {
+                key: 'video',
+                src: '/screenrecording.mp4',
+                style: {
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover'
+                },
+                muted: true
+              }),
+              React.createElement('div', {
+                key: 'overlay',
+                style: {
+                  position: 'absolute',
+                  bottom: '20px',
+                  left: '20px',
+                  padding: '8px 16px',
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontFamily: 'Arial, sans-serif',
+                  fontWeight: 'bold',
+                  borderRadius: '4px'
+                }
+              }, 'FADE TRANSITION')
+            ]);
           `,
           transitionToNext: {
             type: 'fade',
@@ -35,9 +55,9 @@ export function AllTransitionsTestBlueprintComposition() {
           }
         },
 
-        // 2. Slide transition (3s-6s)
+        // 2. Slide transition (3s-6s) - Image
         {
-          id: "slide-test",
+          id: "image-slide-test",
           startTimeInSeconds: 3,
           endTimeInSeconds: 6,
           element: `
@@ -45,16 +65,34 @@ export function AllTransitionsTestBlueprintComposition() {
               style: {
                 width: '100%',
                 height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#4ecdc4',
-                color: 'white',
-                fontSize: '32px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold'
+                position: 'relative'
               }
-            }, 'SLIDE FROM RIGHT');
+            }, [
+              React.createElement('img', {
+                key: 'image',
+                src: '/screenshot-app.png',
+                style: {
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover'
+                }
+              }),
+              React.createElement('div', {
+                key: 'overlay',
+                style: {
+                  position: 'absolute',
+                  bottom: '20px',
+                  left: '20px',
+                  padding: '8px 16px',
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontFamily: 'Arial, sans-serif',
+                  fontWeight: 'bold',
+                  borderRadius: '4px'
+                }
+              }, 'SLIDE FROM RIGHT')
+            ]);
           `,
           transitionToNext: {
             type: 'slide',
@@ -63,26 +101,46 @@ export function AllTransitionsTestBlueprintComposition() {
           }
         },
 
-        // 3. Wipe transition (6s-9s)
+        // 3. Wipe transition (6s-9s) - Video
         {
-          id: "wipe-test",
+          id: "video-wipe-test",
           startTimeInSeconds: 6,
           endTimeInSeconds: 9,
           element: `
+            const { Video } = require('remotion');
             return React.createElement('div', {
               style: {
                 width: '100%',
                 height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#9b59b6',
-                color: 'white',
-                fontSize: '32px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold'
+                position: 'relative'
               }
-            }, 'WIPE FROM TOP');
+            }, [
+              React.createElement(Video, {
+                key: 'video',
+                src: '/screenrecording.mp4',
+                style: {
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover'
+                },
+                muted: true
+              }),
+              React.createElement('div', {
+                key: 'overlay',
+                style: {
+                  position: 'absolute',
+                  bottom: '20px',
+                  left: '20px',
+                  padding: '8px 16px',
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontFamily: 'Arial, sans-serif',
+                  fontWeight: 'bold',
+                  borderRadius: '4px'
+                }
+              }, 'WIPE FROM TOP')
+            ]);
           `,
           transitionToNext: {
             type: 'wipe',
@@ -91,9 +149,9 @@ export function AllTransitionsTestBlueprintComposition() {
           }
         },
 
-        // 4. Flip transition (9s-12s)
+        // 4. Flip transition (9s-12s) - Image
         {
-          id: "flip-test",
+          id: "image-flip-test",
           startTimeInSeconds: 9,
           endTimeInSeconds: 12,
           element: `
@@ -101,16 +159,35 @@ export function AllTransitionsTestBlueprintComposition() {
               style: {
                 width: '100%',
                 height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#e74c3c',
-                color: 'white',
-                fontSize: '32px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold'
+                position: 'relative'
               }
-            }, 'FLIP FROM LEFT');
+            }, [
+              React.createElement('img', {
+                key: 'image',
+                src: '/favicon.png',
+                style: {
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  backgroundColor: '#2c3e50'
+                }
+              }),
+              React.createElement('div', {
+                key: 'overlay',
+                style: {
+                  position: 'absolute',
+                  bottom: '20px',
+                  left: '20px',
+                  padding: '8px 16px',
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontFamily: 'Arial, sans-serif',
+                  fontWeight: 'bold',
+                  borderRadius: '4px'
+                }
+              }, 'FLIP FROM LEFT')
+            ]);
           `,
           transitionToNext: {
             type: 'flip',
@@ -120,26 +197,46 @@ export function AllTransitionsTestBlueprintComposition() {
           }
         },
 
-        // 5. Clock Wipe transition (12s-15s)
+        // 5. Clock Wipe transition (12s-15s) - Video
         {
-          id: "clockwipe-test",
+          id: "video-clockwipe-test",
           startTimeInSeconds: 12,
           endTimeInSeconds: 15,
           element: `
+            const { Video } = require('remotion');
             return React.createElement('div', {
               style: {
                 width: '100%',
                 height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#f39c12',
-                color: 'white',
-                fontSize: '32px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold'
+                position: 'relative'
               }
-            }, 'CLOCK WIPE');
+            }, [
+              React.createElement(Video, {
+                key: 'video',
+                src: '/screenrecording.mp4',
+                style: {
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover'
+                },
+                muted: true
+              }),
+              React.createElement('div', {
+                key: 'overlay',
+                style: {
+                  position: 'absolute',
+                  bottom: '20px',
+                  left: '20px',
+                  padding: '8px 16px',
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontFamily: 'Arial, sans-serif',
+                  fontWeight: 'bold',
+                  borderRadius: '4px'
+                }
+              }, 'CLOCK WIPE')
+            ]);
           `,
           transitionToNext: {
             type: 'clockWipe',
@@ -147,9 +244,9 @@ export function AllTransitionsTestBlueprintComposition() {
           }
         },
 
-        // 6. Iris transition (15s-18s)
+        // 6. Iris transition (15s-18s) - Image
         {
-          id: "iris-test",
+          id: "image-iris-test",
           startTimeInSeconds: 15,
           endTimeInSeconds: 18,
           element: `
@@ -157,16 +254,34 @@ export function AllTransitionsTestBlueprintComposition() {
               style: {
                 width: '100%',
                 height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: '#2ecc71',
-                color: 'white',
-                fontSize: '32px',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold'
+                position: 'relative'
               }
-            }, 'IRIS TRANSITION');
+            }, [
+              React.createElement('img', {
+                key: 'image',
+                src: '/screenshot-app.png',
+                style: {
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover'
+                }
+              }),
+              React.createElement('div', {
+                key: 'overlay',
+                style: {
+                  position: 'absolute',
+                  bottom: '20px',
+                  left: '20px',
+                  padding: '8px 16px',
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  fontSize: '24px',
+                  fontFamily: 'Arial, sans-serif',
+                  fontWeight: 'bold',
+                  borderRadius: '4px'
+                }
+              }, 'IRIS TRANSITION')
+            ]);
           `
         }
       ]
@@ -204,31 +319,51 @@ export function AllTransitionsTestBlueprintComposition() {
   return <BlueprintComposition blueprint={allTransitionsBlueprint} />;
 }
 
-// Export the all transitions blueprint for use in other components
+// Export the all transitions blueprint for use in other components  
 export const allTransitionsTestBlueprint: CompositionBlueprint = [
-  // Track 1: All transition types showcase
+  // Track 1: All transition types showcase with media
   {
     clips: [
-      // 1. Fade transition (0s-3s)
+      // 1. Fade transition (0s-3s) - Video
       {
-        id: "fade-test",
+        id: "video-fade-test",
         startTimeInSeconds: 0,
         endTimeInSeconds: 3,
         element: `
+          const { Video } = require('remotion');
           return React.createElement('div', {
             style: {
               width: '100%',
               height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#ff6b6b',
-              color: 'white',
-              fontSize: '32px',
-              fontFamily: 'Arial, sans-serif',
-              fontWeight: 'bold'
+              position: 'relative'
             }
-          }, 'FADE TRANSITION');
+          }, [
+            React.createElement(Video, {
+              key: 'video',
+              src: '/screenrecording.mp4',
+              style: {
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover'
+              },
+              muted: true
+            }),
+            React.createElement('div', {
+              key: 'overlay',
+              style: {
+                position: 'absolute',
+                bottom: '20px',
+                left: '20px',
+                padding: '8px 16px',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                color: 'white',
+                fontSize: '24px',
+                fontFamily: 'Arial, sans-serif',
+                fontWeight: 'bold',
+                borderRadius: '4px'
+              }
+            }, 'FADE TRANSITION')
+          ]);
         `,
         transitionToNext: {
           type: 'fade',
@@ -236,9 +371,9 @@ export const allTransitionsTestBlueprint: CompositionBlueprint = [
         }
       },
 
-      // 2. Slide transition (3s-6s)
+      // 2. Slide transition (3s-6s) - Image
       {
-        id: "slide-test",
+        id: "image-slide-test",
         startTimeInSeconds: 3,
         endTimeInSeconds: 6,
         element: `
@@ -246,16 +381,34 @@ export const allTransitionsTestBlueprint: CompositionBlueprint = [
             style: {
               width: '100%',
               height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#4ecdc4',
-              color: 'white',
-              fontSize: '32px',
-              fontFamily: 'Arial, sans-serif',
-              fontWeight: 'bold'
+              position: 'relative'
             }
-          }, 'SLIDE FROM RIGHT');
+          }, [
+            React.createElement('img', {
+              key: 'image',
+              src: '/screenshot-app.png',
+              style: {
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover'
+              }
+            }),
+            React.createElement('div', {
+              key: 'overlay',
+              style: {
+                position: 'absolute',
+                bottom: '20px',
+                left: '20px',
+                padding: '8px 16px',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                color: 'white',
+                fontSize: '24px',
+                fontFamily: 'Arial, sans-serif',
+                fontWeight: 'bold',
+                borderRadius: '4px'
+              }
+            }, 'SLIDE FROM RIGHT')
+          ]);
         `,
         transitionToNext: {
           type: 'slide',
@@ -264,26 +417,46 @@ export const allTransitionsTestBlueprint: CompositionBlueprint = [
         }
       },
 
-      // 3. Wipe transition (6s-9s)
+      // 3. Wipe transition (6s-9s) - Video
       {
-        id: "wipe-test",
+        id: "video-wipe-test",
         startTimeInSeconds: 6,
         endTimeInSeconds: 9,
         element: `
+          const { Video } = require('remotion');
           return React.createElement('div', {
             style: {
               width: '100%',
               height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#9b59b6',
-              color: 'white',
-              fontSize: '32px',
-              fontFamily: 'Arial, sans-serif',
-              fontWeight: 'bold'
+              position: 'relative'
             }
-          }, 'WIPE FROM TOP');
+          }, [
+            React.createElement(Video, {
+              key: 'video',
+              src: '/screenrecording.mp4',
+              style: {
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover'
+              },
+              muted: true
+            }),
+            React.createElement('div', {
+              key: 'overlay',
+              style: {
+                position: 'absolute',
+                bottom: '20px',
+                left: '20px',
+                padding: '8px 16px',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                color: 'white',
+                fontSize: '24px',
+                fontFamily: 'Arial, sans-serif',
+                fontWeight: 'bold',
+                borderRadius: '4px'
+              }
+            }, 'WIPE FROM TOP')
+          ]);
         `,
         transitionToNext: {
           type: 'wipe',
@@ -292,9 +465,9 @@ export const allTransitionsTestBlueprint: CompositionBlueprint = [
         }
       },
 
-      // 4. Flip transition (9s-12s)
+      // 4. Flip transition (9s-12s) - Image
       {
-        id: "flip-test",
+        id: "image-flip-test",
         startTimeInSeconds: 9,
         endTimeInSeconds: 12,
         element: `
@@ -302,16 +475,35 @@ export const allTransitionsTestBlueprint: CompositionBlueprint = [
             style: {
               width: '100%',
               height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#e74c3c',
-              color: 'white',
-              fontSize: '32px',
-              fontFamily: 'Arial, sans-serif',
-              fontWeight: 'bold'
+              position: 'relative'
             }
-          }, 'FLIP FROM LEFT');
+          }, [
+            React.createElement('img', {
+              key: 'image',
+              src: '/favicon.png',
+              style: {
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+                backgroundColor: '#2c3e50'
+              }
+            }),
+            React.createElement('div', {
+              key: 'overlay',
+              style: {
+                position: 'absolute',
+                bottom: '20px',
+                left: '20px',
+                padding: '8px 16px',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                color: 'white',
+                fontSize: '24px',
+                fontFamily: 'Arial, sans-serif',
+                fontWeight: 'bold',
+                borderRadius: '4px'
+              }
+            }, 'FLIP FROM LEFT')
+          ]);
         `,
         transitionToNext: {
           type: 'flip',
@@ -321,26 +513,46 @@ export const allTransitionsTestBlueprint: CompositionBlueprint = [
         }
       },
 
-      // 5. Clock Wipe transition (12s-15s)
+      // 5. Clock Wipe transition (12s-15s) - Video
       {
-        id: "clockwipe-test",
+        id: "video-clockwipe-test",
         startTimeInSeconds: 12,
         endTimeInSeconds: 15,
         element: `
+          const { Video } = require('remotion');
           return React.createElement('div', {
             style: {
               width: '100%',
               height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#f39c12',
-              color: 'white',
-              fontSize: '32px',
-              fontFamily: 'Arial, sans-serif',
-              fontWeight: 'bold'
+              position: 'relative'
             }
-          }, 'CLOCK WIPE');
+          }, [
+            React.createElement(Video, {
+              key: 'video',
+              src: '/screenrecording.mp4',
+              style: {
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover'
+              },
+              muted: true
+            }),
+            React.createElement('div', {
+              key: 'overlay',
+              style: {
+                position: 'absolute',
+                bottom: '20px',
+                left: '20px',
+                padding: '8px 16px',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                color: 'white',
+                fontSize: '24px',
+                fontFamily: 'Arial, sans-serif',
+                fontWeight: 'bold',
+                borderRadius: '4px'
+              }
+            }, 'CLOCK WIPE')
+          ]);
         `,
         transitionToNext: {
           type: 'clockWipe',
@@ -348,9 +560,9 @@ export const allTransitionsTestBlueprint: CompositionBlueprint = [
         }
       },
 
-      // 6. Iris transition (15s-18s)
+      // 6. Iris transition (15s-18s) - Image
       {
-        id: "iris-test",
+        id: "image-iris-test",
         startTimeInSeconds: 15,
         endTimeInSeconds: 18,
         element: `
@@ -358,16 +570,34 @@ export const allTransitionsTestBlueprint: CompositionBlueprint = [
             style: {
               width: '100%',
               height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: '#2ecc71',
-              color: 'white',
-              fontSize: '32px',
-              fontFamily: 'Arial, sans-serif',
-              fontWeight: 'bold'
+              position: 'relative'
             }
-          }, 'IRIS TRANSITION');
+          }, [
+            React.createElement('img', {
+              key: 'image',
+              src: '/screenshot-app.png',
+              style: {
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover'
+              }
+            }),
+            React.createElement('div', {
+              key: 'overlay',
+              style: {
+                position: 'absolute',
+                bottom: '20px',
+                left: '20px',
+                padding: '8px 16px',
+                backgroundColor: 'rgba(0,0,0,0.7)',
+                color: 'white',
+                fontSize: '24px',
+                fontFamily: 'Arial, sans-serif',
+                fontWeight: 'bold',
+                borderRadius: '4px'
+              }
+            }, 'IRIS TRANSITION')
+          ]);
         `
       }
     ]

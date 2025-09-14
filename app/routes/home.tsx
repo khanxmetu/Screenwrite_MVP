@@ -9,6 +9,8 @@ import { flip } from "@remotion/transitions/flip";
 import { iris } from "@remotion/transitions/iris";
 import { none } from "@remotion/transitions/none";
 import { interp } from "../utils/animations";
+import axios from "axios";
+import { apiUrl } from "~/utils/api";
 import {
   Moon,
   Sun,
@@ -95,6 +97,10 @@ export default function TimelineEditor() {
 
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
+
+  // AI generation state
+  const [isGeneratingComposition, setIsGeneratingComposition] = useState<boolean>(false);
+  const [aiGeneratedBlueprint, setAiGeneratedBlueprint] = useState<CompositionBlueprint | null>(null);
 
   // video player media selection state
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
@@ -258,6 +264,64 @@ export default function TimelineEditor() {
     };
   }, []); // Empty dependency array since we're accessing playerRef.current directly
 
+  // AI Composition Generation Function
+  const handleGenerateComposition = useCallback(async (userRequest: string, mediaBinItems: MediaBinItem[]): Promise<boolean> => {
+    console.log("🤖 AI Generation: Starting composition generation for:", userRequest);
+    setIsGeneratingComposition(true);
+    
+    try {
+      // Call the Python backend API
+      const response = await axios.post(apiUrl("/ai/generate-composition", true), {
+        user_request: userRequest,
+        preview_settings: previewSettings,
+        media_library: mediaBinItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          type: item.mediaType,
+          src: item.mediaUrlLocal || item.mediaUrlRemote,
+        })),
+        current_generated_code: null,
+        conversation_history: [],
+        preview_frame: null,
+      });
+
+      console.log("🤖 AI Generation: Received response:", response.data);
+
+      if (response.data.success && response.data.composition_code) {
+        try {
+          // Parse the JSON response as CompositionBlueprint
+          const blueprintJson = JSON.parse(response.data.composition_code);
+          console.log("🤖 AI Generation: Parsed blueprint:", blueprintJson);
+
+          // Set the AI generated blueprint as active
+          setAiGeneratedBlueprint(blueprintJson);
+          setTestBlueprint(blueprintJson);
+          
+          // Calculate and set duration
+          const calculatedDuration = calculateBlueprintDuration(blueprintJson);
+          setDurationInFrames(calculatedDuration);
+
+          console.log("🤖 AI Generation: Blueprint applied successfully, duration:", calculatedDuration);
+          toast.success("🎬 AI composition generated successfully!");
+          return true;
+        } catch (parseError) {
+          console.error("🤖 AI Generation: JSON parse error:", parseError);
+          toast.error("Failed to parse AI response");
+          return false;
+        }
+      } else {
+        console.error("🤖 AI Generation: API returned error:", response.data.error_message);
+        toast.error(response.data.error_message || "Failed to generate composition");
+        return false;
+      }
+    } catch (error) {
+      console.error("🤖 AI Generation: Network error:", error);
+      toast.error("Failed to connect to AI service");
+      return false;
+    } finally {
+      setIsGeneratingComposition(false);
+    }
+  }, [previewSettings]);
 
   useEffect(() => {
     setMounted(true)
@@ -408,20 +472,38 @@ export default function TimelineEditor() {
                     >
                       {/* Sample Content Button */}
                       <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
-                        <Badge variant="outline" className="text-xs">
-                          Blueprint Mode
-                        </Badge>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const newTestType = currentTestType === 'orphaned' ? 'all-transitions' : 'orphaned';
-                            switchTestBlueprint(newTestType);
-                          }}
-                          className="text-xs h-6"
+                        <Badge 
+                          variant={aiGeneratedBlueprint ? "default" : "outline"} 
+                          className={`text-xs ${aiGeneratedBlueprint ? "bg-green-600 text-white" : ""}`}
                         >
-                          {currentTestType === 'orphaned' ? 'Orphaned Tests' : 'All Transitions'}
-                        </Button>
+                          {aiGeneratedBlueprint ? "AI Generated" : "Blueprint Mode"}
+                        </Badge>
+                        {!aiGeneratedBlueprint && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const newTestType = currentTestType === 'orphaned' ? 'all-transitions' : 'orphaned';
+                              switchTestBlueprint(newTestType);
+                            }}
+                            className="text-xs h-6"
+                          >
+                            {currentTestType === 'orphaned' ? 'Orphaned Tests' : 'All Transitions'}
+                          </Button>
+                        )}
+                        {aiGeneratedBlueprint && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setAiGeneratedBlueprint(null);
+                              switchTestBlueprint('orphaned');
+                            }}
+                            className="text-xs h-6"
+                          >
+                            Back to Test Mode
+                          </Button>
+                        )}
                       </div>
 
                       <div className="flex-1 flex items-center justify-center w-full">
@@ -475,8 +557,8 @@ export default function TimelineEditor() {
                   onMessagesChange={setChatMessages}
                   timelineState={{ tracks: [] }} // Empty timeline for now
                   isStandalonePreview={true}
-                  onGenerateComposition={undefined} // TODO: Implement blueprint generation
-                  isGeneratingComposition={false}
+                  onGenerateComposition={handleGenerateComposition} // AI generation function implemented!
+                  isGeneratingComposition={isGeneratingComposition}
                   currentComposition={undefined}
                   generationError={undefined}
                   onRetryFix={undefined}

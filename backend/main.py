@@ -212,43 +212,58 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
     
     print(f"🎬 Main: Processing request: '{request.user_request}'")
     
-    # TESTING: Return broken code to test frontend fallback system
-    if False:  # Change to False to disable testing
-        broken_composition = """DURATION: 20
-        CODE: return React.createElement(AbsoluteFill, {
-  style: { backgroundColor: '#ff0000' }
-}, 
-  React.createElement('div', {
-    style: {
-      position: 'absolute',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      color: 'white',
-      fontSize: '32px'
-    }
-  }, 'BROKEN TEST'),
-  
-  React.createElement('div', {
-    style: {
-      opacity: interpolate(frame, [0, 30], [0, 1], {
-        easing: [Easing.out(Easing.quad), Easing.linear, Easing.in(Easing.quad)]
-      })
-    }
-  }, 'This will break')
-);"""
-        
-        print("🧪 TESTING: Returning broken composition for fallback testing")
-        
-        return CompositionResponse(
-            composition_code=broken_composition,
-            content_data=[],
-            explanation="Testing broken composition - invalid easing array",
-            duration=3.0,
-            success=True,
-            error_message=None
-        )
+    # STAGE 1: Return hardcoded CompositionBlueprint JSON (AI generation commented out)
+    print(f"🚀 STAGE 1: Returning hardcoded CompositionBlueprint JSON")
     
+    # Hardcoded CompositionBlueprint structure matching AllTransitionsTestBlueprint
+    hardcoded_composition_json = """
+    [
+      {
+        "clips": [
+          {
+            "id": "intro-clip",
+            "startTimeInSeconds": 0,
+            "endTimeInSeconds": 3,
+            "element": "const { Video } = require('remotion'); return React.createElement('div', { style: { width: '100%', height: '100%', position: 'relative' } }, [ React.createElement(Video, { key: 'video', src: '/screenrecording.mp4', style: { width: '100%', height: '100%', objectFit: 'cover' }, muted: true }), React.createElement('div', { key: 'overlay', style: { position: 'absolute', bottom: '20px', left: '20px', padding: '8px 16px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', fontSize: '24px', fontFamily: 'Arial, sans-serif', fontWeight: 'bold', borderRadius: '4px' } }, 'AI Generated Video') ]);",
+            "transitionToNext": {
+              "type": "fade",
+              "durationInSeconds": 1
+            }
+          },
+          {
+            "id": "main-clip",
+            "startTimeInSeconds": 3,
+            "endTimeInSeconds": 6,
+            "element": "return React.createElement('div', { style: { width: '100%', height: '100%', position: 'relative' } }, [ React.createElement('img', { key: 'image', src: '/screenshot-app.png', style: { width: '100%', height: '100%', objectFit: 'cover' } }), React.createElement('div', { key: 'overlay', style: { position: 'absolute', bottom: '20px', left: '20px', padding: '8px 16px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', fontSize: '24px', fontFamily: 'Arial, sans-serif', fontWeight: 'bold', borderRadius: '4px' } }, 'Dynamic Content') ]);",
+            "transitionToNext": {
+              "type": "slide",
+              "direction": "from-right",
+              "durationInSeconds": 1
+            }
+          },
+          {
+            "id": "outro-clip",
+            "startTimeInSeconds": 6,
+            "endTimeInSeconds": 9,
+            "element": "const { Video } = require('remotion'); return React.createElement('div', { style: { width: '100%', height: '100%', position: 'relative' } }, [ React.createElement(Video, { key: 'video', src: '/screenrecording.mp4', style: { width: '100%', height: '100%', objectFit: 'cover' }, muted: true }), React.createElement('div', { key: 'overlay', style: { position: 'absolute', bottom: '20px', left: '20px', padding: '8px 16px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', fontSize: '24px', fontFamily: 'Arial, sans-serif', fontWeight: 'bold', borderRadius: '4px' } }, 'Thank You!') ]);"
+          }
+        ]
+      },
+      {
+        "clips": [
+          {
+            "id": "title-overlay",
+            "startTimeInSeconds": 0,
+            "endTimeInSeconds": 9,
+            "element": "return React.createElement('div', { style: { position: 'absolute', top: '20px', right: '20px', padding: '12px 16px', backgroundColor: 'rgba(0,0,0,0.8)', color: '#ffffff', fontSize: '18px', fontFamily: 'monospace', borderRadius: '8px', border: '2px solid #ffffff' } }, 'AI GENERATED');"
+          }
+        ]
+      }
+    ]
+    """
+    
+    # COMMENTED OUT: Original AI generation logic
+    """
     # Step 1: Direct Code Generation (Synth bypassed)
     print(f"⚙️ Main: Generating composition directly (skipping synth)")
     
@@ -278,6 +293,19 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
         duration=result["duration"],
         success=result["success"],
         error_message=result.get("error_message")
+    )
+    """
+    
+    print(f"✅ Main: Returning hardcoded CompositionBlueprint JSON (duration: 9.0s)")
+    
+    # Return hardcoded response that matches CompositionBlueprint structure
+    return CompositionResponse(
+        composition_code=hardcoded_composition_json,
+        content_data=[],
+        explanation=f"Generated AI composition based on: '{request.user_request}' (using hardcoded blueprint for Stage 1)",
+        duration=9.0,
+        success=True,
+        error_message=None
     )
 
 
