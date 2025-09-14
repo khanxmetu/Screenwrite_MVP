@@ -1,6 +1,8 @@
 import React from 'react';
 import type { CompositionBlueprint } from "~/video-compositions/BlueprintTypes";
 import { ScrollArea, ScrollBar } from "~/components/ui/scroll-area";
+import { Button } from "~/components/ui/button";
+import { Scissors, Trash2 } from "lucide-react";
 import type { PlayerRef } from "@remotion/player";
 
 export interface TimelineViewProps {
@@ -12,6 +14,8 @@ export interface TimelineViewProps {
   onFrameUpdate?: (frame: number) => void;
   onDropMedia?: (mediaItem: any, trackIndex: number, timeInSeconds: number) => void;
   onMoveClip?: (clipId: string, newTrackIndex: number, newStartTime: number) => void;
+  onSplitClip?: (clipId: string, splitTimeInSeconds: number) => void;
+  onDeleteClip?: (clipId: string) => void;
 }
 
 // Fresh component name to avoid any stale Vite graph node collisions.
@@ -23,7 +27,9 @@ export default function TimelineView({
   fps = 30,
   onFrameUpdate,
   onDropMedia,
-  onMoveClip
+  onMoveClip,
+  onSplitClip,
+  onDeleteClip
 }: TimelineViewProps) {
   const [zoomLevel, setZoomLevel] = React.useState(60); // pixels per second
   const [isDragging, setIsDragging] = React.useState(false);
@@ -58,6 +64,22 @@ export default function TimelineView({
   const extensionMultiplier = Math.max(3, Math.min(10, 1000 / pixelsPerSecond)); // More extension at higher zoom
   const extendedDuration = Math.max(totalDuration * extensionMultiplier, 60); // At least 1 minute
   const timelineWidth = extendedDuration * pixelsPerSecond;
+
+  // Handler for splitting selected clip at current playhead position
+  const handleSplitSelectedClip = () => {
+    if (!selectedClipId || !onSplitClip || !playerRef?.current) return;
+    
+    const currentTimeInSeconds = currentFrame / fps;
+    onSplitClip(selectedClipId, currentTimeInSeconds);
+  };
+
+  // Handler for deleting selected clip
+  const handleDeleteSelectedClip = () => {
+    if (!selectedClipId || !onDeleteClip) return;
+    
+    onDeleteClip(selectedClipId);
+    setSelectedClipId(null); // Clear selection after deletion
+  };
 
     // Slider styling for zoom control
   React.useEffect(() => {
@@ -100,7 +122,38 @@ export default function TimelineView({
 
   return (
     <div className={`bg-background border border-border rounded-lg p-4 ${className}`}>
-      <div className="relative border border-border rounded overflow-hidden" style={{ height: 'calc(100% - 16px)' }}>
+      {/* Timeline Toolbar */}
+      <div className="flex items-center gap-2 mb-3 pb-2 border-b border-border">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSplitSelectedClip}
+            disabled={!selectedClipId}
+            className="flex items-center gap-1"
+          >
+            <Scissors className="w-3 h-3" />
+            Split Clip
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDeleteSelectedClip}
+            disabled={!selectedClipId}
+            className="flex items-center gap-1"
+          >
+            <Trash2 className="w-3 h-3" />
+            Delete Clip
+          </Button>
+        </div>
+        {selectedClipId && (
+          <div className="text-xs text-muted-foreground">
+            Selected: {selectedClipId.split('-').pop()}
+          </div>
+        )}
+      </div>
+      
+      <div className="relative border border-border rounded overflow-hidden" style={{ height: 'calc(100% - 64px)' }}>
         <ScrollArea className="h-full w-full">
           <div className="flex w-full">
             {/* Track labels column */}

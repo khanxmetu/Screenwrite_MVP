@@ -209,6 +209,99 @@ export default function TimelineEditor() {
     toast.success(`Moved clip to track ${newTrackIndex + 1}`);
   };
 
+  // Handle splitting clips at a specific time
+  const handleSplitClip = (clipId: string, splitTimeInSeconds: number) => {
+    console.log('Splitting clip:', clipId, 'at time:', splitTimeInSeconds);
+    
+    // Find the clip to split
+    let sourceClip = null;
+    let sourceTrackIndex = -1;
+    
+    for (let trackIdx = 0; trackIdx < currentComposition.length; trackIdx++) {
+      const clipIdx = currentComposition[trackIdx].clips.findIndex(clip => clip.id === clipId);
+      if (clipIdx !== -1) {
+        sourceClip = currentComposition[trackIdx].clips[clipIdx];
+        sourceTrackIndex = trackIdx;
+        break;
+      }
+    }
+    
+    if (!sourceClip || sourceTrackIndex === -1) {
+      toast.error('Clip not found');
+      return;
+    }
+    
+    // Check if split time is within the clip bounds
+    if (splitTimeInSeconds <= sourceClip.startTimeInSeconds || splitTimeInSeconds >= sourceClip.endTimeInSeconds) {
+      toast.error('Split time must be within the clip duration');
+      return;
+    }
+    
+    // Create two new clips
+    const leftClip = {
+      ...sourceClip,
+      id: `${sourceClip.id}:L`,
+      endTimeInSeconds: splitTimeInSeconds
+    };
+    
+    const rightClip = {
+      ...sourceClip,
+      id: `${sourceClip.id}:R`,
+      startTimeInSeconds: splitTimeInSeconds
+    };
+    
+    // Create updated composition
+    const updatedComposition = [...currentComposition];
+    
+    // Replace the original clip with the two new clips
+    updatedComposition[sourceTrackIndex] = {
+      ...updatedComposition[sourceTrackIndex],
+      clips: updatedComposition[sourceTrackIndex].clips.map(clip => 
+        clip.id === clipId ? leftClip : clip
+      ).concat([rightClip])
+    };
+    
+    // Update the composition
+    setCurrentComposition(updatedComposition);
+    
+    toast.success(`Split clip into two parts`);
+  };
+
+  // Handle deleting clips
+  const handleDeleteClip = (clipId: string) => {
+    console.log('Deleting clip:', clipId);
+    
+    // Find the clip to delete
+    let sourceTrackIndex = -1;
+    
+    for (let trackIdx = 0; trackIdx < currentComposition.length; trackIdx++) {
+      const clipExists = currentComposition[trackIdx].clips.some(clip => clip.id === clipId);
+      if (clipExists) {
+        sourceTrackIndex = trackIdx;
+        break;
+      }
+    }
+    
+    if (sourceTrackIndex === -1) {
+      toast.error('Clip not found');
+      return;
+    }
+    
+    // Create updated composition
+    const updatedComposition = [...currentComposition];
+    
+    // Remove the clip
+    updatedComposition[sourceTrackIndex] = {
+      ...updatedComposition[sourceTrackIndex],
+      clips: updatedComposition[sourceTrackIndex].clips.filter(clip => clip.id !== clipId)
+    };
+    
+    // Update the composition
+    setCurrentComposition(updatedComposition);
+    
+    toast.success(`Deleted clip`);
+  };
+
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
 
@@ -639,6 +732,8 @@ export default function TimelineEditor() {
                   onFrameUpdate={setCurrentFrame}
                   onDropMedia={handleDropMediaOnTimeline}
                   onMoveClip={handleMoveClip}
+                  onSplitClip={handleSplitClip}
+                  onDeleteClip={handleDeleteClip}
                 />
               </div>
             </ResizablePanel>
