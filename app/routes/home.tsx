@@ -302,6 +302,27 @@ export default function TimelineEditor() {
     toast.success(`Deleted clip`);
   };
 
+  // Custom frame update handler that allows timeline to move freely
+  const handleTimelineFrameUpdate = (frame: number) => {
+    setTimelineFrame(frame);
+    // Only update currentFrame if we're within content bounds, otherwise let player events handle it
+    if (playerRef?.current) {
+      // Calculate max frame based on current composition
+      let maxContentFrame = 0;
+      for (const track of currentComposition) {
+        for (const clip of track.clips) {
+          const clipEndFrame = Math.round(clip.endTimeInSeconds * 30); // 30 fps
+          if (clipEndFrame > maxContentFrame) maxContentFrame = clipEndFrame;
+        }
+      }
+      const maxFrame = Math.max(maxContentFrame, 90); // Minimum 3 seconds
+      
+      if (frame <= maxFrame) {
+        setCurrentFrame(frame);
+      }
+    }
+  };
+
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
 
@@ -310,6 +331,7 @@ export default function TimelineEditor() {
   
   // Video playback state for scrubber
   const [currentFrame, setCurrentFrame] = useState<number>(0);
+  const [timelineFrame, setTimelineFrame] = useState<number>(0); // Separate frame for timeline scrubber position
 
 
 
@@ -404,10 +426,12 @@ export default function TimelineEditor() {
 
       const handleFrameUpdate = (event: { detail: { frame: number } }) => {
         setCurrentFrame(event.detail.frame);
+        setTimelineFrame(event.detail.frame); // Keep timeline in sync when player updates
       };
 
       const handleSeeked = (event: { detail: { frame: number } }) => {
         setCurrentFrame(event.detail.frame);
+        setTimelineFrame(event.detail.frame); // Keep timeline in sync when seeking
       };
 
       // Listen to the player's frame updates for real-time position
@@ -418,6 +442,7 @@ export default function TimelineEditor() {
       const interval = setInterval(() => {
         const currentPlayerFrame = player.getCurrentFrame();
         setCurrentFrame(currentPlayerFrame);
+        setTimelineFrame(currentPlayerFrame); // Keep timeline in sync during playback
       }, 16); // 60fps polling for smooth scrubber movement
 
       // Return cleanup function
@@ -727,9 +752,9 @@ export default function TimelineEditor() {
                   blueprint={currentComposition}
                   className="h-full"
                   playerRef={playerRef}
-                  currentFrame={currentFrame}
+                  currentFrame={timelineFrame} // Use timeline frame for scrubber position
                   fps={30}
-                  onFrameUpdate={setCurrentFrame}
+                  onFrameUpdate={handleTimelineFrameUpdate} // Use custom handler
                   onDropMedia={handleDropMediaOnTimeline}
                   onMoveClip={handleMoveClip}
                   onSplitClip={handleSplitClip}

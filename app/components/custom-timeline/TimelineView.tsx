@@ -180,8 +180,21 @@ export default function TimelineView({
                   const clickX = e.clientX - rect.left;
                   const clickTime = clickX / pixelsPerSecond;
                   const clickFrame = Math.max(0, Math.round(clickTime * fps));
-                  playerRef.current.seekTo(clickFrame);
-                  onFrameUpdate?.(clickFrame);
+                  
+                  // Calculate max frame based on blueprint content, not extended timeline
+                  let maxContentFrame = 0;
+                  for (const track of blueprint) {
+                    for (const clip of track.clips) {
+                      const clipEndFrame = Math.round(clip.endTimeInSeconds * fps);
+                      if (clipEndFrame > maxContentFrame) maxContentFrame = clipEndFrame;
+                    }
+                  }
+                  const maxFrame = Math.max(maxContentFrame, 90); // Minimum 3 seconds
+                  
+                  // Clamp player position to content duration, but allow timeline frame to be anywhere
+                  const playerFrame = Math.min(clickFrame, maxFrame);
+                  playerRef.current.seekTo(playerFrame);
+                  onFrameUpdate?.(clickFrame); // Timeline shows the unclamped position
                 }
               }}
               onMouseMove={(e) => {
@@ -190,8 +203,21 @@ export default function TimelineView({
                   const clickX = e.clientX - rect.left;
                   const clickTime = clickX / pixelsPerSecond;
                   const clickFrame = Math.max(0, Math.round(clickTime * fps));
-                  playerRef.current.seekTo(clickFrame);
-                  onFrameUpdate?.(clickFrame);
+                  
+                  // Calculate max frame based on blueprint content
+                  let maxContentFrame = 0;
+                  for (const track of blueprint) {
+                    for (const clip of track.clips) {
+                      const clipEndFrame = Math.round(clip.endTimeInSeconds * fps);
+                      if (clipEndFrame > maxContentFrame) maxContentFrame = clipEndFrame;
+                    }
+                  }
+                  const maxFrame = Math.max(maxContentFrame, 90); // Minimum 3 seconds
+                  
+                  // Clamp player position to content duration, but allow timeline frame to be anywhere
+                  const playerFrame = Math.min(clickFrame, maxFrame);
+                  playerRef.current.seekTo(playerFrame);
+                  onFrameUpdate?.(clickFrame); // Timeline shows the unclamped position
                 }
               }}
               onMouseUp={() => setIsDragging(false)}
@@ -315,7 +341,7 @@ export default function TimelineView({
                       const width = Math.max((clip.endTimeInSeconds - clip.startTimeInSeconds) * pixelsPerSecond, 20);
                       const id = clip.id || `clip-${trackIndex}-${clipIndex}`;
                       
-                      // Alternate colors for adjacent clips on the same track
+                      // Generate consistent color based on clip ID hash
                       const colors = [
                         'bg-blue-500/80 dark:bg-blue-600/80',
                         'bg-green-500/80 dark:bg-green-600/80',
@@ -324,7 +350,15 @@ export default function TimelineView({
                         'bg-pink-500/80 dark:bg-pink-600/80',
                         'bg-teal-500/80 dark:bg-teal-600/80'
                       ];
-                      const colorClass = colors[clipIndex % colors.length];
+                      
+                      // Create a simple hash from the clip ID for consistent coloring
+                      let hash = 0;
+                      for (let i = 0; i < id.length; i++) {
+                        const char = id.charCodeAt(i);
+                        hash = ((hash << 5) - hash) + char;
+                        hash = hash & hash; // Convert to 32-bit integer
+                      }
+                      const colorClass = colors[Math.abs(hash) % colors.length];
                       
                       return (
                         <div
