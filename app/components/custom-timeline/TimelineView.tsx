@@ -10,6 +10,7 @@ export interface TimelineViewProps {
   currentFrame?: number;
   fps?: number;
   onFrameUpdate?: (frame: number) => void;
+  onDropMedia?: (mediaItem: any, trackIndex: number, timeInSeconds: number) => void;
 }
 
 // Fresh component name to avoid any stale Vite graph node collisions.
@@ -19,7 +20,8 @@ export default function TimelineView({
   playerRef, 
   currentFrame = 0, 
   fps = 30,
-  onFrameUpdate
+  onFrameUpdate,
+  onDropMedia
 }: TimelineViewProps) {
   const [zoomLevel, setZoomLevel] = React.useState(60); // pixels per second
   const [isDragging, setIsDragging] = React.useState(false);
@@ -137,18 +139,51 @@ export default function TimelineView({
               {/* Tracks */}
               <div className="bg-background">
                 {blueprint.map((track, trackIndex) => (
-                  <div key={trackIndex} className="h-16 border-b border-border relative select-none">
+                  <div 
+                    key={trackIndex} 
+                    className="h-16 border-b border-border relative select-none"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('bg-accent/20');
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('bg-accent/20');
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('bg-accent/20');
+                      
+                      if (onDropMedia) {
+                        try {
+                          const mediaItem = JSON.parse(e.dataTransfer.getData("application/json"));
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const dropX = e.clientX - rect.left;
+                          const timeInSeconds = Math.max(0, dropX / pixelsPerSecond);
+                          
+                          console.log(`Dropped ${mediaItem.name} on track ${trackIndex + 1} at ${timeInSeconds.toFixed(2)}s`);
+                          onDropMedia(mediaItem, trackIndex, timeInSeconds);
+                        } catch (error) {
+                          console.error("Failed to parse dropped data:", error);
+                        }
+                      }
+                    }}
+                  >
                     {track.clips.map((clip, clipIndex) => {
                       const left = clip.startTimeInSeconds * pixelsPerSecond;
                       const width = Math.max((clip.endTimeInSeconds - clip.startTimeInSeconds) * pixelsPerSecond, 20);
                       const id = clip.id || `clip-${trackIndex}-${clipIndex}`;
-                      const colorClass = id.includes('video')
-                        ? 'bg-blue-500/80 dark:bg-blue-600/80'
-                        : id.includes('image')
-                        ? 'bg-green-500/80 dark:bg-green-600/80'
-                        : id.includes('text')
-                        ? 'bg-purple-500/80 dark:bg-purple-600/80'
-                        : 'bg-primary/60 dark:bg-primary/70';
+                      
+                      // Alternate colors for adjacent clips on the same track
+                      const colors = [
+                        'bg-blue-500/80 dark:bg-blue-600/80',
+                        'bg-green-500/80 dark:bg-green-600/80',
+                        'bg-purple-500/80 dark:bg-purple-600/80',
+                        'bg-orange-500/80 dark:bg-orange-600/80',
+                        'bg-pink-500/80 dark:bg-pink-600/80',
+                        'bg-teal-500/80 dark:bg-teal-600/80'
+                      ];
+                      const colorClass = colors[clipIndex % colors.length];
+                      
                       return (
                         <div
                           key={clipIndex}

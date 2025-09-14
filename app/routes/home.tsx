@@ -75,6 +75,52 @@ export default function TimelineEditor() {
   // Helper to check if we have generated content (more than empty composition)
   const hasGeneratedContent = currentComposition.some(track => track.clips.length > 0);
 
+  // Handle dropping media from library onto timeline
+  const handleDropMediaOnTimeline = (mediaItem: MediaBinItem, trackIndex: number, timeInSeconds: number) => {
+    console.log('Adding media to timeline:', mediaItem.name, 'track:', trackIndex, 'time:', timeInSeconds);
+    
+    // Calculate clip duration (default to 3 seconds for images)
+    const clipDuration = mediaItem.mediaType === 'image' ? 3 : mediaItem.durationInSeconds;
+    const endTime = timeInSeconds + clipDuration;
+    
+    // Generate element code based on media type
+    let elementCode = '';
+    if (mediaItem.mediaType === 'video') {
+      elementCode = `const { Video } = require('remotion'); return React.createElement('div', { style: { width: '100%', height: '100%', position: 'relative' } }, [ React.createElement(Video, { key: 'video', src: '${mediaItem.mediaUrlLocal || mediaItem.mediaUrlRemote}', style: { width: '100%', height: '100%', objectFit: 'cover' }, muted: true }) ]);`;
+    } else if (mediaItem.mediaType === 'image') {
+      elementCode = `return React.createElement('div', { style: { width: '100%', height: '100%', position: 'relative' } }, [ React.createElement('img', { key: 'image', src: '${mediaItem.mediaUrlLocal || mediaItem.mediaUrlRemote}', style: { width: '100%', height: '100%', objectFit: 'cover' } }) ]);`;
+    } else if (mediaItem.mediaType === 'text') {
+      elementCode = `return React.createElement('div', { style: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '${mediaItem.text?.fontSize || 48}px', fontFamily: '${mediaItem.text?.fontFamily || 'Arial'}', color: '${mediaItem.text?.color || '#ffffff'}', fontWeight: '${mediaItem.text?.fontWeight || 'normal'}', textAlign: '${mediaItem.text?.textAlign || 'center'}' } }, '${mediaItem.text?.textContent || 'Text'}');`;
+    }
+    
+    // Create new clip
+    const newClip = {
+      id: `dropped-${mediaItem.id}-${Date.now()}`,
+      startTimeInSeconds: timeInSeconds,
+      endTimeInSeconds: endTime,
+      element: elementCode
+    };
+    
+    // Create updated composition
+    const updatedComposition = [...currentComposition];
+    
+    // Ensure we have enough tracks
+    while (updatedComposition.length <= trackIndex) {
+      updatedComposition.push({ clips: [] });
+    }
+    
+    // Add the new clip to the specified track
+    updatedComposition[trackIndex] = {
+      ...updatedComposition[trackIndex],
+      clips: [...updatedComposition[trackIndex].clips, newClip]
+    };
+    
+    // Update the composition
+    setCurrentComposition(updatedComposition);
+    
+    toast.success(`Added ${mediaItem.name} to track ${trackIndex + 1}`);
+  };
+
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
 
@@ -503,6 +549,7 @@ export default function TimelineEditor() {
                   currentFrame={currentFrame}
                   fps={30}
                   onFrameUpdate={setCurrentFrame}
+                  onDropMedia={handleDropMediaOnTimeline}
                 />
               </div>
             </ResizablePanel>

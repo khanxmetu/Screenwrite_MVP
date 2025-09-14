@@ -1,11 +1,11 @@
 import type { CompositionBlueprint } from './BlueprintTypes';
 
 /**
- * Empty composition blueprint with one track and no clips
- * This serves as the starting point for AI generation
+ * Empty composition blueprint with multiple empty tracks ready for content
+ * This serves as the starting point for AI generation and manual editing
  */
 export const emptyCompositionBlueprint: CompositionBlueprint = [
-  {
-    clips: [] // Empty track ready for AI to add clips
-  }
+  { clips: [] }, // Track 1
+  { clips: [] }, // Track 2  
+  { clips: [] }, // Track 3
 ];
