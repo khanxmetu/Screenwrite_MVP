@@ -264,18 +264,21 @@ export default function TimelineView({
                       console.log('DragOver - draggedClip:', draggedClip, 'draggedMediaItem:', draggedMediaItem);
                       
                       if (draggedClip) {
-                        // Handle clip movement preview (blue)
+                        // Handle clip movement preview (blue) with click offset
                         const duration = draggedClip.endTimeInSeconds - draggedClip.startTimeInSeconds;
+                        const offsetTimeInSeconds = (draggedClip.clickOffset || 0) / pixelsPerSecond;
+                        const adjustedStartTime = Math.max(0, timeInSeconds - offsetTimeInSeconds);
+                        
                         console.log('Setting blue preview for clip move:', {
                           trackIndex,
-                          startTime: timeInSeconds,
+                          startTime: adjustedStartTime,
                           duration,
                           name: draggedClip.name,
                           isClipMove: true
                         });
                         setDragPreview({
                           trackIndex,
-                          startTime: timeInSeconds,
+                          startTime: adjustedStartTime,
                           duration,
                           name: draggedClip.name,
                           isClipMove: true
@@ -316,8 +319,13 @@ export default function TimelineView({
                       // Check if we're dropping a clip (internal move)
                       const clipId = e.dataTransfer.getData('text/plain');
                       if (clipId && onMoveClip) {
-                        console.log(`Moving clip ${clipId} to track ${trackIndex + 1} at ${timeInSeconds.toFixed(2)}s`);
-                        onMoveClip(clipId, trackIndex, timeInSeconds);
+                        // Use click offset for accurate positioning
+                        const draggedClip = (window as any).__draggedClip;
+                        const offsetTimeInSeconds = draggedClip?.clickOffset ? draggedClip.clickOffset / pixelsPerSecond : 0;
+                        const adjustedTimeInSeconds = Math.max(0, timeInSeconds - offsetTimeInSeconds);
+                        
+                        console.log(`Moving clip ${clipId} to track ${trackIndex + 1} at ${adjustedTimeInSeconds.toFixed(2)}s`);
+                        onMoveClip(clipId, trackIndex, adjustedTimeInSeconds);
                         setDraggingClip(null);
                         // Clean up the global clip data
                         (window as any).__draggedClip = null;
@@ -389,12 +397,17 @@ export default function TimelineView({
                             e.dataTransfer.setData('application/x-clip-id', id); // Alternative data type
                             console.log('Clip drag started:', id);
                             
+                            // Calculate offset from where user clicked on the clip
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const clickOffset = e.clientX - rect.left;
+                            
                             // Store the dragged clip globally like media items do
                             const draggedClip = track.clips.find(clip => clip.id === id);
                             if (draggedClip) {
                               (window as any).__draggedClip = {
                                 ...draggedClip,
-                                name: id.split('-').pop() || 'Clip'
+                                name: id.split('-').pop() || 'Clip',
+                                clickOffset: clickOffset // Store where user clicked on the clip
                               };
                             }
                             
