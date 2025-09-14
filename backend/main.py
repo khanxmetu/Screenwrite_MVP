@@ -68,7 +68,7 @@ class CompositionRequest(BaseModel):
     user_request: str  # User's description of what they want
     preview_settings: Dict[str, Any]  # Current preview settings (width, height, etc.)
     media_library: Optional[List[Dict[str, Any]]] = []  # Available media files in library
-    current_generated_code: Optional[str] = None  # Current AI-generated TSX code for context
+    current_composition: Optional[List[Dict[str, Any]]] = None  # Current composition blueprint for incremental editing
     conversation_history: Optional[List[ConversationMessage]] = []  # Past requests and responses for context
     preview_frame: Optional[str] = None  # Base64 encoded screenshot of current frame
 
@@ -211,9 +211,13 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
     """Generate a new Remotion composition using @ syntax for media file selection."""
     
     print(f"🎬 Main: Processing request: '{request.user_request}'")
+    print(f"📝 Main: Current composition has {len(request.current_composition or [])} tracks")
     
     # STAGE 1: Return hardcoded CompositionBlueprint JSON (AI generation commented out)
-    print(f"🚀 STAGE 1: Returning hardcoded CompositionBlueprint JSON")
+    print(f"🚀 STAGE 1: Returning hardcoded CompositionBlueprint JSON (incremental editing)")
+    
+    # For now, ignore the current composition and return hardcoded result
+    # TODO: In stage 2, use the current_composition for incremental editing with AI
     
     # Hardcoded CompositionBlueprint structure matching AllTransitionsTestBlueprint
     hardcoded_composition_json = """

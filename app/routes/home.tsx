@@ -1,14 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState } from "react";
 import type { PlayerRef } from "@remotion/player";
-import * as Remotion from "remotion";
-import { TransitionSeries, linearTiming, springTiming } from "@remotion/transitions";
-import { fade } from "@remotion/transitions/fade";
-import { slide } from "@remotion/transitions/slide";
-import { wipe } from "@remotion/transitions/wipe";
-import { flip } from "@remotion/transitions/flip";
-import { iris } from "@remotion/transitions/iris";
-import { none } from "@remotion/transitions/none";
-import { interp } from "../utils/animations";
 import axios from "axios";
 import { apiUrl } from "~/utils/api";
 import {
@@ -24,9 +15,7 @@ import { useTheme } from "next-themes";
 import LeftPanel from "~/components/editor/LeftPanel";
 import { DynamicVideoPlayer } from "~/video-compositions/DynamicComposition";
 import { calculateBlueprintDuration } from "~/video-compositions/executeClipElement";
-import { sampleBlueprint, complexTestBlueprint } from "~/video-compositions/TestBlueprint";
-import { edgeCaseTestBlueprint } from "~/video-compositions/EdgeCaseTestBlueprint";
-import { allTransitionsTestBlueprint } from "~/video-compositions/AllTransitionsTestBlueprint";
+import { emptyCompositionBlueprint } from "~/video-compositions/EmptyComposition";
 import type { CompositionBlueprint } from "~/video-compositions/BlueprintTypes";
 import { RenderStatus } from "~/components/timeline/RenderStatus";
 import { Button } from "~/components/ui/button";
@@ -76,31 +65,18 @@ export default function TimelineEditor() {
   const [isAutoSize, setIsAutoSize] = useState<boolean>(false);
   const [isChatMinimized, setIsChatMinimized] = useState<boolean>(true);
 
-    // Video playback state
-  const [durationInFrames, setDurationInFrames] = useState<number>(1); // Minimal duration - gets updated by blueprint
+  // Video playback state
+  const [durationInFrames, setDurationInFrames] = useState<number>(90); // Start with 3 seconds (90 frames at 30fps) for empty composition
 
-  // Blueprint state - now the only mode
-  const [testBlueprint, setTestBlueprint] = useState<CompositionBlueprint>(() => edgeCaseTestBlueprint);
-  const [currentTestType, setCurrentTestType] = useState<'orphaned' | 'all-transitions'>('orphaned');
-
-  // Function to switch between different test blueprints
-  const switchTestBlueprint = (testType: 'orphaned' | 'all-transitions') => {
-    setCurrentTestType(testType);
-    if (testType === 'orphaned') {
-      setTestBlueprint(edgeCaseTestBlueprint);
-      setDurationInFrames(32 * 30); // 32 seconds for orphaned transitions test
-    } else {
-      setTestBlueprint(allTransitionsTestBlueprint);
-      setDurationInFrames(18 * 30); // 18 seconds for all transitions test
-    }
-  };
+  // AI generation state
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [currentComposition, setCurrentComposition] = useState<CompositionBlueprint>(emptyCompositionBlueprint);
+  
+  // Helper to check if we have generated content (more than empty composition)
+  const hasGeneratedContent = currentComposition.some(track => track.clips.length > 0);
 
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
-
-  // AI generation state
-  const [isGeneratingComposition, setIsGeneratingComposition] = useState<boolean>(false);
-  const [aiGeneratedBlueprint, setAiGeneratedBlueprint] = useState<CompositionBlueprint | null>(null);
 
   // video player media selection state
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
@@ -173,12 +149,18 @@ export default function TimelineEditor() {
     setIsAutoSize(auto);
   }, []);
 
-  // Update duration when blueprint changes
+  // Update duration when composition changes
   useEffect(() => {
-    // Calculate duration from current test blueprint
-    const calculatedDuration = calculateBlueprintDuration(testBlueprint);
-    setDurationInFrames(calculatedDuration);
-  }, [testBlueprint]);
+    // Calculate duration from current composition
+    if (currentComposition && currentComposition.length > 0) {
+      const calculatedDuration = calculateBlueprintDuration(currentComposition);
+      // Ensure minimum duration of 1 frame (30fps = 1 frame minimum)
+      setDurationInFrames(Math.max(calculatedDuration, 1));
+    } else {
+      // Empty composition gets a default 3-second duration (90 frames at 30fps)
+      setDurationInFrames(90);
+    }
+  }, [currentComposition]);
 
   // Update current frame for scrubber using player events + fallback polling
   useEffect(() => {
@@ -267,10 +249,10 @@ export default function TimelineEditor() {
   // AI Composition Generation Function
   const handleGenerateComposition = useCallback(async (userRequest: string, mediaBinItems: MediaBinItem[]): Promise<boolean> => {
     console.log("🤖 AI Generation: Starting composition generation for:", userRequest);
-    setIsGeneratingComposition(true);
+    setIsAiGenerating(true);
     
     try {
-      // Call the Python backend API
+      // Call the Python backend API with current composition
       const response = await axios.post(apiUrl("/ai/generate-composition", true), {
         user_request: userRequest,
         preview_settings: previewSettings,
@@ -280,7 +262,7 @@ export default function TimelineEditor() {
           type: item.mediaType,
           src: item.mediaUrlLocal || item.mediaUrlRemote,
         })),
-        current_generated_code: null,
+        current_composition: currentComposition, // Send current composition for incremental editing
         conversation_history: [],
         preview_frame: null,
       });
@@ -293,15 +275,15 @@ export default function TimelineEditor() {
           const blueprintJson = JSON.parse(response.data.composition_code);
           console.log("🤖 AI Generation: Parsed blueprint:", blueprintJson);
 
-          // Set the AI generated blueprint as active
-          setAiGeneratedBlueprint(blueprintJson);
-          setTestBlueprint(blueprintJson);
+          // Set the updated composition as active
+          setCurrentComposition(blueprintJson);
           
-          // Calculate and set duration
+          // Calculate and set duration with minimum safety
           const calculatedDuration = calculateBlueprintDuration(blueprintJson);
-          setDurationInFrames(calculatedDuration);
+          const safeDuration = Math.max(calculatedDuration, 90); // Minimum 3 seconds
+          setDurationInFrames(safeDuration);
 
-          console.log("🤖 AI Generation: Blueprint applied successfully, duration:", calculatedDuration);
+          console.log("🤖 AI Generation: Blueprint applied successfully, duration:", safeDuration);
           toast.success("🎬 AI composition generated successfully!");
           return true;
         } catch (parseError) {
@@ -319,7 +301,7 @@ export default function TimelineEditor() {
       toast.error("Failed to connect to AI service");
       return false;
     } finally {
-      setIsGeneratingComposition(false);
+      setIsAiGenerating(false);
     }
   }, [previewSettings]);
 
@@ -470,46 +452,32 @@ export default function TimelineEditor() {
                       className={`flex-1 ${theme === "dark" ? "bg-zinc-900" : "bg-zinc-200/70"
                         } flex flex-col items-center justify-center p-3 border border-border/50 rounded-lg overflow-hidden shadow-2xl relative`}
                     >
-                      {/* Sample Content Button */}
+                      {/* AI Status Badge */}
                       <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
                         <Badge 
-                          variant={aiGeneratedBlueprint ? "default" : "outline"} 
-                          className={`text-xs ${aiGeneratedBlueprint ? "bg-green-600 text-white" : ""}`}
+                          variant={hasGeneratedContent ? "default" : "outline"} 
+                          className={`text-xs ${hasGeneratedContent ? "bg-green-600 text-white" : ""}`}
                         >
-                          {aiGeneratedBlueprint ? "AI Generated" : "Blueprint Mode"}
+                          {hasGeneratedContent ? "AI Generated" : "Ready for AI"}
                         </Badge>
-                        {!aiGeneratedBlueprint && (
+                        {hasGeneratedContent && (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              const newTestType = currentTestType === 'orphaned' ? 'all-transitions' : 'orphaned';
-                              switchTestBlueprint(newTestType);
+                              setCurrentComposition(emptyCompositionBlueprint);
                             }}
                             className="text-xs h-6"
                           >
-                            {currentTestType === 'orphaned' ? 'Orphaned Tests' : 'All Transitions'}
-                          </Button>
-                        )}
-                        {aiGeneratedBlueprint && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setAiGeneratedBlueprint(null);
-                              switchTestBlueprint('orphaned');
-                            }}
-                            className="text-xs h-6"
-                          >
-                            Back to Test Mode
+                            Clear
                           </Button>
                         )}
                       </div>
 
                       <div className="flex-1 flex items-center justify-center w-full">
-                        {/* Blueprint-only video player */}
+                        {/* Always show video player - starts with empty composition */}
                         <DynamicVideoPlayer
-                          blueprint={testBlueprint}
+                          blueprint={currentComposition}
                           compositionWidth={previewSettings.width}
                           compositionHeight={previewSettings.height}
                           backgroundColor={previewSettings.backgroundColor}
@@ -527,8 +495,9 @@ export default function TimelineEditor() {
             {/* Timeline Panel - Resizable */}
             <ResizablePanel defaultSize={35} minSize={20} maxSize={60}>
               <div className="h-full border-t border-border bg-background p-4">
+                {/* Always show timeline - starts with empty composition */}
                 <TimelineView
-                  blueprint={testBlueprint}
+                  blueprint={currentComposition}
                   className="h-full"
                   playerRef={playerRef}
                   currentFrame={currentFrame}
@@ -558,7 +527,7 @@ export default function TimelineEditor() {
                   timelineState={{ tracks: [] }} // Empty timeline for now
                   isStandalonePreview={true}
                   onGenerateComposition={handleGenerateComposition} // AI generation function implemented!
-                  isGeneratingComposition={isGeneratingComposition}
+                  isGeneratingComposition={isAiGenerating}
                   currentComposition={undefined}
                   generationError={undefined}
                   onRetryFix={undefined}

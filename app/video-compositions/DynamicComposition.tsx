@@ -101,7 +101,7 @@ export function DynamicVideoPlayer({
         blueprint,
         backgroundColor,
       }}
-      durationInFrames={calculatedDuration}
+      durationInFrames={Math.max(calculatedDuration, 1)} // Ensure minimum 1 frame
       compositionWidth={compositionWidth}
       compositionHeight={compositionHeight}
       fps={30}
