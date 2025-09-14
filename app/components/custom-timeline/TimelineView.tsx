@@ -329,7 +329,7 @@ export default function TimelineView({
                       return (
                         <div
                           key={clipIndex}
-                          className={`absolute top-2 h-12 ${colorClass} rounded shadow-sm border-2 flex items-center px-2 select-none cursor-grab active:cursor-grabbing transition-all ${
+                          className={`absolute top-2 h-12 ${colorClass} rounded shadow-sm border-2 flex items-center px-2 select-none cursor-grab active:cursor-grabbing ${
                             selectedClipId === id ? 'border-yellow-400 shadow-lg' : 'border-background'
                           }`}
                           style={{ left, width }}
