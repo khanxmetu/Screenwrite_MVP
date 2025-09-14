@@ -135,6 +135,80 @@ export default function TimelineEditor() {
     toast.success(`Added ${mediaItem.name} to track ${trackIndex + 1}`);
   };
 
+  // Handle moving clips within the timeline
+  const handleMoveClip = (clipId: string, newTrackIndex: number, newStartTime: number) => {
+    console.log('Moving clip:', clipId, 'to track:', newTrackIndex, 'time:', newStartTime);
+    
+    // Find the clip in the current composition
+    let sourceClip = null;
+    let sourceTrackIndex = -1;
+    let sourceClipIndex = -1;
+    
+    for (let trackIdx = 0; trackIdx < currentComposition.length; trackIdx++) {
+      const clipIdx = currentComposition[trackIdx].clips.findIndex(clip => clip.id === clipId);
+      if (clipIdx !== -1) {
+        sourceClip = currentComposition[trackIdx].clips[clipIdx];
+        sourceTrackIndex = trackIdx;
+        sourceClipIndex = clipIdx;
+        break;
+      }
+    }
+    
+    if (!sourceClip) {
+      toast.error('Clip not found');
+      return;
+    }
+    
+    // Calculate new clip times
+    const clipDuration = sourceClip.endTimeInSeconds - sourceClip.startTimeInSeconds;
+    const newEndTime = newStartTime + clipDuration;
+    
+    // Check for overlaps on the target track (exclude the clip being moved)
+    const targetTrack = currentComposition[newTrackIndex];
+    if (targetTrack) {
+      const hasOverlap = targetTrack.clips.some(clip => {
+        if (clip.id === clipId) return false; // Don't check against itself
+        return !(newEndTime <= clip.startTimeInSeconds || newStartTime >= clip.endTimeInSeconds);
+      });
+      
+      if (hasOverlap) {
+        toast.error(`Cannot move clip: would overlap with existing clip on track ${newTrackIndex + 1}`);
+        return;
+      }
+    }
+    
+    // Create updated composition
+    const updatedComposition = [...currentComposition];
+    
+    // Ensure we have enough tracks
+    while (updatedComposition.length <= newTrackIndex) {
+      updatedComposition.push({ clips: [] });
+    }
+    
+    // Remove clip from source track
+    updatedComposition[sourceTrackIndex] = {
+      ...updatedComposition[sourceTrackIndex],
+      clips: updatedComposition[sourceTrackIndex].clips.filter(clip => clip.id !== clipId)
+    };
+    
+    // Add clip to target track with new timing
+    const movedClip = {
+      ...sourceClip,
+      startTimeInSeconds: newStartTime,
+      endTimeInSeconds: newEndTime
+    };
+    
+    updatedComposition[newTrackIndex] = {
+      ...updatedComposition[newTrackIndex],
+      clips: [...updatedComposition[newTrackIndex].clips, movedClip]
+    };
+    
+    // Update the composition
+    setCurrentComposition(updatedComposition);
+    
+    toast.success(`Moved clip to track ${newTrackIndex + 1}`);
+  };
+
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [mounted, setMounted] = useState(false)
 
@@ -564,6 +638,7 @@ export default function TimelineEditor() {
                   fps={30}
                   onFrameUpdate={setCurrentFrame}
                   onDropMedia={handleDropMediaOnTimeline}
+                  onMoveClip={handleMoveClip}
                 />
               </div>
             </ResizablePanel>

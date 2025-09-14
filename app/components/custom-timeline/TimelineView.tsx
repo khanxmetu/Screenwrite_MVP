@@ -11,6 +11,7 @@ export interface TimelineViewProps {
   fps?: number;
   onFrameUpdate?: (frame: number) => void;
   onDropMedia?: (mediaItem: any, trackIndex: number, timeInSeconds: number) => void;
+  onMoveClip?: (clipId: string, newTrackIndex: number, newStartTime: number) => void;
 }
 
 // Fresh component name to avoid any stale Vite graph node collisions.
@@ -21,15 +22,24 @@ export default function TimelineView({
   currentFrame = 0, 
   fps = 30,
   onFrameUpdate,
-  onDropMedia
+  onDropMedia,
+  onMoveClip
 }: TimelineViewProps) {
   const [zoomLevel, setZoomLevel] = React.useState(60); // pixels per second
   const [isDragging, setIsDragging] = React.useState(false);
+  const [selectedClipId, setSelectedClipId] = React.useState<string | null>(null);
+  const [draggingClip, setDraggingClip] = React.useState<{
+    clipId: string;
+    trackIndex: number;
+    offsetX: number;
+    originalStartTime: number;
+  } | null>(null);
   const [dragPreview, setDragPreview] = React.useState<{
     trackIndex: number;
     startTime: number;
     duration: number;
     name: string;
+    isClipMove?: boolean; // Flag to distinguish clip moves from media drops
   } | null>(null);
   const timelineRef = React.useRef<HTMLDivElement>(null);
 
@@ -109,6 +119,9 @@ export default function TimelineView({
               style={{ width: Math.max(timelineWidth, 800), minHeight: '100%' }}
               onMouseDown={(e) => {
                 setIsDragging(true);
+                // Deselect clip if clicking on empty timeline
+                setSelectedClipId(null);
+                
                 if (playerRef?.current) {
                   const rect = e.currentTarget.getBoundingClientRect();
                   const clickX = e.clientX - rect.left;
@@ -161,19 +174,50 @@ export default function TimelineView({
                       e.preventDefault();
                       e.currentTarget.classList.add('bg-accent/20');
                       
-                      // Show drag preview using global drag item data
-                      const draggedItem = (window as any).__draggedMediaItem;
-                      if (draggedItem) {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const dropX = e.clientX - rect.left;
-                        const timeInSeconds = Math.max(0, dropX / pixelsPerSecond);
-                        const duration = draggedItem.mediaType === 'image' ? 3 : (draggedItem.durationInSeconds || 3);
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const dropX = e.clientX - rect.left;
+                      const timeInSeconds = Math.max(0, dropX / pixelsPerSecond);
+                      
+                      // Check if we're dragging a clip (internal move) - similar to media bin approach
+                      const draggedClip = (window as any).__draggedClip;
+                      const draggedMediaItem = (window as any).__draggedMediaItem;
+                      
+                      console.log('DragOver - draggedClip:', draggedClip, 'draggedMediaItem:', draggedMediaItem);
+                      
+                      if (draggedClip) {
+                        // Handle clip movement preview (blue)
+                        const duration = draggedClip.endTimeInSeconds - draggedClip.startTimeInSeconds;
+                        console.log('Setting blue preview for clip move:', {
+                          trackIndex,
+                          startTime: timeInSeconds,
+                          duration,
+                          name: draggedClip.name,
+                          isClipMove: true
+                        });
+                        setDragPreview({
+                          trackIndex,
+                          startTime: timeInSeconds,
+                          duration,
+                          name: draggedClip.name,
+                          isClipMove: true
+                        });
+                      } else if (draggedMediaItem) {
+                        // Handle media item drop preview (gray)
+                        const duration = draggedMediaItem.mediaType === 'image' ? 3 : (draggedMediaItem.durationInSeconds || 3);
+                        console.log('Setting gray preview for media drop:', {
+                          trackIndex,
+                          startTime: timeInSeconds,
+                          duration,
+                          name: draggedMediaItem.name || 'Media Item',
+                          isClipMove: false
+                        });
                         
                         setDragPreview({
                           trackIndex,
                           startTime: timeInSeconds,
                           duration,
-                          name: draggedItem.name || 'Media Item'
+                          name: draggedMediaItem.name || 'Media Item',
+                          isClipMove: false
                         });
                       }
                     }}
@@ -186,13 +230,25 @@ export default function TimelineView({
                       e.currentTarget.classList.remove('bg-accent/20');
                       setDragPreview(null);
                       
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const dropX = e.clientX - rect.left;
+                      const timeInSeconds = Math.max(0, dropX / pixelsPerSecond);
+                      
+                      // Check if we're dropping a clip (internal move)
+                      const clipId = e.dataTransfer.getData('text/plain');
+                      if (clipId && onMoveClip) {
+                        console.log(`Moving clip ${clipId} to track ${trackIndex + 1} at ${timeInSeconds.toFixed(2)}s`);
+                        onMoveClip(clipId, trackIndex, timeInSeconds);
+                        setDraggingClip(null);
+                        // Clean up the global clip data
+                        (window as any).__draggedClip = null;
+                        return;
+                      }
+                      
+                      // Otherwise, handle media item drop
                       if (onDropMedia) {
                         try {
                           const mediaItem = JSON.parse(e.dataTransfer.getData("application/json"));
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          const dropX = e.clientX - rect.left;
-                          const timeInSeconds = Math.max(0, dropX / pixelsPerSecond);
-                          
                           console.log(`Dropped ${mediaItem.name} on track ${trackIndex + 1} at ${timeInSeconds.toFixed(2)}s`);
                           onDropMedia(mediaItem, trackIndex, timeInSeconds);
                         } catch (error) {
@@ -220,10 +276,58 @@ export default function TimelineView({
                       return (
                         <div
                           key={clipIndex}
-                          className={`absolute top-2 h-12 ${colorClass} rounded shadow-sm border border-background flex items-center px-2 select-none`}
+                          className={`absolute top-2 h-12 ${colorClass} rounded shadow-sm border-2 flex items-center px-2 select-none cursor-grab active:cursor-grabbing transition-all ${
+                            selectedClipId === id ? 'border-yellow-400 shadow-lg' : 'border-background'
+                          }`}
                           style={{ left, width }}
+                          draggable={true}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedClipId(selectedClipId === id ? null : id);
+                          }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const offsetX = e.clientX - rect.left;
+                            setDraggingClip({
+                              clipId: id,
+                              trackIndex,
+                              offsetX,
+                              originalStartTime: clip.startTimeInSeconds
+                            });
+                          }}
+                          onDragStart={(e) => {
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', id);
+                            e.dataTransfer.setData('application/x-clip-id', id); // Alternative data type
+                            console.log('Clip drag started:', id);
+                            
+                            // Store the dragged clip globally like media items do
+                            const draggedClip = track.clips.find(clip => clip.id === id);
+                            if (draggedClip) {
+                              (window as any).__draggedClip = {
+                                ...draggedClip,
+                                name: id.split('-').pop() || 'Clip'
+                              };
+                            }
+                            
+                            // Create an invisible drag image to remove the overlay
+                            const dragImage = document.createElement('div');
+                            dragImage.style.cssText = `
+                              position: absolute;
+                              top: -1000px;
+                              left: -1000px;
+                              width: 1px;
+                              height: 1px;
+                              background: transparent;
+                              pointer-events: none;
+                            `;
+                            document.body.appendChild(dragImage);
+                            e.dataTransfer.setDragImage(dragImage, 0, 0);
+                            setTimeout(() => document.body.removeChild(dragImage), 0);
+                          }}
                         >
-                          <span className="text-xs text-white dark:text-gray-100 font-medium truncate select-none">
+                          <span className="text-xs text-white dark:text-gray-100 font-medium truncate select-none pointer-events-none">
                             {id.split('-').pop() || 'Clip'}
                           </span>
                         </div>
@@ -233,13 +337,21 @@ export default function TimelineView({
                     {/* Drag Preview */}
                     {dragPreview && dragPreview.trackIndex === trackIndex && (
                       <div
-                        className="absolute top-2 h-12 bg-gray-400/50 border-2 border-gray-300 border-dashed rounded flex items-center px-2 select-none pointer-events-none"
+                        className={`absolute top-2 h-12 border-2 border-dashed rounded flex items-center px-2 select-none pointer-events-none ${
+                          dragPreview.isClipMove 
+                            ? 'bg-blue-400/50 border-blue-300' 
+                            : 'bg-gray-400/50 border-gray-300'
+                        }`}
                         style={{ 
                           left: dragPreview.startTime * pixelsPerSecond,
                           width: Math.max(dragPreview.duration * pixelsPerSecond, 20)
                         }}
                       >
-                        <span className="text-xs text-gray-600 dark:text-gray-300 font-medium truncate select-none">
+                        <span className={`text-xs font-medium truncate select-none ${
+                          dragPreview.isClipMove 
+                            ? 'text-blue-700 dark:text-blue-300'
+                            : 'text-gray-600 dark:text-gray-300'
+                        }`}>
                           {dragPreview.name}
                         </span>
                       </div>
