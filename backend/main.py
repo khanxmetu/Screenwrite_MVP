@@ -208,108 +208,40 @@ async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse
 
 @app.post("/ai/generate-composition")
 async def generate_composition(request: CompositionRequest) -> CompositionResponse:
-    """Generate a new Remotion composition using @ syntax for media file selection."""
+    """Generate a new Remotion composition blueprint using AI."""
     
     print(f"🎬 Main: Processing request: '{request.user_request}'")
     print(f"📝 Main: Current composition has {len(request.current_composition or [])} tracks")
     
-    # STAGE 1: Return hardcoded CompositionBlueprint JSON (AI generation commented out)
-    print(f"🚀 STAGE 1: Returning hardcoded CompositionBlueprint JSON (incremental editing)")
-    
-    # For now, ignore the current composition and return hardcoded result
-    # TODO: In stage 2, use the current_composition for incremental editing with AI
-    
-    # Hardcoded CompositionBlueprint structure matching AllTransitionsTestBlueprint
-    hardcoded_composition_json = """
-    [
-      {
-        "clips": [
-          {
-            "id": "intro-clip",
-            "startTimeInSeconds": 0,
-            "endTimeInSeconds": 3,
-            "element": "const { Video } = require('remotion'); return React.createElement('div', { style: { width: '100%', height: '100%', position: 'relative' } }, [ React.createElement(Video, { key: 'video', src: '/screenrecording.mp4', style: { width: '100%', height: '100%', objectFit: 'cover' }, muted: true }), React.createElement('div', { key: 'overlay', style: { position: 'absolute', bottom: '20px', left: '20px', padding: '8px 16px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', fontSize: '24px', fontFamily: 'Arial, sans-serif', fontWeight: 'bold', borderRadius: '4px' } }, 'AI Generated Video') ]);",
-            "transitionToNext": {
-              "type": "fade",
-              "durationInSeconds": 1
-            }
-          },
-          {
-            "id": "main-clip",
-            "startTimeInSeconds": 3,
-            "endTimeInSeconds": 6,
-            "element": "return React.createElement('div', { style: { width: '100%', height: '100%', position: 'relative' } }, [ React.createElement('img', { key: 'image', src: '/screenshot-app.png', style: { width: '100%', height: '100%', objectFit: 'cover' } }), React.createElement('div', { key: 'overlay', style: { position: 'absolute', bottom: '20px', left: '20px', padding: '8px 16px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', fontSize: '24px', fontFamily: 'Arial, sans-serif', fontWeight: 'bold', borderRadius: '4px' } }, 'Dynamic Content') ]);",
-            "transitionToNext": {
-              "type": "slide",
-              "direction": "from-right",
-              "durationInSeconds": 1
-            }
-          },
-          {
-            "id": "outro-clip",
-            "startTimeInSeconds": 6,
-            "endTimeInSeconds": 9,
-            "element": "const { Video } = require('remotion'); return React.createElement('div', { style: { width: '100%', height: '100%', position: 'relative' } }, [ React.createElement(Video, { key: 'video', src: '/screenrecording.mp4', style: { width: '100%', height: '100%', objectFit: 'cover' }, muted: true }), React.createElement('div', { key: 'overlay', style: { position: 'absolute', bottom: '20px', left: '20px', padding: '8px 16px', backgroundColor: 'rgba(0,0,0,0.7)', color: 'white', fontSize: '24px', fontFamily: 'Arial, sans-serif', fontWeight: 'bold', borderRadius: '4px' } }, 'Thank You!') ]);"
-          }
-        ]
-      },
-      {
-        "clips": [
-          {
-            "id": "title-overlay",
-            "startTimeInSeconds": 0,
-            "endTimeInSeconds": 9,
-            "element": "return React.createElement('div', { style: { position: 'absolute', top: '20px', right: '20px', padding: '12px 16px', backgroundColor: 'rgba(0,0,0,0.8)', color: '#ffffff', fontSize: '18px', fontFamily: 'monospace', borderRadius: '8px', border: '2px solid #ffffff' } }, 'AI GENERATED');"
-          }
-        ]
-      }
-    ]
-    """
-    
-    # COMMENTED OUT: Original AI generation logic
-    """
-    # Step 1: Direct Code Generation (Synth bypassed)
-    print(f"⚙️ Main: Generating composition directly (skipping synth)")
+    # AI Blueprint Generation (NEW SYSTEM)
+    print(f"🚀 AI: Generating CompositionBlueprint with updated system")
     
     # Convert to dict format expected by code generator
     request_dict = {
-        "user_request": request.user_request,  # Use original request directly
+        "user_request": request.user_request,
         "preview_settings": request.preview_settings,
         "media_library": request.media_library,
-        "current_generated_code": request.current_generated_code,
+        "current_composition": request.current_composition,
         "conversation_history": request.conversation_history
     }
     
-    # Call the existing code generation module directly
+    # Call the blueprint generation module
     result = await generate_composition_with_validation(
         request_dict, 
         gemini_api,
         USE_VERTEX_AI
     )
     
-    print(f"✅ Main: Generation completed - Success: {result['success']}")
+    print(f"✅ Main: Blueprint generation completed - Success: {result['success']}")
     
     # Convert result back to the response model
     return CompositionResponse(
-        composition_code=result["composition_code"],
+        composition_code=result["composition_code"],  # This is now CompositionBlueprint JSON
         content_data=result["content_data"],
         explanation=result["explanation"],
         duration=result["duration"],
         success=result["success"],
         error_message=result.get("error_message")
-    )
-    """
-    
-    print(f"✅ Main: Returning hardcoded CompositionBlueprint JSON (duration: 9.0s)")
-    
-    # Return hardcoded response that matches CompositionBlueprint structure
-    return CompositionResponse(
-        composition_code=hardcoded_composition_json,
-        content_data=[],
-        explanation=f"Generated AI composition based on: '{request.user_request}' (using hardcoded blueprint for Stage 1)",
-        duration=9.0,
-        success=True,
-        error_message=None
     )
 
 
