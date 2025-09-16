@@ -7,6 +7,8 @@ import {
   Sun,
   Upload,
   ChevronLeft,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 
 import { useTheme } from "next-themes";
@@ -34,6 +36,7 @@ import { toast } from "sonner";
 // Hooks
 import { useMediaBin } from "~/hooks/useMediaBin";
 import { useRenderer } from "~/hooks/useRenderer";
+import { useUndoRedo, useUndoRedoShortcuts } from "~/hooks/useUndoRedo";
 
 
 // Types and constants
@@ -68,9 +71,19 @@ export default function TimelineEditor() {
   // Video playback state
   const [durationInFrames, setDurationInFrames] = useState<number>(90); // Start with 3 seconds (90 frames at 30fps) for empty composition
 
-  // AI generation state
+  // AI generation state with undo/redo
+  const [currentComposition, undoRedoActions] = useUndoRedo<CompositionBlueprint>(emptyCompositionBlueprint);
+  
+  // Setup keyboard shortcuts for undo/redo
+  const handleUndoRedoKeyDown = useUndoRedoShortcuts(undoRedoActions);
+  
+  // Add keyboard event listener
+  useEffect(() => {
+    document.addEventListener('keydown', handleUndoRedoKeyDown);
+    return () => document.removeEventListener('keydown', handleUndoRedoKeyDown);
+  }, [handleUndoRedoKeyDown]);
+  
   const [isAiGenerating, setIsAiGenerating] = useState(false);
-  const [currentComposition, setCurrentComposition] = useState<CompositionBlueprint>(emptyCompositionBlueprint);
   
   // Helper to check if we have generated content (more than empty composition)
   const hasGeneratedContent = currentComposition.some(track => track.clips.length > 0);
@@ -129,8 +142,8 @@ export default function TimelineEditor() {
       clips: [...updatedComposition[trackIndex].clips, newClip]
     };
     
-    // Update the composition
-    setCurrentComposition(updatedComposition);
+    // Update the composition with undo support
+    undoRedoActions.set(updatedComposition, `Add ${mediaItem.name} to track ${trackIndex + 1}`);
     
     toast.success(`Added ${mediaItem.name} to track ${trackIndex + 1}`);
   };
@@ -203,8 +216,8 @@ export default function TimelineEditor() {
       clips: [...updatedComposition[newTrackIndex].clips, movedClip]
     };
     
-    // Update the composition
-    setCurrentComposition(updatedComposition);
+    // Update the composition with undo support
+    undoRedoActions.set(updatedComposition, `Move clip to track ${newTrackIndex + 1}`);
     
     toast.success(`Moved clip to track ${newTrackIndex + 1}`);
   };
@@ -261,8 +274,8 @@ export default function TimelineEditor() {
       ).concat([rightClip])
     };
     
-    // Update the composition
-    setCurrentComposition(updatedComposition);
+    // Update the composition with undo support
+    undoRedoActions.set(updatedComposition, `Split clip into two parts`);
     
     toast.success(`Split clip into two parts`);
   };
@@ -296,8 +309,8 @@ export default function TimelineEditor() {
       clips: updatedComposition[sourceTrackIndex].clips.filter(clip => clip.id !== clipId)
     };
     
-    // Update the composition
-    setCurrentComposition(updatedComposition);
+    // Update the composition with undo support
+    undoRedoActions.set(updatedComposition, `Delete clip`);
     
     toast.success(`Deleted clip`);
   };
@@ -527,8 +540,8 @@ export default function TimelineEditor() {
           const blueprintJson = JSON.parse(response.data.composition_code);
           console.log("🤖 AI Generation: Parsed blueprint:", blueprintJson);
 
-          // Set the updated composition as active
-          setCurrentComposition(blueprintJson);
+          // Set the updated composition as active with undo support
+          undoRedoActions.set(blueprintJson, `AI generated composition: "${userRequest}"`);
           
           // Calculate and set duration with minimum safety
           const calculatedDuration = calculateBlueprintDuration(blueprintJson);
@@ -675,6 +688,31 @@ export default function TimelineEditor() {
                           </Label>
                         </div>
 
+                        {/* Undo/Redo Controls */}
+                        <Separator orientation="vertical" className="h-4 mx-1" />
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={undoRedoActions.undo}
+                            disabled={!undoRedoActions.canUndo}
+                            className="h-6 w-6 p-0"
+                            title="Undo (Ctrl+Z)"
+                          >
+                            <Undo2 className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={undoRedoActions.redo}
+                            disabled={!undoRedoActions.canRedo}
+                            className="h-6 w-6 p-0"
+                            title="Redo (Ctrl+Y)"
+                          >
+                            <Redo2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+
                         {/* TODO: Add blueprint-specific controls */}
 
                         {/* Show chat toggle when minimized */}
@@ -717,7 +755,7 @@ export default function TimelineEditor() {
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              setCurrentComposition(emptyCompositionBlueprint);
+                              undoRedoActions.set(emptyCompositionBlueprint, "Clear composition");
                             }}
                             className="text-xs h-6"
                           >

@@ -275,7 +275,7 @@ export const edgeCaseTestBlueprint: CompositionBlueprint = [
           }, 'FINAL CLIP WITH TRANSITION');
         `,
         transitionToNext: {
-          type: 'wipe', 
+          type: 'fade', 
           durationInSeconds: 3  // Transition past end of composition!
         }
       }

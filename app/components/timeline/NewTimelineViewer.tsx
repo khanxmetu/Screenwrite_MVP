@@ -26,20 +26,18 @@ export const TimelineViewer: React.FC<TimelineViewerProps> = ({
         minScaleCount={Math.max(20, Math.ceil(duration))}
         maxScaleCount={Math.max(60, Math.ceil(duration * 2))}
         scaleSplitCount={10}
-        rowHeight={50}
+        rowHeight={40}
         gridSnap={true}
         dragLine={false}
         hideCursor={false}
-        disableDrag={true}
+        disableDrag={true} // Read-only mode
         autoReRender={true}
         style={{
           width: '100%',
-          height: '300px',
-          minHeight: '300px',
+          height: '200px',
           border: '1px solid #e2e8f0',
           borderRadius: '6px',
-          overflow: 'auto',
-          backgroundColor: '#fafafa'
+          overflow: 'hidden'
         }}
       />
     </div>

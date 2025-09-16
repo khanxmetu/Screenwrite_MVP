@@ -8,5 +8,6 @@ export default [
         route("/media-bin", "components/redirects/mediaBinLoader.ts"),
     ]),
     route("/learn", "routes/learn.tsx"),
+    route("/test", "routes/test.tsx"),
     route("*", "./NotFound.tsx")
 ] satisfies RouteConfig;
