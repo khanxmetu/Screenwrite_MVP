@@ -93,3 +93,28 @@ def get_ai_provider(gemini_api: Any = None, use_vertex_ai: bool = False) -> AIPr
         if gemini_api is None:
             raise ValueError("gemini_api is required when not using Claude or Vertex AI")
         return GeminiProvider(gemini_api)
+
+
+def create_ai_provider(provider_type: str = None) -> AIProvider:
+    """Create AI provider based on environment configuration or specified type"""
+    use_claude = os.getenv('USE_CLAUDE', '').lower() in ['true', '1', 'yes']
+    use_vertex_ai = os.getenv('USE_VERTEX_AI', '').lower() in ['true', '1', 'yes']
+    
+    # Override with specific type if provided
+    if provider_type == 'claude':
+        return ClaudeProvider()
+    elif provider_type == 'vertex':
+        return VertexAIProvider()
+    elif provider_type == 'gemini':
+        # For direct gemini, we need to handle the API client differently
+        # This will be handled in the calling code with fallback logic
+        raise ImportError("Direct Gemini provider requires API client - use fallback logic")
+    
+    # Auto-detect based on environment
+    if use_claude:
+        return ClaudeProvider()
+    elif use_vertex_ai:
+        return VertexAIProvider()
+    else:
+        # Default case - will trigger fallback logic in calling code
+        raise ImportError("Default provider requires API client - use fallback logic")
