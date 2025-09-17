@@ -1,0 +1,12 @@
+[
+  {
+    "clips": [
+      {
+        "id": "test-individual-clip",
+        "startTimeInSeconds": 3,
+        "endTimeInSeconds": 6,
+        "element": "console.log('🔍 CLIP EXECUTING at frame:', 'will be determined by interp'); return React.createElement('div', { style: { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: SW.interp(3, 4, 0, 1), fontSize: '48px', color: 'white' } }, 'INDIVIDUAL CLIP TEST');"
+      }
+    ]
+  }
+]

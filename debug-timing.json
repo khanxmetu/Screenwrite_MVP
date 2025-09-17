@@ -1,0 +1,22 @@
+[
+  {
+    "clips": [
+      {
+        "id": "debug-clip-static",
+        "startTimeInSeconds": 5.5,
+        "endTimeInSeconds": 8,
+        "element": "return React.createElement('div', { style: { position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 1, fontSize: '48px', color: 'red' } }, 'STATIC - Should appear at 5.5s');"
+      }
+    ]
+  },
+  {
+    "clips": [
+      {
+        "id": "debug-clip-animated",
+        "startTimeInSeconds": 5.5,
+        "endTimeInSeconds": 8,
+        "element": "return React.createElement('div', { style: { position: 'absolute', top: '70%', left: '50%', transform: 'translate(-50%, -50%)', opacity: SW.interp(5.5, 6.5, 0, 1), fontSize: '48px', color: 'white' } }, 'ANIMATED - Should fade 5.5s-6.5s');"
+      }
+    ]
+  }
+]

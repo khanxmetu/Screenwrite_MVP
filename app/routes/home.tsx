@@ -17,7 +17,7 @@ import { useTheme } from "next-themes";
 import LeftPanel from "~/components/editor/LeftPanel";
 import { DynamicVideoPlayer } from "~/video-compositions/DynamicComposition";
 import { calculateBlueprintDuration } from "~/video-compositions/executeClipElement";
-import { emptyCompositionBlueprint } from "~/video-compositions/EmptyComposition";
+import { emptyCompositionBlueprint, ensureMinimumTracks } from "~/video-compositions/EmptyComposition";
 import type { CompositionBlueprint } from "~/video-compositions/BlueprintTypes";
 import { RenderStatus } from "~/components/timeline/RenderStatus";
 import { Button } from "~/components/ui/button";
@@ -540,11 +540,14 @@ export default function TimelineEditor() {
           const blueprintJson = JSON.parse(response.data.composition_code);
           console.log("🤖 AI Generation: Parsed blueprint:", blueprintJson);
 
+          // Ensure the blueprint has proper structure and minimum tracks
+          const validBlueprint = ensureMinimumTracks(Array.isArray(blueprintJson) ? blueprintJson : [], 4);
+
           // Set the updated composition as active with undo support
-          undoRedoActions.set(blueprintJson, `AI generated composition: "${userRequest}"`);
+          undoRedoActions.set(validBlueprint, `AI generated composition: "${userRequest}"`);
           
           // Calculate and set duration with minimum safety
-          const calculatedDuration = calculateBlueprintDuration(blueprintJson);
+          const calculatedDuration = calculateBlueprintDuration(validBlueprint);
           const safeDuration = Math.max(calculatedDuration, 90); // Minimum 3 seconds
           setDurationInFrames(safeDuration);
 

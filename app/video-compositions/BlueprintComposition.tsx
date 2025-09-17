@@ -28,21 +28,36 @@ export function BlueprintComposition({ blueprint }: BlueprintCompositionProps) {
   const { fps, width, height } = useVideoConfig();
   const videoConfig = { width, height };
 
-  // Create execution context with helper functions
-  const executionContext: BlueprintExecutionContext = {
-    interp: interp,
+  // Create base execution context with helper functions
+  const createExecutionContext = (clipStartTime: number): BlueprintExecutionContext => ({
+    interp: (startTime: number, endTime: number, fromValue: number, toValue: number, easing?: any) => {
+      // Simple subtraction: convert global timing to clip-relative timing
+      const localStartTime = startTime - clipStartTime;
+      const localEndTime = endTime - clipStartTime;
+      return interp(localStartTime, localEndTime, fromValue, toValue, easing);
+    },
     inSeconds: (seconds: number): number => Math.round(seconds * fps),
-  };
+    sequenceStartTime: clipStartTime,
+  });
 
-  console.log("BlueprintComposition rendering with", blueprint.length, "tracks");
+  // Ensure we have valid tracks array
+  const validBlueprint = Array.isArray(blueprint) ? blueprint : [];
+
+  console.log("🎬 BlueprintComposition: Rendering", validBlueprint.length, "tracks");
+  validBlueprint.forEach((track, i) => {
+    console.log(`🎬 Track ${i}:`, track.clips?.length || 0, "clips");
+    track.clips?.forEach(clip => {
+      console.log(`🎬   - ${clip.id}: ${clip.startTimeInSeconds}s-${clip.endTimeInSeconds}s`);
+    });
+  });
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000000" }}>
-      {blueprint.map((track, trackIndex) => (
+      {validBlueprint.map((track, trackIndex) => (
         <TrackRenderer
-          key={trackIndex}
+          key={`track-${trackIndex}-${track.clips.length}`}
           track={track}
-          executionContext={executionContext}
+          createExecutionContext={createExecutionContext}
         />
       ))}
     </AbsoluteFill>
@@ -56,24 +71,27 @@ export function BlueprintComposition({ blueprint }: BlueprintCompositionProps) {
  */
 function TrackRenderer({ 
   track, 
-  executionContext 
+  createExecutionContext 
 }: { 
   track: Track; 
-  executionContext: BlueprintExecutionContext;
+  createExecutionContext: (clipStartTime: number) => BlueprintExecutionContext;
 }) {
   const { fps, width, height } = useVideoConfig();
   const videoConfig = { width, height };
   
+  // Ensure track has clips array
+  const clips = track.clips || [];
+  
   // Group clips into segments: either individual clips or transition groups
-  const segments = groupClipsIntoSegments(track.clips);
+  const segments = groupClipsIntoSegments(clips);
   
   return (
     <AbsoluteFill>
       {segments.map((segment, segmentIndex) => (
         <SegmentRenderer
-          key={`segment-${segmentIndex}`}
+          key={`segment-${segmentIndex}-${segment.clips.map(c => c.id).join('-')}`}
           segment={segment}
-          executionContext={executionContext}
+          createExecutionContext={createExecutionContext}
           fps={fps}
           videoConfig={videoConfig}
         />
@@ -103,8 +121,6 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
       i === 0 || 
       Math.abs(clips[i - 1].endTimeInSeconds - currentClip.startTimeInSeconds) > 0.001
     );
-    
-    console.log(`Clip ${currentClip.id} (${currentClip.startTimeInSeconds}-${currentClip.endTimeInSeconds}): orphanedTo=${hasOrphanedTransitionTo}, orphanedFrom=${hasOrphanedTransitionFrom}`);
     
     // Check if this clip starts a regular adjacent transition group
     if (currentClip.transitionToNext && i < clips.length - 1) {
@@ -205,12 +221,12 @@ type ClipSegment = {
  */
 function SegmentRenderer({
   segment,
-  executionContext,
+  createExecutionContext,
   fps,
   videoConfig
 }: {
   segment: ClipSegment;
-  executionContext: BlueprintExecutionContext;
+  createExecutionContext: (clipStartTime: number) => BlueprintExecutionContext;
   fps: number;
   videoConfig: { width: number; height: number };
 }) {
@@ -223,6 +239,11 @@ function SegmentRenderer({
       (clip.endTimeInSeconds - clip.startTimeInSeconds) * fps
     );
     
+    console.log(`🎬 SegmentRenderer (Individual Clip): Clip ID=${clip.id}, StartTime=${clip.startTimeInSeconds}s, EndTime=${clip.endTimeInSeconds}s, FromFrame=${startFrame}, DurationFrames=${durationInFrames}`);
+
+    // Create execution context for individual clips
+    const executionContext = createExecutionContext(clip.startTimeInSeconds);
+
     return (
       <Sequence
         from={startFrame}
@@ -239,27 +260,73 @@ function SegmentRenderer({
     
     // Process clips (regular adjacent logic or single orphaned clip)
     if (segment.clips.length === 1 && (segment.hasOrphanedStart || segment.hasOrphanedEnd)) {
-      // Single clip with orphaned transitions - transitions happen WITHIN clip timing
+      // Single clip with orphaned transitions - use TransitionSeries with empty divs
       const clip = segment.clips[0];
       const clipDurationFrames = Math.round((clip.endTimeInSeconds - clip.startTimeInSeconds) * fps);
       
-      // For orphaned transitions, keep duration exactly as the clip duration (no extensions)
-      totalDurationFrames += clipDurationFrames;
+      // Calculate transition durations
+      const transitionFromDuration = segment.hasOrphanedStart && clip.transitionFromPrevious
+        ? Math.round(clip.transitionFromPrevious.durationInSeconds * fps)
+        : 0;
+      const transitionToDuration = segment.hasOrphanedEnd && clip.transitionToNext
+        ? Math.round(clip.transitionToNext.durationInSeconds * fps)
+        : 0;
       
+      // Total duration includes ALL parts: transition from + clip + transition to
+      totalDurationFrames = transitionFromDuration + clipDurationFrames + transitionToDuration;
+      
+      // Add empty div for transition from (if needed)
+      if (segment.hasOrphanedStart && clip.transitionFromPrevious) {
+        sequences.push(
+          <TransitionSeries.Sequence 
+            durationInFrames={transitionFromDuration}
+          >
+            <div style={{ width: '100%', height: '100%' }} />
+          </TransitionSeries.Sequence>
+        );
+        
+        sequences.push(
+          <TransitionSeries.Transition
+            presentation={getTransitionPresentation(clip.transitionFromPrevious, videoConfig)}
+            timing={linearTiming({ durationInFrames: transitionFromDuration })}
+          />
+        );
+      }
+      
+      // Add the main clip content
+      const clipSequenceDuration = clipDurationFrames + transitionToDuration;
+      // Create execution context for TransitionSeries clips
+      const executionContext = createExecutionContext(clip.startTimeInSeconds);
       sequences.push(
         <TransitionSeries.Sequence 
-          key={`seq-${clip.id}`}
-          durationInFrames={clipDurationFrames}
+          durationInFrames={clipSequenceDuration}
         >
-          <OrphanedTransitionWrapper
-            clip={clip}
-            executionContext={executionContext}
-            hasOrphanedStart={segment.hasOrphanedStart}
-            hasOrphanedEnd={segment.hasOrphanedEnd}
-            fps={fps}
+          <ClipContentWithFreeze 
+            clip={clip} 
+            executionContext={executionContext} 
+            freezeAfterFrames={clipDurationFrames}
+            totalSequenceDuration={clipSequenceDuration}
           />
         </TransitionSeries.Sequence>
       );
+      
+      // Add transition to empty div (if needed)
+      if (segment.hasOrphanedEnd && clip.transitionToNext) {
+        sequences.push(
+          <TransitionSeries.Transition
+            presentation={getTransitionPresentation(clip.transitionToNext, videoConfig)}
+            timing={linearTiming({ durationInFrames: transitionToDuration })}
+          />
+        );
+        
+        sequences.push(
+          <TransitionSeries.Sequence 
+            durationInFrames={transitionToDuration}
+          >
+            <div style={{ width: '100%', height: '100%' }} />
+          </TransitionSeries.Sequence>
+        );
+      }
     } else {
       // Regular adjacent clips logic (existing code)
       totalDurationFrames += calculateTransitionGroupDuration(segment.clips, fps);
@@ -278,11 +345,10 @@ function SegmentRenderer({
         const sequenceDurationFrames = clipDurationFrames + transitionDuration;
         
         // Add the sequence with proper freeze technique
-        console.log(`Setting up TransitionSeries.Sequence for ${clip.id}: duration=${sequenceDurationFrames}, freezeAfter=${clipDurationFrames}`);
-        
+        // Create execution context for TransitionSeries clips
+        const executionContext = createExecutionContext(clip.startTimeInSeconds);
         sequences.push(
           <TransitionSeries.Sequence 
-            key={`seq-${clip.id}`}
             durationInFrames={sequenceDurationFrames}
           >
             <ClipContentWithFreeze 
@@ -298,7 +364,6 @@ function SegmentRenderer({
         if (hasTransitionToNext) {
           sequences.push(
             <TransitionSeries.Transition
-              key={`trans-${clip.id}`}
               presentation={getTransitionPresentation(clip.transitionToNext!, videoConfig)}
               timing={linearTiming({ durationInFrames: transitionDuration })}
             />
@@ -399,6 +464,8 @@ function ClipContent({
   // Execute the clip's element string as TSX
   const clipElement = executeClipElement(clip.element, executionContext);
   
+  console.log(`🎬 ClipContent: Executed clip ${clip.id}, returned element:`, clipElement);
+
   return clipElement;
 }
 
@@ -419,8 +486,6 @@ function ClipContentWithFreeze({
 }) {
   const frame = useCurrentFrame();
   
-  console.log(`ClipContentWithFreeze - Clip: ${clip.id}, Frame: ${frame}, FreezeAfter: ${freezeAfterFrames}`);
-  
   // Simplest approach: extend the video duration from the start to avoid any jumps
   if (clip.element.includes('Video')) {
     const endAtMatch = clip.element.match(/endAt:\s*(\d+)/);
@@ -435,7 +500,6 @@ function ClipContentWithFreeze({
           `endAt: ${originalEndFrame + (totalSequenceDuration - freezeAfterFrames)}`
         );
         
-        console.log(`Pre-extended video to cover full sequence duration: ${totalSequenceDuration} frames`);
         return executeClipElement(extendedElement, executionContext);
       }
     }
@@ -443,60 +507,6 @@ function ClipContentWithFreeze({
   
   // Normal rendering for non-video or no extension needed
   return executeClipElement(clip.element, executionContext);
-}
-
-/**
- * Wrapper component for orphaned transitions that happen within clip boundaries
- * Applies fade-in and/or fade-out effects within the clip's own duration
- */
-function OrphanedTransitionWrapper({
-  clip,
-  executionContext,
-  hasOrphanedStart,
-  hasOrphanedEnd,
-  fps
-}: {
-  clip: Clip;
-  executionContext: BlueprintExecutionContext;
-  hasOrphanedStart: boolean;
-  hasOrphanedEnd: boolean;
-  fps: number;
-}) {
-  const frame = useCurrentFrame();
-  const clipDurationFrames = Math.round((clip.endTimeInSeconds - clip.startTimeInSeconds) * fps);
-  
-  console.log(`OrphanedTransitionWrapper ${clip.id}: frame=${frame}, clipDurationFrames=${clipDurationFrames}, hasStart=${hasOrphanedStart}, hasEnd=${hasOrphanedEnd}`);
-  
-  let opacity = 1;
-  
-  // Handle orphaned fade-in from transparent (happens at start of clip)
-  if (hasOrphanedStart && clip.transitionFromPrevious) {
-    const fadeInDurationFrames = Math.round(clip.transitionFromPrevious.durationInSeconds * fps);
-    if (frame < fadeInDurationFrames) {
-      // Fade in from 0 to 1 during the first X frames of the clip
-      opacity = frame / fadeInDurationFrames;
-    }
-  }
-  
-  // Handle orphaned fade-out to transparent (happens at end of clip)
-  if (hasOrphanedEnd && clip.transitionToNext) {
-    const fadeOutDurationFrames = Math.round(clip.transitionToNext.durationInSeconds * fps);
-    const fadeOutStartFrame = clipDurationFrames - fadeOutDurationFrames;
-    if (frame >= fadeOutStartFrame) {
-      // Fade out from 1 to 0 during the last X frames of the clip
-      const fadeOutProgress = (frame - fadeOutStartFrame) / fadeOutDurationFrames;
-      opacity *= (1 - fadeOutProgress);
-    }
-  }
-  
-  // Clamp opacity between 0 and 1
-  opacity = Math.max(0, Math.min(1, opacity));
-  
-  return (
-    <AbsoluteFill style={{ opacity }}>
-      {executeClipElement(clip.element, executionContext)}
-    </AbsoluteFill>
-  );
 }
 
 

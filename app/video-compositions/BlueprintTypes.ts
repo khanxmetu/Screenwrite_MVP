@@ -56,5 +56,7 @@ export interface BlueprintExecutionContext {
   // Helper functions available to clip code
   interp: (startTime: number, endTime: number, fromValue: number, toValue: number, easing?: 'linear' | 'in' | 'out' | 'inOut') => number;
   inSeconds: (seconds: number) => number;
+  // Sequence timing context for proper interp calculations
+  sequenceStartTime: number; // Start time of the current sequence in seconds
   // Add more helper functions as needed
 }

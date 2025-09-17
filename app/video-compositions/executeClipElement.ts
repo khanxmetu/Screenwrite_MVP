@@ -174,18 +174,20 @@ const safeRandom = (seed?: string | number) => {
   }
 };
 
-// SW Namespace - The only interface AI should use
-const SW = {
+// Create SW namespace function with simple, context-agnostic functions
+const createSW = () => ({
   Video: safeVideo,
   Audio: safeAudio,
   Img: safeImg,
   AbsoluteFill: safeAbsoluteFill,
-  interp: interp, // Our existing wrapper
+  interp: (startTime: number, endTime: number, fromValue: number, toValue: number, easing?: any) => {
+    return interp(startTime, endTime, fromValue, toValue, easing);
+  },
   interpolateColors: safeInterpolateColors,
   spring: safeSpring,
   easing: safeEasing,
   random: safeRandom,
-};
+});
 
 /**
  * Safely execute a clip's TSX code with proper error handling
@@ -196,8 +198,15 @@ export function executeClipElement(
   context: BlueprintExecutionContext
 ): React.ReactElement {
   try {
-    console.log("Executing clip code:", clipCode.slice(0, 100) + "...");
-
+    console.log("🎬 executeClipElement: Starting execution");
+    console.log("🎬 Clip code:", clipCode);
+    
+    // Create SW namespace using the execution context's interp function
+    const SW = {
+      ...createSW(),
+      interp: context.interp, // Use the context-aware interp function
+    };
+    
     // Create execution function with ONLY safe SW namespace functions
     const executeCode = new Function(
       'React',
@@ -206,6 +215,8 @@ export function executeClipElement(
       clipCode
     );
 
+    console.log("🎬 executeClipElement: Function created, executing...");
+
     // Execute with ONLY safe context - no direct Remotion access
     const result = executeCode(
       React,
@@ -213,14 +224,18 @@ export function executeClipElement(
       context.inSeconds
     );
 
+    console.log("🎬 executeClipElement: Execution result:", result);
+
     // Validate result is a React element
     if (!React.isValidElement(result)) {
+      console.error("🎬 executeClipElement: Result is not a valid React element:", result);
       throw new Error("Clip code must return a valid React element");
     }
 
+    console.log("🎬 executeClipElement: SUCCESS - Valid React element returned");
     return result;
   } catch (error) {
-    console.error("Error executing clip code:", error);
+    console.error("🎬 executeClipElement: ERROR:", error);
     
     // Return error display component
     return React.createElement(
@@ -260,20 +275,34 @@ export function executeClipElement(
 
 /**
  * Calculate total composition duration from blueprint
- * Works with intelligent track system that respects actual timing
+ * Works with intelligent track system that respects actual timing and transitions
  */
 export function calculateBlueprintDuration(blueprint: import('./BlueprintTypes').CompositionBlueprint): number {
   let maxDuration = 0;
 
-  // Find the latest end time across all tracks and clips
+  // Find the latest end time across all tracks and clips, accounting for transitions
   for (const track of blueprint) {
+    if (!track.clips || track.clips.length === 0) continue;
+    
     for (const clip of track.clips) {
-      if (clip.endTimeInSeconds > maxDuration) {
-        maxDuration = clip.endTimeInSeconds;
+      let clipEndTime = clip.endTimeInSeconds;
+      
+      // Account for orphaned transitions that extend the clip
+      if (clip.transitionToNext && clip.transitionToNext.durationInSeconds) {
+        // Only extend if this is an orphaned transition (no adjacent clip)
+        const isOrphanedTransition = true; // Assume orphaned for duration calculation safety
+        if (isOrphanedTransition) {
+          clipEndTime += clip.transitionToNext.durationInSeconds * 0.5; // Partial extension for safety
+        }
+      }
+      
+      if (clipEndTime > maxDuration) {
+        maxDuration = clipEndTime;
       }
     }
   }
 
-  // Convert seconds to frames (30 FPS)
-  return Math.ceil(maxDuration * 30);
+  // Convert seconds to frames (30 FPS) with minimum duration
+  const durationInFrames = Math.ceil(maxDuration * 30);
+  return Math.max(durationInFrames, 30); // Minimum 1 second
 }

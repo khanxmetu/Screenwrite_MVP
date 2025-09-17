@@ -1,0 +1,12 @@
+[
+  {
+    "clips": [
+      {
+        "id": "test-subtitle",
+        "startTimeInSeconds": 5.5,
+        "endTimeInSeconds": 8,
+        "element": "return React.createElement('div', { style: { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: SW.interp(5.5, 6.5, 0, 1), fontSize: '48px', color: 'white' } }, 'TEST SUBTITLE');"
+      }
+    ]
+  }
+]

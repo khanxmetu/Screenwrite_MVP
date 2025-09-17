@@ -4,10 +4,10 @@ type EasingType = 'in' | 'out' | 'inOut' | 'linear';
 
 /**
  * Simple interpolation wrapper for animations
- * Takes two time points and interpolates between two values with easing
+ * Works with sequence-relative timing - no context adjustments needed
  * 
- * @param startTime - When to start the animation (in seconds)
- * @param endTime - When to end the animation (in seconds)
+ * @param startTime - When to start the animation (in seconds, relative to sequence start)
+ * @param endTime - When to end the animation (in seconds, relative to sequence start) 
  * @param fromValue - Starting value
  * @param toValue - Ending value
  * @param easing - Easing type: 'linear', 'in', 'out', 'inOut' (default: 'out')
@@ -23,6 +23,7 @@ export function interp(
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   
+  // Convert seconds to frames (sequence-relative)
   const startFrame = startTime * fps;
   const endFrame = endTime * fps;
   
