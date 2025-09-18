@@ -8,14 +8,14 @@ import type { BlueprintExecutionContext } from "./BlueprintTypes";
  * These provide a secure, AI-friendly interface with validation and error handling
  */
 
-// Safe Video wrapper with file validation and seconds-based props
-const safeVideo = (props: {
+// Safe Video wrapper component with file validation and seconds-based props
+const SafeVideoComponent = React.forwardRef<any, {
   src: string;
   startFromSeconds?: number;
   endAtSeconds?: number;
   volume?: number;
   style?: React.CSSProperties;
-}) => {
+}>((props, ref) => {
   // Validate file path (only allow relative paths and common extensions)
   const allowedExtensions = ['.mp4', '.mov', '.avi', '.webm', '.mkv'];
   const hasValidExtension = allowedExtensions.some(ext => props.src.toLowerCase().endsWith(ext));
@@ -32,6 +32,7 @@ const safeVideo = (props: {
     src: props.src,
     volume: Math.max(0, Math.min(1, props.volume || 1)), // Clamp volume 0-1
     style: props.style,
+    ref,
   };
 
   if (props.startFromSeconds !== undefined) {
@@ -42,15 +43,15 @@ const safeVideo = (props: {
   }
 
   return React.createElement(Video, videoProps);
-};
+});
 
-// Safe Audio wrapper with file validation and seconds-based props
-const safeAudio = (props: {
+// Safe Audio wrapper component with file validation and seconds-based props
+const SafeAudioComponent = React.forwardRef<any, {
   src: string;
   startFromSeconds?: number;
   endAtSeconds?: number;
   volume?: number;
-}) => {
+}>((props, ref) => {
   // Validate file path
   const allowedExtensions = ['.mp3', '.wav', '.aac', '.ogg', '.m4a'];
   const hasValidExtension = allowedExtensions.some(ext => props.src.toLowerCase().endsWith(ext));
@@ -64,6 +65,7 @@ const safeAudio = (props: {
   const audioProps: any = {
     src: props.src,
     volume: Math.max(0, Math.min(1, props.volume || 1)), // Clamp volume 0-1
+    ref,
   };
 
   if (props.startFromSeconds !== undefined) {
@@ -74,14 +76,14 @@ const safeAudio = (props: {
   }
 
   return React.createElement(Audio, audioProps);
-};
+});
 
-// Safe Img wrapper with file validation
-const safeImg = (props: {
+// Safe Img wrapper component with file validation
+const SafeImgComponent = React.forwardRef<any, {
   src: string;
   style?: React.CSSProperties;
   alt?: string;
-}) => {
+}>((props, ref) => {
   // Validate image file
   const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
   const hasValidExtension = allowedExtensions.some(ext => props.src.toLowerCase().endsWith(ext));
@@ -93,16 +95,16 @@ const safeImg = (props: {
     }, 'Invalid image file');
   }
 
-  return React.createElement(Img, props);
-};
+  return React.createElement(Img, { ...props, ref });
+});
 
-// Safe AbsoluteFill wrapper (already safe, but for consistency)
-const safeAbsoluteFill = (props: {
+// Safe AbsoluteFill wrapper component (already safe, but for consistency)
+const SafeAbsoluteFillComponent = React.forwardRef<any, {
   style?: React.CSSProperties;
   children?: React.ReactNode;
-}) => {
-  return React.createElement(AbsoluteFill, props);
-};
+}>((props, ref) => {
+  return React.createElement(AbsoluteFill, { ...props, ref });
+});
 
 // Safe interpolateColors wrapper
 const safeInterpolateColors = (
@@ -174,12 +176,12 @@ const safeRandom = (seed?: string | number) => {
   }
 };
 
-// Create SW namespace function with simple, context-agnostic functions
+// Create SW namespace with component references and utility functions
 const createSW = () => ({
-  Video: safeVideo,
-  Audio: safeAudio,
-  Img: safeImg,
-  AbsoluteFill: safeAbsoluteFill,
+  Video: SafeVideoComponent,
+  Audio: SafeAudioComponent,
+  Img: SafeImgComponent,
+  AbsoluteFill: SafeAbsoluteFillComponent,
   interp: (startTime: number, endTime: number, fromValue: number, toValue: number, easing?: any) => {
     return interp(startTime, endTime, fromValue, toValue, easing);
   },

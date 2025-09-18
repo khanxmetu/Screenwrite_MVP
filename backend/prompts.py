@@ -11,9 +11,9 @@ This is the comprehensive technical reference for the Blueprint Composition syst
 
 **CORE API REFERENCE**
 
-Available Functions (USE ONLY THESE):
+Available Components (USE ONLY THESE IN React.createElement):
 
-SW.Video({ src, startFromSeconds, endAtSeconds, volume, style })
+React.createElement(SW.Video, { src, startFromSeconds, endAtSeconds, volume, style })
 - Play video files with trimming capabilities
 - src: Full URL path to video file (required)
 - startFromSeconds: Start playback from this timestamp (optional, default: 0)
@@ -21,23 +21,23 @@ SW.Video({ src, startFromSeconds, endAtSeconds, volume, style })
 - volume: Audio volume level 0.0 to 1.0 (optional, default: 1.0)
 - style: CSS object for positioning and visual effects (optional)
 
-SW.Audio({ src, startFromSeconds, endAtSeconds, volume })
+React.createElement(SW.Audio, { src, startFromSeconds, endAtSeconds, volume })
 - Play audio files with trimming capabilities
 - src: Full URL path to audio file (required)
 - startFromSeconds: Start playback from this timestamp (optional, default: 0)
 - endAtSeconds: End playback at this timestamp (optional, default: full duration)  
 - volume: Audio volume level 0.0 to 1.0 (optional, default: 1.0)
 
-SW.Img({ src, style })
+React.createElement(SW.Img, { src, style })
 - Display static images
 - src: Full URL path to image file (required)
 - style: CSS object for size, position and visual effects (optional)
 
-SW.AbsoluteFill({ style, children })
+React.createElement(SW.AbsoluteFill, { style }, children)
 - Full-screen container element (100% width/height, absolute positioned)
 - Use for: backgrounds, full-screen overlays, main composition containers
 - style: CSS object for styling the container (optional)
-- children: Content inside the container - other SW functions or React elements
+- children: Content inside the container - other React.createElement calls
 
 SW.interp(startTime, endTime, fromValue, toValue, easing)
 - Animate numeric values over time using timeline seconds
@@ -47,11 +47,33 @@ SW.interp(startTime, endTime, fromValue, toValue, easing)
 - toValue: Ending value (number)
 - easing: Animation curve - 'linear', 'in', 'out', 'inOut' (optional, default: 'linear')
 
+**ANIMATION UTILITY FUNCTIONS:**
+
+SW.interp(startTime, endTime, fromValue, toValue, easing)
+- Animate numeric values over time using timeline seconds (USE IN STYLE PROPERTIES)
+- startTime: When animation begins (in seconds from clip start)
+- endTime: When animation ends (in seconds from clip start)
+- fromValue: Starting value (number)
+- toValue: Ending value (number)
+- easing: Animation curve - 'linear', 'in', 'out', 'inOut' (optional, default: 'linear')
+
 SW.interpolateColors(progress, progressArray, colorArray)
-- Smooth transitions between colors
-- progress: Animation progress value 0 to 1
-- progressArray: Array defining progress points [0, 1] 
-- colorArray: Array of corresponding colors ["#color1", "#color2"]
+- Smooth color transitions between multiple colors (USE IN STYLE PROPERTIES)
+- progress: Animation progress value (typically from SW.interp)
+- progressArray: Array of progress points [0, 0.5, 1]
+- colorArray: Array of color strings ['#ff0000', '#00ff00', '#0000ff']
+
+SW.spring({ frame: currentFrame, config: { damping, mass, stiffness } })
+- Natural bouncy animations with spring physics (USE IN STYLE PROPERTIES)
+- frame: Current animation frame number
+- config.damping: Spring damping 0-100 (higher = less bouncy)
+- config.mass: Spring mass 0.1-10 (higher = slower)
+- config.stiffness: Spring stiffness 0-1000 (higher = snappier)
+
+SW.random(seed)
+- Generate consistent pseudo-random values (USE IN STYLE PROPERTIES)
+- seed: String identifier for reproducible randomness
+- Returns: Random number between 0 and 1
 
 SW.spring({ frame: currentFrame, config: { damping, mass, stiffness } })
 - Natural bouncy animations with spring physics
@@ -92,11 +114,12 @@ Blueprint Structure:
 
 Element Field Requirements:
 - Must be valid JavaScript code that returns a React element
-- Use React.createElement() for custom elements
-- Use SW.* functions for media and animations
+- Use React.createElement() for ALL elements (DOM and SW components)
+- Use SW.* as component references: React.createElement(SW.AbsoluteFill, props, children)
+- Use SW.interp() for animations in style properties
 - No import statements - all functions are pre-available
 - Must return exactly one root element
-- Example: "return React.createElement('div', {style: {color: 'white'}}, 'Content');"
+- Example: "return React.createElement(SW.AbsoluteFill, {style: {background: 'blue'}});"
 
 **TIMING RULES & CONSTRAINTS**
 
@@ -255,7 +278,7 @@ Multiple Backgrounds:
 **ABSOLUTEFILL STYLING PATTERNS**
 
 Background Compositions:
-- Use SW.AbsoluteFill for full-screen backgrounds
+- Use React.createElement(SW.AbsoluteFill, ...) for full-screen backgrounds
 - Apply gradients, images, or videos as backgrounds
 - Layer multiple AbsoluteFill elements with different z-index
 
@@ -265,7 +288,7 @@ Content Centering:
 - Perfect for titles, overlays, and focal content
 
 Multi-Layer Compositions:
-- Stack multiple SW.AbsoluteFill elements
+- Stack multiple React.createElement(SW.AbsoluteFill, ...) elements
 - Use z-index or render order for layering
 - Background layer (z-index: 1) + content layers (z-index: 2+)
 
@@ -297,11 +320,11 @@ Your core philosophy is INCREMENTAL EDITING:
 Simple Rule: Apply the requested change to the existing composition and return the complete updated composition.
 
 Example:
-- Existing: [{"clips": [{"id": "bg", "startTimeInSeconds": 0, "endTimeInSeconds": 5, "element": "return SW.AbsoluteFill({style: {background: 'blue'}});"}]}]
+- Existing: [{"clips": [{"id": "bg", "startTimeInSeconds": 0, "endTimeInSeconds": 5, "element": "return React.createElement(SW.AbsoluteFill, {style: {background: 'blue'}});"}]}]
 - User Request: "add a title"  
 - Result: [
-    {"clips": [{"id": "bg", "startTimeInSeconds": 0, "endTimeInSeconds": 5, "element": "return SW.AbsoluteFill({style: {background: 'blue'}});"}]},
-    {"clips": [{"id": "title", "startTimeInSeconds": 1, "endTimeInSeconds": 4, "element": "return React.createElement('h1', {style: {color: 'white', textAlign: 'center', fontSize: '3rem'}}, 'Hello World');"}]}
+    {"clips": [{"id": "bg", "startTimeInSeconds": 0, "endTimeInSeconds": 5, "element": "return React.createElement(SW.AbsoluteFill, {style: {background: 'blue'}});"}]},
+    {"clips": [{"id": "title", "startTimeInSeconds": 1, "endTimeInSeconds": 4, "element": "return React.createElement('div', {style: {color: 'white', textAlign: 'center', fontSize: '3rem', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%'}}, 'Hello World');"}]}
   ]
 
 **REQUEST HANDLING PATTERNS**

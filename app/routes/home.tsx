@@ -524,8 +524,12 @@ export default function TimelineEditor() {
         media_library: mediaBinItems.map(item => ({
           id: item.id,
           name: item.name,
-          type: item.mediaType,
-          src: item.mediaUrlLocal || item.mediaUrlRemote,
+          mediaType: item.mediaType,
+          durationInSeconds: item.durationInSeconds,
+          media_width: item.media_width,
+          media_height: item.media_height,
+          mediaUrlLocal: item.mediaUrlLocal,
+          mediaUrlRemote: item.mediaUrlRemote,
         })),
         current_composition: currentComposition, // Send current composition for incremental editing
         conversation_history: [],
@@ -571,7 +575,7 @@ export default function TimelineEditor() {
     } finally {
       setIsAiGenerating(false);
     }
-  }, [previewSettings]);
+  }, [previewSettings, currentComposition]);
 
   useEffect(() => {
     setMounted(true)
