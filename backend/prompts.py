@@ -427,7 +427,7 @@ def build_composition_context(current_composition: list) -> str:
     composition_context += f"- Keep all existing clips and timing unless told to change them\n"
     composition_context += f"- When adding new elements, integrate them with existing tracks\n"
     composition_context += f"- DO NOT regenerate the entire composition\n"
-    composition_context += f"\nExisting composition structure: {str(current_composition)[:300]}...\n"
+    composition_context += f"\nExisting composition structure: {str(current_composition)}...\n"
     
     return composition_context
 
