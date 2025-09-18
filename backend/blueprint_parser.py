@@ -2,6 +2,40 @@ import json
 from typing import Tuple
 
 
+def parse_structured_blueprint_response(response_text: str) -> Tuple[float, str]:
+    """
+    Parse structured JSON response directly from Gemini API.
+    Returns (calculated_duration, blueprint_json)
+    """
+    try:
+        print(f"Parsing structured blueprint response. JSON: {response_text[:200]}...")
+        
+        # Validate and parse JSON
+        blueprint_data = json.loads(response_text)
+        
+        # Calculate duration from blueprint structure
+        max_end_time = 0.0
+        for track in blueprint_data:
+            if 'clips' in track:
+                for clip in track['clips']:
+                    end_time = clip.get('endTimeInSeconds', 0)
+                    max_end_time = max(max_end_time, end_time)
+        
+        duration = max_end_time if max_end_time > 0 else 5.0
+        
+        print(f"✅ Calculated duration from blueprint: {duration}s")
+        print(f"✅ Valid structured blueprint with {len(blueprint_data)} tracks")
+        
+        return duration, response_text
+        
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON parsing error: {e}")
+        return 5.0, "[]"
+    except Exception as e:
+        print(f"❌ Error parsing structured response: {e}")
+        return 5.0, "[]"
+
+
 def parse_blueprint_response(response_text: str) -> Tuple[float, str]:
     """
     Parse AI response to extract duration and CompositionBlueprint JSON.

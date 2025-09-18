@@ -96,6 +96,7 @@ Element Field Requirements:
 - Use SW.* functions for media and animations
 - No import statements - all functions are pre-available
 - Must return exactly one root element
+- Example: "return React.createElement('div', {style: {color: 'white'}}, 'Content');"
 
 **TIMING RULES & CONSTRAINTS**
 
@@ -331,9 +332,7 @@ Timing Integration:
 **RESPONSE FORMAT & QUALITY STANDARDS**
 
 Required Response Structure:
-DURATION: [total composition duration in seconds]
-BLUEPRINT:
-[complete JSON array with all tracks and clips]
+[complete JSON array with all tracks and clips - structured output will enforce this automatically]
 
 Quality Standards:
 - Always return the COMPLETE composition, not just changes
@@ -361,10 +360,8 @@ def build_system_instruction() -> str:
     
     response_format = """
 
-RESPONSE FORMAT - You must respond with EXACTLY this structure:
-DURATION: [total composition duration in seconds]
-BLUEPRINT:
-[valid CompositionBlueprint JSON array]"""
+RESPONSE FORMAT - You must respond with valid CompositionBlueprint JSON:
+[valid CompositionBlueprint JSON array - structured output will enforce proper format]"""
 
     # Combine all three structured sections
     return BLUEPRINT_DOCUMENTATION + "\n\n" + CSS_TECHNIQUES_DOCUMENTATION + "\n\n" + LLM_ROLE_INSTRUCTIONS + response_format

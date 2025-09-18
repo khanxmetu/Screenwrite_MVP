@@ -225,12 +225,8 @@ async def generate_composition(request: CompositionRequest) -> CompositionRespon
         "conversation_history": request.conversation_history
     }
     
-    # Call the blueprint generation module
-    result = await generate_composition_with_validation(
-        request_dict, 
-        gemini_api,
-        USE_VERTEX_AI
-    )
+    # Call the blueprint generation module (LLM-agnostic)
+    result = await generate_composition_with_validation(request_dict)
     
     print(f"✅ Main: Blueprint generation completed - Success: {result['success']}")
     
