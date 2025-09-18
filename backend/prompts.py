@@ -39,29 +39,18 @@ React.createElement(SW.AbsoluteFill, { style }, children)
 - style: CSS object for styling the container (optional)
 - children: Content inside the container - other React.createElement calls
 
-SW.interp(startTime, endTime, fromValue, toValue, easing)
-- Animate numeric values over time using timeline seconds
-- startTime: When animation begins (in seconds from clip start)
-- endTime: When animation ends (in seconds from clip start)
-- fromValue: Starting value (number)
-- toValue: Ending value (number)
-- easing: Animation curve - 'linear', 'in', 'out', 'inOut' (optional, default: 'linear')
-
 **ANIMATION UTILITY FUNCTIONS:**
 
 SW.interp(startTime, endTime, fromValue, toValue, easing)
-- Animate numeric values over time using timeline seconds (USE IN STYLE PROPERTIES)
-- startTime: When animation begins (in seconds from clip start)
-- endTime: When animation ends (in seconds from clip start)
+- Animate numeric values over time using GLOBAL TIMELINE seconds (USE IN STYLE PROPERTIES)
+- startTime: When animation begins (GLOBAL TIMELINE SECONDS)
+- endTime: When animation ends (GLOBAL TIMELINE SECONDS)
 - fromValue: Starting value (number)
 - toValue: Ending value (number)
 - easing: Animation curve - 'linear', 'in', 'out', 'inOut' (optional, default: 'linear')
-
-SW.interpolateColors(progress, progressArray, colorArray)
-- Smooth color transitions between multiple colors (USE IN STYLE PROPERTIES)
-- progress: Animation progress value (typically from SW.interp)
-- progressArray: Array of progress points [0, 0.5, 1]
-- colorArray: Array of color strings ['#ff0000', '#00ff00', '#0000ff']
+- SW.interp takes GLOBAL timeline seconds, not clip-relative seconds
+- NEVER use SW.interp(0, clipDuration) - this is clip-relative timing and WRONG!
+- The SW framework automatically converts global timing to clip-relative internally
 
 SW.spring({ frame: currentFrame, config: { damping, mass, stiffness } })
 - Natural bouncy animations with spring physics (USE IN STYLE PROPERTIES)
@@ -74,13 +63,6 @@ SW.random(seed)
 - Generate consistent pseudo-random values (USE IN STYLE PROPERTIES)
 - seed: String identifier for reproducible randomness
 - Returns: Random number between 0 and 1
-
-SW.spring({ frame: currentFrame, config: { damping, mass, stiffness } })
-- Natural bouncy animations with spring physics
-- frame: Current animation frame number
-- config.damping: Spring damping 0-100 (higher = less bouncy)
-- config.mass: Spring mass 0.1-10 (higher = slower)
-- config.stiffness: Spring stiffness 0-1000 (higher = snappier)
 
 SW.random(seed)
 - Generate consistent pseudo-random values
@@ -125,7 +107,6 @@ Element Field Requirements:
 
 Critical Timing Rules:
 - Clips within the same track MUST NOT overlap in time
-- If Track 0 has clip from 0-5s, next clip must start at 5s or later
 - For overlapping visual content, use different tracks (Track 0, Track 1, etc.)
 - Transitions handle visual overlap automatically - you set timing boundaries
 - Valid example: Clip A (0-3s), Clip B (3-6s), Clip C (6-10s)
