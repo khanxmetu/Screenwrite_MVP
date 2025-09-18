@@ -140,6 +140,15 @@ Transition Precedence Rules:
 - If Clip A has "transitionToNext" and Clip B has "transitionFromPrevious"
 - Clip A's "transitionToNext" takes precedence
 - Use "transitionFromPrevious" only when previous clip has no "transitionToNext"
+
+**TRANSITION REQUIREMENTS & CONSTRAINTS**
+
+Cross Transitions:
+- Work with adjacent clips on the same track for smooth clip-to-clip transitions
+
+Orphaned Transitions (Valid):
+- transitionToNext: If no clip follows, transitions to empty/fade out
+- transitionFromPrevious: If no clip precedes, transitions from empty/fade in
 """
 
 # ============================================================================

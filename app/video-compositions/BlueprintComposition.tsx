@@ -108,8 +108,13 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
   const segments: ClipSegment[] = [];
   let i = 0;
   
+  console.log(`🎬 groupClipsIntoSegments: Processing ${clips.length} clips`);
+  
   while (i < clips.length) {
     const currentClip = clips[i];
+    console.log(`🎬 Processing clip ${i}: ${currentClip.id} (${currentClip.startTimeInSeconds}s-${currentClip.endTimeInSeconds}s)`);
+    console.log(`🎬 - Has transitionToNext: ${!!currentClip.transitionToNext}`);
+    console.log(`🎬 - Has transitionFromPrevious: ${!!currentClip.transitionFromPrevious}`);
     
     // Check for any transitions (including orphaned ones)
     const hasOrphanedTransitionTo = currentClip.transitionToNext && (
@@ -125,8 +130,11 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
     // Check if this clip starts a regular adjacent transition group
     if (currentClip.transitionToNext && i < clips.length - 1) {
       const nextClip = clips[i + 1];
+      const timeDiff = Math.abs(currentClip.endTimeInSeconds - nextClip.startTimeInSeconds);
+      console.log(`🎬 Adjacency check: Current clip ends at ${currentClip.endTimeInSeconds}s, next clip starts at ${nextClip.startTimeInSeconds}s, diff: ${timeDiff}`);
       // Check if clips are adjacent (current end time == next start time)
-      if (Math.abs(currentClip.endTimeInSeconds - nextClip.startTimeInSeconds) < 0.001) {
+      if (timeDiff < 0.001) {
+        console.log(`🎬 ✅ Clips are adjacent! Creating transition group...`);
         // Start building a transition group
         const transitionGroup: Clip[] = [currentClip];
         let j = i + 1;
@@ -159,9 +167,11 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
         
         i = j + 1;
       } else {
+        console.log(`🎬 ❌ Clips not adjacent (diff: ${timeDiff}), checking for orphaned transitions...`);
         // Adjacent transition failed, check for orphaned transitions
         if (hasOrphanedTransitionTo || hasOrphanedTransitionFrom) {
           // This clip has orphaned transitions, needs TransitionSeries with empty divs
+          console.log(`🎬 Creating orphaned transition segment for ${currentClip.id}`);
           // For orphaned transitions, timing should be WITHIN clip boundaries, not outside
           segments.push({
             type: 'transition-group',
@@ -172,6 +182,7 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
           });
         } else {
           // No transitions, individual clip
+          console.log(`🎬 Creating individual segment for ${currentClip.id}`);
           segments.push({
             type: 'individual',
             clips: [currentClip],
@@ -205,6 +216,11 @@ function groupClipsIntoSegments(clips: Clip[]): ClipSegment[] {
     }
   }
   
+  console.log(`🎬 Final segments created: ${segments.length} segments`);
+  segments.forEach((segment, index) => {
+    console.log(`🎬 Segment ${index}: type=${segment.type}, clips=[${segment.clips.map(c => c.id).join(', ')}], startTime=${segment.startTime}s`);
+  });
+  
   return segments;
 }
 
@@ -231,6 +247,11 @@ function SegmentRenderer({
   videoConfig: { width: number; height: number };
 }) {
   const startFrame = Math.round(segment.startTime * fps);
+  
+  // Only log once per segment, not every frame
+  if (startFrame === 0) {
+    console.log(`🎬 SegmentRenderer: Processing segment type="${segment.type}" with ${segment.clips.length} clips: [${segment.clips.map(c => c.id).join(', ')}]`);
+  }
   
   if (segment.type === 'individual') {
     // Render single clip at its specified time
@@ -260,6 +281,9 @@ function SegmentRenderer({
     
     // Process clips (regular adjacent logic or single orphaned clip)
     if (segment.clips.length === 1 && (segment.hasOrphanedStart || segment.hasOrphanedEnd)) {
+      if (startFrame === 0) {
+        console.log(`🎬 SegmentRenderer: Taking ORPHANED transition path for single clip`);
+      }
       // Single clip with orphaned transitions - use TransitionSeries with empty divs
       const clip = segment.clips[0];
       const clipDurationFrames = Math.round((clip.endTimeInSeconds - clip.startTimeInSeconds) * fps);
@@ -328,6 +352,9 @@ function SegmentRenderer({
         );
       }
     } else {
+      if (startFrame === 0) {
+        console.log(`🎬 SegmentRenderer: Taking CROSS-TRANSITION path for ${segment.clips.length} clips`);
+      }
       // Regular adjacent clips logic (existing code)
       totalDurationFrames += calculateTransitionGroupDuration(segment.clips, fps);
       
@@ -362,9 +389,13 @@ function SegmentRenderer({
         
         // Add transition if this clip has one and it's not the last clip
         if (hasTransitionToNext) {
+          const presentation = getTransitionPresentation(clip.transitionToNext!, videoConfig);
+          if (startFrame === 0) {
+            console.log(`🎬 Adding TransitionSeries.Transition after clip ${clip.id}, duration: ${transitionDuration} frames, presentation:`, presentation);
+          }
           sequences.push(
             <TransitionSeries.Transition
-              presentation={getTransitionPresentation(clip.transitionToNext!, videoConfig)}
+              presentation={presentation}
               timing={linearTiming({ durationInFrames: transitionDuration })}
             />
           );
@@ -488,18 +519,25 @@ function ClipContentWithFreeze({
   
   // Simplest approach: extend the video duration from the start to avoid any jumps
   if (clip.element.includes('Video')) {
-    const endAtMatch = clip.element.match(/endAt:\s*(\d+)/);
+    const endAtMatch = clip.element.match(/endAtSeconds:\s*([0-9.]+)/);
     
     if (endAtMatch) {
-      const originalEndFrame = parseInt(endAtMatch[1]);
+      const originalEndTime = parseFloat(endAtMatch[1]);
+      const fps = 30; // Assuming 30fps - should match your project settings
+      const originalEndFrame = originalEndTime * fps;
       
       // If we need to extend beyond the original video duration, just repeat the last frame
       if (totalSequenceDuration > freezeAfterFrames) {
+        const extensionFrames = totalSequenceDuration - freezeAfterFrames;
+        const extensionSeconds = extensionFrames / fps;
+        const newEndTime = originalEndTime + extensionSeconds;
+        
         const extendedElement = clip.element.replace(
-          /endAt:\s*\d+/,
-          `endAt: ${originalEndFrame + (totalSequenceDuration - freezeAfterFrames)}`
+          /endAtSeconds:\s*[0-9.]+/,
+          `endAtSeconds: ${newEndTime}`
         );
         
+        console.log(`🎬 ClipContentWithFreeze: Extending ${clip.id} from ${originalEndTime}s to ${newEndTime}s (extension: ${extensionSeconds}s)`);
         return executeClipElement(extendedElement, executionContext);
       }
     }
