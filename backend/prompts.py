@@ -41,13 +41,29 @@ React.createElement(SW.AbsoluteFill, { style }, children)
 
 **ANIMATION UTILITY FUNCTIONS:**
 
+SW.interp() - TWO SYNTAX OPTIONS:
+
+SIMPLE SYNTAX (for basic animations):
 SW.interp(startTime, endTime, fromValue, toValue, easing)
-- Animate numeric values over time using GLOBAL TIMELINE seconds (USE IN STYLE PROPERTIES)
+- Animate between two values over time using GLOBAL TIMELINE seconds
 - startTime: When animation begins (GLOBAL TIMELINE SECONDS)
-- endTime: When animation ends (GLOBAL TIMELINE SECONDS)
+- endTime: When animation ends (GLOBAL TIMELINE SECONDS) 
 - fromValue: Starting value (number)
 - toValue: Ending value (number)
-- easing: Animation curve - 'linear', 'in', 'out', 'inOut' (optional, default: 'linear')
+- easing: Animation curve - 'linear', 'in', 'out', 'inOut' (optional, default: 'out')
+
+KEYFRAME SYNTAX (for complex multi-stage animations):
+SW.interp([time1, time2, time3, ...], [value1, value2, value3, ...], easing)
+- Animate through multiple keyframes using GLOBAL TIMELINE seconds
+- timePoints: Array of time points in GLOBAL TIMELINE SECONDS [0, 2, 3, 4]
+- values: Array of corresponding values [0, 1, 1, 0]
+- easing: Animation curve - 'linear', 'in', 'out', 'inOut' (optional, default: 'out')
+
+EXAMPLES:
+- Fade in/hold/fade out: SW.interp([0, 2, 3, 4], [0, 1, 1, 0], 'linear')
+- Simple fade: SW.interp(0, 2, 0, 1, 'linear')
+
+CRITICAL RULES:
 - SW.interp takes GLOBAL timeline seconds, not clip-relative seconds
 - NEVER use SW.interp(0, clipDuration) - this is clip-relative timing and WRONG!
 - The SW framework automatically converts global timing to clip-relative internally
@@ -98,7 +114,7 @@ Element Field Requirements:
 - Must be valid JavaScript code that returns a React element
 - Use React.createElement() for ALL elements (DOM and SW components)
 - Use SW.* as component references: React.createElement(SW.AbsoluteFill, props, children)
-- Use SW.interp() for animations in style properties
+- Use SW.interp() for animations: simple SW.interp(0, 2, 0, 1) or keyframe SW.interp([0, 2, 3], [0, 1, 0])
 - No import statements - all functions are pre-available
 - Must return exactly one root element
 - Example: "return React.createElement(SW.AbsoluteFill, {style: {background: 'blue'}});"
@@ -239,7 +255,8 @@ Transform Origin:
 
 Animation Timing:
 - Use SW.interp() for smooth value interpolation
-- Combine multiple SW.interp() calls for complex animations
+- For complex animations, prefer keyframe syntax: SW.interp([0, 2, 3, 4], [0, 1, 1, 0])
+- For simple animations, use: SW.interp(0, 2, 0, 1)
 - Stagger timing for sequential animations
 
 **ADVANCED TECHNIQUES**

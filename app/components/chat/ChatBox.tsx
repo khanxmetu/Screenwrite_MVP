@@ -21,6 +21,9 @@ import { apiUrl } from "~/utils/api";
 // llm tools
 import { llmAddScrubberToTimeline } from "~/utils/llm-handler";
 
+// Conversational Synth
+import { ConversationalSynth, type SynthContext, type ConversationMessage } from "./ConversationalSynth";
+
 interface Message {
   id: string;
   content: string;
@@ -88,6 +91,9 @@ export function ChatBox({
   const [textareaHeight, setTextareaHeight] = useState(36); // Starting height for proper size
   const [sendWithMedia, setSendWithMedia] = useState(false); // Track send mode
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
+  
+  // Initialize conversational synth
+  const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -198,6 +204,91 @@ export function ChatBox({
     }, 0);
   };
 
+  // New conversational message handler using ConversationalSynth
+  const handleConversationalMessage = async (messageContent: string) => {
+    console.log("🧠 Processing conversational message:", messageContent);
+
+    // Convert messages to ConversationMessage format
+    const conversationMessages: ConversationMessage[] = messages.map(msg => ({
+      id: msg.id,
+      content: msg.content,
+      isUser: msg.isUser,
+      timestamp: msg.timestamp
+    }));
+
+    // Build synth context
+    const synthContext: SynthContext = {
+      messages: conversationMessages,
+      currentComposition: currentComposition ? JSON.parse(currentComposition) : undefined,
+      mediaLibrary: mediaBinItems,
+      compositionDuration: undefined // Will be calculated from composition
+    };
+
+    try {
+      // Process message with synth
+      const synthResponse = await synth.processMessage(messageContent, synthContext);
+      
+      // Handle different response types
+      if (synthResponse.type === 'edit') {
+        // Edit instructions ready - send to backend for implementation
+        console.log("🎬 Edit instructions generated:", synthResponse.content);
+        
+        if (onGenerateComposition) {
+          const success = await onGenerateComposition(synthResponse.content, mediaBinItems);
+          
+          return [
+            {
+              id: (Date.now() + 1).toString(),
+              content: "Perfect! I'll implement that edit now. 🎬",
+              isUser: false,
+              timestamp: new Date(),
+            },
+            {
+              id: (Date.now() + 2).toString(),
+              content: success ? "✨ Edit implemented successfully!" : "❌ Failed to implement the edit. Please try again.",
+              isUser: false,
+              timestamp: new Date(),
+            }
+          ];
+        } else {
+          return [{
+            id: (Date.now() + 1).toString(),
+            content: "Edit instructions ready, but no implementation handler available.",
+            isUser: false,
+            timestamp: new Date(),
+          }];
+        }
+        
+      } else if (synthResponse.type === 'chat') {
+        // Chat response - just show the synth response
+        return [{
+          id: (Date.now() + 1).toString(),
+          content: synthResponse.content,
+          isUser: false,
+          timestamp: new Date(),
+        }];
+      } else {
+        // Fallback for unknown types
+        return [{
+          id: (Date.now() + 1).toString(),
+          content: synthResponse.content,
+          isUser: false,
+          timestamp: new Date(),
+        }];
+      }
+      
+    } catch (error) {
+      console.error("❌ Conversational synth failed:", error);
+      
+      return [{
+        id: (Date.now() + 1).toString(),
+        content: "I'm having trouble processing your message right now. Could you try again?",
+        isUser: false,
+        timestamp: new Date(),
+      }];
+    }
+  };
+
   const handleSendMessage = async (includeAllMedia = false) => {
     if (!inputValue.trim()) return;
 
@@ -233,23 +324,12 @@ export function ChatBox({
     }
 
     try {
-      // Check if we're in standalone preview mode
-      if (isStandalonePreview && onGenerateComposition) {
-        console.log("🎬 Standalone preview mode - directly calling composition generation");
+      // Check if we're in standalone preview mode - use conversational synth
+      if (isStandalonePreview) {
+        console.log("🎬 Standalone preview mode - using conversational synth");
         
-        // Store the current composition before any changes
-        const oldComposition = currentComposition || "";
-        
-        // Directly call composition generation without validation
-        const success = await onGenerateComposition(messageContent, mediaBinItems);
-        
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: success ? "✨ I've updated your composition based on your request!" : "❌ Error connecting to AI service.",
-          isUser: false,
-          timestamp: new Date(),
-        };
-        onMessagesChange([...messages, userMessage, aiMessage]);
+        const aiMessages = await handleConversationalMessage(messageContent);
+        onMessagesChange([...messages, userMessage, ...aiMessages]);
         
         setIsTyping(false);
         return;

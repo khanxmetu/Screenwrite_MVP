@@ -30,11 +30,35 @@ export function BlueprintComposition({ blueprint }: BlueprintCompositionProps) {
 
   // Create base execution context with helper functions
   const createExecutionContext = (clipStartTime: number): BlueprintExecutionContext => ({
-    interp: (startTime: number, endTime: number, fromValue: number, toValue: number, easing?: any) => {
-      // Simple subtraction: convert global timing to clip-relative timing
-      const localStartTime = startTime - clipStartTime;
-      const localEndTime = endTime - clipStartTime;
-      return interp(localStartTime, localEndTime, fromValue, toValue, easing);
+    interp: (
+      startTimeOrTimePoints: number | number[], 
+      endTimeOrValues?: number | number[], 
+      fromValueOrEasing?: number | 'in' | 'out' | 'inOut' | 'linear', 
+      toValue?: number, 
+      easing?: 'in' | 'out' | 'inOut' | 'linear'
+    ) => {
+      // Handle keyframe syntax: interp([0, 2, 3, 4], [0, 1, 1, 0], 'linear')
+      if (Array.isArray(startTimeOrTimePoints)) {
+        const globalTimePoints = startTimeOrTimePoints;
+        const values = endTimeOrValues as number[];
+        const easingType = fromValueOrEasing as 'in' | 'out' | 'inOut' | 'linear';
+        
+        // Convert global timing to clip-relative timing
+        const localTimePoints = globalTimePoints.map(t => t - clipStartTime);
+        
+        return interp(localTimePoints, values, easingType);
+      }
+      
+      // Handle simple syntax: interp(0, 2, 0, 1, 'linear')
+      const globalStartTime = startTimeOrTimePoints as number;
+      const globalEndTime = endTimeOrValues as number;
+      const fromValue = fromValueOrEasing as number;
+      
+      // Convert global timing to clip-relative timing
+      const localStartTime = globalStartTime - clipStartTime;
+      const localEndTime = globalEndTime - clipStartTime;
+      
+      return interp(localStartTime, localEndTime, fromValue, toValue!, easing as 'in' | 'out' | 'inOut' | 'linear');
     },
     inSeconds: (seconds: number): number => Math.round(seconds * fps),
     sequenceStartTime: clipStartTime,
