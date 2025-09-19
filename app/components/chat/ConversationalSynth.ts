@@ -10,6 +10,7 @@
 
 import type { MediaBinItem } from "../timeline/types";
 import {
+  AI_PERSONA,
   CONVERSATIONAL_SYNTH_SYSTEM,
   STYLING_GUIDELINES,
   VIDEO_EDITOR_CAPABILITIES,
@@ -95,7 +96,8 @@ RESPONSE TYPE RULES:
 Be proactive about probing - when in doubt about media content, probe first for better results.`;
 
     try {
-      const structuredResponse = await this.callGeminiAPIStructured(CONVERSATIONAL_SYNTH_SYSTEM, prompt);
+      const fullSystemPrompt = `${AI_PERSONA}\n\n${CONVERSATIONAL_SYNTH_SYSTEM}`;
+      const structuredResponse = await this.callGeminiAPIStructured(fullSystemPrompt, prompt);
       
       // Handle the structured response
       if (structuredResponse.type === 'edit') {
@@ -363,14 +365,16 @@ Be proactive about probing - when in doubt about media content, probe first for 
     const contextText = this.buildContextText(context, false);
     
     // Create chat-only prompt (no structured JSON needed for streaming)
-    const prompt = `USER MESSAGE: "${userMessage}"
+    const prompt = `${AI_PERSONA}
+
+Respond naturally in a conversational manner. For streaming responses, only provide chat-type responses - no structured editing instructions or probing requests.
+
+Be helpful, creative, and engaging. If the user wants to make edits, create a detailed plan and ask for confirmation before proceeding.
+
+USER MESSAGE: "${userMessage}"
 
 CONTEXT:
-${contextText}
-
-You are a friendly creative director helping with video editing. Respond naturally in a conversational manner. For streaming responses, only provide chat-type responses - no structured editing instructions or probing requests.
-
-Be helpful, creative, and engaging. If the user wants to make edits, create a detailed plan and ask for confirmation before proceeding.`;
+${contextText}`;
 
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
