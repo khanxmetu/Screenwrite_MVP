@@ -350,6 +350,138 @@ Be proactive about probing - when in doubt about media content, probe first for 
   }
 
   /**
+   * Stream chat responses for better UX (only for type: 'chat' responses)
+   */
+  async streamChatResponse(
+    userMessage: string,
+    context: SynthContext,
+    onChunk: (text: string) => void
+  ): Promise<void> {
+    console.log("🌊 ConversationalSynth: Streaming chat response");
+    
+    // Build context for the AI
+    const contextText = this.buildContextText(context, false);
+    
+    // Create chat-only prompt (no structured JSON needed for streaming)
+    const prompt = `USER MESSAGE: "${userMessage}"
+
+CONTEXT:
+${contextText}
+
+You are a friendly creative director helping with video editing. Respond naturally in a conversational manner. For streaming responses, only provide chat-type responses - no structured editing instructions or probing requests.
+
+Be helpful, creative, and engaging. If the user wants to make edits, create a detailed plan and ask for confirmation before proceeding.`;
+
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
+    }
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }]
+              }
+            ],
+            generationConfig: {
+              temperature: 0.7,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 2048,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+      }
+
+      if (!response.body) {
+        throw new Error("Response body is null");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let braceCount = 0;
+      let currentObject = '';
+      let insideObject = false;
+      
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          
+          // Process character by character to find complete JSON objects
+          let i = 0;
+          while (i < buffer.length) {
+            const char = buffer[i];
+            
+            if (char === '{') {
+              if (!insideObject) {
+                insideObject = true;
+                currentObject = '';
+              }
+              braceCount++;
+              currentObject += char;
+            } else if (char === '}' && insideObject) {
+              braceCount--;
+              currentObject += char;
+              
+              // When braces are balanced, we have a complete JSON object
+              if (braceCount === 0) {
+                try {
+                  const data = JSON.parse(currentObject);
+                  
+                  if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+                    const text = data.candidates[0].content.parts[0]?.text || '';
+                    if (text) {
+                      console.log("🌊 Streaming chunk:", text);
+                      onChunk(text);
+                    }
+                  }
+                } catch (parseError) {
+                  console.warn("Failed to parse JSON object:", currentObject, parseError);
+                }
+                
+                // Reset for next object
+                insideObject = false;
+                currentObject = '';
+              }
+            } else if (insideObject) {
+              currentObject += char;
+            }
+            
+            i++;
+          }
+          
+          // Clear the processed buffer
+          buffer = '';
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } catch (error) {
+      console.error("💥 Gemini streaming API error:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Clear any pending plans
    */
   clearPendingPlan(): void {

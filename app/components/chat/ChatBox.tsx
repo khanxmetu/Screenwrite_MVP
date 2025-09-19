@@ -106,6 +106,7 @@ export function ChatBox({
   const [sendWithMedia, setSendWithMedia] = useState(false); // Track send mode
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
+  const [loadingResponseId, setLoadingResponseId] = useState<string | null>(null); // Track which message is loading
   
   // Initialize conversational synth
   const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
@@ -440,6 +441,72 @@ export function ChatBox({
     }
   };
 
+  const handleStreamingChatMessage = async (messageContent: string, synthContext: SynthContext): Promise<Message[]> => {
+    console.log("🌊 Starting streaming chat response");
+    
+    // Create the streaming message container
+    const streamingMessageId = (Date.now() + 1).toString();
+    const streamingMessage: Message = {
+      id: streamingMessageId,
+      content: "",
+      isUser: false,
+      timestamp: new Date(),
+    };
+
+    // Add empty message to UI immediately and set loading state
+    onMessagesChange(prevMessages => [...prevMessages, streamingMessage]);
+    setLoadingResponseId(streamingMessageId);
+
+    try {
+      let accumulatedContent = "";
+      let isFirstChunk = true;
+      
+      // Stream the response
+      await synth.streamChatResponse(messageContent, synthContext, (chunk: string) => {
+        console.log("📝 Received chunk in ChatBox:", chunk);
+        
+        // Hide loading indicator on first chunk
+        if (isFirstChunk) {
+          setLoadingResponseId(null);
+          isFirstChunk = false;
+        }
+        
+        accumulatedContent += chunk;
+        
+        // Update the streaming message with accumulated content
+        onMessagesChange(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === streamingMessageId 
+              ? { ...msg, content: accumulatedContent }
+              : msg
+          )
+        );
+      });
+
+      await logChatResponse(accumulatedContent);
+      
+      // Return empty array since message was already added via onMessagesChange
+      return [];
+      
+    } catch (error) {
+      console.error("❌ Streaming chat failed:", error);
+      
+      // Clear loading state on error
+      setLoadingResponseId(null);
+      
+      // Update the message with error
+      onMessagesChange(prevMessages => 
+        prevMessages.map(msg => 
+          msg.id === streamingMessageId 
+            ? { ...msg, content: "I'm having trouble processing your message right now. Could you try again?" }
+            : msg
+        )
+      );
+      
+      return [];
+    }
+  };
+
   const handleConversationalMessage = async (messageContent: string) => {
     await logUserMessage(messageContent, mentionedItems.map(item => item.name));
     console.log("🧠 Processing conversational message:", messageContent);
@@ -460,8 +527,26 @@ export function ChatBox({
       compositionDuration: undefined // Will be calculated from composition
     };
 
+    // Check if this looks like a simple chat conversation (no @ mentions, no specific edit commands)
+    const hasMediaMentions = messageContent.includes('@');
+    const hasEditKeywords = /\b(add|create|make|edit|remove|delete|change|modify|insert|place|put|move)\b/i.test(messageContent);
+    const isSimpleChat = !hasMediaMentions && !hasEditKeywords && messageContent.length < 200;
+
+    console.log("🔍 Message analysis:", {
+      messageContent,
+      hasMediaMentions,
+      hasEditKeywords,
+      length: messageContent.length,
+      isSimpleChat
+    });
+
+    if (isSimpleChat) {
+      console.log("🌊 Using streaming for simple chat message");
+      return await handleStreamingChatMessage(messageContent, synthContext);
+    }
+
     try {
-      // Process message with synth
+      // Process message with synth (for complex messages that need structured responses)
       await logSynthCall(messageContent, synthContext);
       const synthResponse = await synth.processMessage(messageContent, synthContext);
       await logSynthResponse(synthResponse);
@@ -522,8 +607,11 @@ export function ChatBox({
         }
         
       } else if (synthResponse.type === 'chat') {
-        // Chat response - just show the synth response
+        // Chat response - use streaming for better UX
         await logChatResponse(synthResponse.content);
+        
+        // For now, return the structured response as fallback
+        // Streaming will be handled separately
         return [{
           id: (Date.now() + 1).toString(),
           content: synthResponse.content,
@@ -600,11 +688,11 @@ export function ChatBox({
         onMessagesChange(prevMessages => [...prevMessages, ...aiMessages]);
         
         // Auto-collapse any analysis result messages
-        const analysisMessages = aiMessages.filter(msg => msg.isAnalysisResult);
+        const analysisMessages = aiMessages.filter((msg: Message) => msg.isAnalysisResult);
         if (analysisMessages.length > 0) {
           setCollapsedMessages(prev => {
             const newSet = new Set(prev);
-            analysisMessages.forEach(msg => newSet.add(msg.id));
+            analysisMessages.forEach((msg: Message) => newSet.add(msg.id));
             return newSet;
           });
         }
@@ -944,6 +1032,14 @@ export function ChatBox({
                               </p>
                             )}
                           </div>
+                        ) : loadingResponseId === message.id && !message.content ? (
+                          <div className="flex items-center gap-1 pt-1">
+                            <div className="flex space-x-1">
+                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
+                            </div>
+                          </div>
                         ) : (
                           <p className={`leading-relaxed break-words overflow-wrap-anywhere ${
                             message.isExplanationMode
@@ -966,31 +1062,6 @@ export function ChatBox({
                   </div>
                 </div>
               ))}
-
-              {/* Typing Indicator */}
-              {isTyping && (
-                <div className="flex justify-start">
-                  <div className="max-w-[80%] rounded-lg px-3 py-2 text-xs bg-muted mr-8">
-                    <div className="flex items-center gap-2">
-                      <Bot className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <div className="flex space-x-1">
-                        <div
-                          className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
-                          style={{ animationDelay: "0ms" }}
-                        />
-                        <div
-                          className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
-                          style={{ animationDelay: "150ms" }}
-                        />
-                        <div
-                          className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
-                          style={{ animationDelay: "300ms" }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Invisible element to scroll to */}
               <div ref={messagesEndRef} />
