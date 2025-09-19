@@ -833,7 +833,7 @@ export function ChatBox({
   const formatMessageText = (text: string) => {
     // Simple markdown-like formatting
     return text
-      .split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/)
+      .split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|^---+$|^#{1,6}\s+.+$)/gm)
       .map((part, index) => {
         if (part.startsWith('***') && part.endsWith('***')) {
           // Bold italic
@@ -847,6 +847,22 @@ export function ChatBox({
         } else if (part.startsWith('`') && part.endsWith('`')) {
           // Code
           return <code key={index} className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
+        } else if (/^---+$/.test(part.trim())) {
+          // Horizontal rule
+          return <hr key={index} className="my-2 border-gray-300 dark:border-gray-600" />;
+        } else if (/^#{1,6}\s+/.test(part)) {
+          // Headings
+          const level = part.match(/^(#{1,6})/)?.[1].length || 1;
+          const content = part.replace(/^#{1,6}\s+/, '');
+          if (level === 1) {
+            return <h1 key={index} className="text-lg font-bold mt-2 mb-1">{content}</h1>;
+          } else if (level === 2) {
+            return <h2 key={index} className="text-base font-bold mt-2 mb-1">{content}</h2>;
+          } else if (level === 3) {
+            return <h3 key={index} className="text-sm font-semibold mt-1 mb-1">{content}</h3>;
+          } else {
+            return <h4 key={index} className="text-sm font-medium mt-1 mb-1">{content}</h4>;
+          }
         } else {
           // Regular text
           return part;
