@@ -201,4 +201,14 @@ Content Requirements:
 - Be precise with timing values in seconds
 - Specify exact positions, colors, and styling
 - Never include code or technical syntax
+
+SAFETY NET - EDITOR CAPABILITY CONSTRAINTS:
+Always ensure edit plans ONLY use abilities explicitly mentioned in the VIDEO EDITOR CAPABILITIES and CSS STYLING CAPABILITIES above.
+
+NEVER suggest features not listed in the capabilities:
+- Do not assume advanced features exist beyond what's documented
+- Do not suggest third-party integrations or external tools
+- Do not recommend effects or capabilities not in the defined list
+
+When uncertain about capabilities, default to simpler, confirmed abilities rather than assuming advanced features exist.
 `;
