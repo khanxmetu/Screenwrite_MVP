@@ -17,6 +17,18 @@ import { type MediaBinItem, type TimelineState } from "../timeline/types";
 import { cn } from "~/lib/utils";
 import axios from "axios";
 import { apiUrl } from "~/utils/api";
+import { 
+  logUserMessage, 
+  logSynthCall, 
+  logSynthResponse, 
+  logProbeStart, 
+  logProbeAnalysis, 
+  logProbeError,
+  logEditExecution,
+  logEditResult,
+  logChatResponse,
+  logWorkflowComplete 
+} from "~/utils/fileLogger";
 
 // llm tools
 import { llmAddScrubberToTimeline } from "~/utils/llm-handler";
@@ -30,6 +42,8 @@ interface Message {
   isUser: boolean;
   timestamp: Date;
   isExplanationMode?: boolean; // For post-edit explanations
+  isAnalyzing?: boolean; // For analyzing messages that appear as plain text
+  isAnalysisResult?: boolean; // For analysis results that appear in darker bubbles
 }
 
 interface ChatBoxProps {
@@ -43,7 +57,7 @@ interface ChatBoxProps {
   isMinimized?: boolean;
   onToggleMinimize?: () => void;
   messages: Message[];
-  onMessagesChange: (messages: Message[]) => void;
+  onMessagesChange: (updater: (messages: Message[]) => Message[]) => void;
   timelineState: TimelineState;
   // New props for AI composition generation
   isStandalonePreview?: boolean;
@@ -91,6 +105,7 @@ export function ChatBox({
   const [textareaHeight, setTextareaHeight] = useState(36); // Starting height for proper size
   const [sendWithMedia, setSendWithMedia] = useState(false); // Track send mode
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
+  const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
   
   // Initialize conversational synth
   const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
@@ -205,7 +220,228 @@ export function ChatBox({
   };
 
   // New conversational message handler using ConversationalSynth
+  const handleProbeRequest = async (
+    fileName: string, 
+    question: string, 
+    originalMessage: string, 
+    conversationMessages: ConversationMessage[],
+    synthContext: SynthContext
+  ): Promise<Message[]> => {
+    await logProbeStart(fileName, question);
+    console.log("🔍 Handling probe request for:", fileName);
+    console.log("🔍 Available media files:", mediaBinItems.map(item => item.name));
+    
+    // Smart file matching logic
+    let mediaFile = mediaBinItems.find(item => item.name === fileName);
+    
+    // If exact match not found, try fuzzy matching or default selection
+    if (!mediaFile) {
+      // If no filename provided or not found, and only one media file exists, use it
+      if (mediaBinItems.length === 1) {
+        mediaFile = mediaBinItems[0];
+        console.log(`🔍 Using only available media file: ${mediaFile.name}`);
+      } else {
+        // Try partial name matching
+        mediaFile = mediaBinItems.find(item => 
+          item.name.toLowerCase().includes(fileName.toLowerCase()) ||
+          fileName.toLowerCase().includes(item.name.toLowerCase())
+        );
+      }
+    }
+    
+    if (!mediaFile) {
+      const availableFiles = mediaBinItems.map(f => f.name).join(', ');
+      await logProbeError(fileName, `Media file not found. Available files: ${availableFiles}`);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `❌ Could not find media file: ${fileName}. Available files: ${availableFiles}`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      return [errorMessage];
+    }
+
+    try {
+      // Call Gemini Vision API to analyze the media file
+      const analysisResult = await analyzeMediaWithGemini(mediaFile, question);
+      await logProbeAnalysis(fileName, analysisResult);
+      
+      // Create analysis result message and add to UI incrementally
+      const analysisMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        content: analysisResult,
+        isUser: false,
+        timestamp: new Date(),
+        isAnalysisResult: true,
+      };
+
+      // We'll add this message after the follow-up response to avoid multiple UI updates
+
+      // Update conversation history with probe results
+      const updatedMessages: ConversationMessage[] = [
+        ...conversationMessages,
+        {
+          id: (Date.now() + 1).toString(),
+          content: `🔍 Probing ${fileName}: ${question}`,
+          isUser: false,
+          timestamp: new Date(),
+        },
+        {
+          id: (Date.now() + 2).toString(),
+          content: `📄 Analysis: ${analysisResult}`,
+          isUser: false,
+          timestamp: new Date(),
+        }
+      ];
+
+      // Call synth again with updated context including probe results
+      const updatedSynthContext: SynthContext = {
+        ...synthContext,
+        messages: updatedMessages
+      };
+
+      await logSynthCall(`[POST-PROBE] ${originalMessage}`, updatedSynthContext);
+      const followUpResponse = await synth.processMessage(originalMessage, updatedSynthContext);
+      await logSynthResponse(followUpResponse);
+      
+      // Add the follow-up response to UI
+      const followUpMessage: Message = {
+        id: (Date.now() + 3).toString(),
+        content: followUpResponse.content,
+        isUser: false,
+        timestamp: new Date(),
+      };
+
+      // Add both messages to UI at once to avoid multiple re-renders
+      // Note: We can't use currentMessages here since it's stale, so we'll return the messages instead
+      // and let the calling function handle UI updates
+      return [analysisMessage, followUpMessage];
+
+    } catch (error) {
+      console.error("❌ Probe analysis failed:", error);
+      await logProbeError(fileName, error instanceof Error ? error.message : String(error));
+      const errorMessage: Message = {
+        id: (Date.now() + 3).toString(),
+        content: `❌ Failed to analyze ${fileName}. ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isUser: false,
+        timestamp: new Date(),
+        isAnalysisResult: true,
+      };
+      return [errorMessage];
+    }
+  };
+
+  const analyzeMediaWithGemini = async (mediaFile: MediaBinItem, question: string): Promise<string> => {
+    const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+    const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
+    }
+
+    const fileExtension = mediaFile.name.split('.').pop()?.toLowerCase();
+    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
+    const isVideo = ['mp4', 'mov', 'avi', 'webm'].includes(fileExtension || '');
+    
+    if (!isImage && !isVideo) {
+      throw new Error(`Unsupported file type: ${fileExtension}. Only images and videos can be analyzed.`);
+    }
+
+    try {
+      // Use the correct media URL (prefer remote, fallback to local)
+      const fileUrl = mediaFile.mediaUrlRemote || mediaFile.mediaUrlLocal;
+      console.log("🔍 Media file URLs:", { remote: mediaFile.mediaUrlRemote, local: mediaFile.mediaUrlLocal, using: fileUrl });
+      
+      if (!fileUrl) {
+        throw new Error("No valid media URL found for this file");
+      }
+      
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch media file: ${response.status} ${response.statusText}`);
+      }
+      const blob = await response.blob();
+      console.log("🔍 Blob info:", { type: blob.type, size: blob.size });
+      
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove the data:mime/type;base64, prefix
+          const base64 = result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      // Prepare the request body for Gemini multimodal API
+      const requestBody = {
+        contents: [
+          {
+            parts: [
+              {
+                text: question
+              },
+              {
+                inline_data: {
+                  mime_type: blob.type,
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1
+        }
+      };
+
+      const apiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!apiResponse.ok) {
+        const errorData = await apiResponse.json().catch(() => ({}));
+        throw new Error(`Gemini API error: ${apiResponse.status} - ${errorData.error?.message || 'Unknown error'}`);
+      }
+
+      const data = await apiResponse.json();
+      console.log("🔍 Gemini Vision API response:", JSON.stringify(data, null, 2));
+      
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        console.error("❌ Missing candidates or content in response:", data);
+        throw new Error('Invalid response format from Gemini API - no candidates or content');
+      }
+
+      const candidate = data.candidates[0];
+      const content = candidate.content;
+      
+      if (!content.parts || !Array.isArray(content.parts) || content.parts.length === 0) {
+        console.error("❌ Missing parts in content:", content);
+        throw new Error('Invalid response format from Gemini API - no parts in content');
+      }
+      
+      const firstPart = content.parts[0];
+      if (!firstPart || !firstPart.text) {
+        console.error("❌ Missing text in first part:", firstPart);
+        throw new Error('Invalid response format from Gemini API - no text in first part');
+      }
+
+      return firstPart.text;
+
+    } catch (error) {
+      console.error("❌ Gemini Vision API failed:", error);
+      throw error;
+    }
+  };
+
   const handleConversationalMessage = async (messageContent: string) => {
+    await logUserMessage(messageContent, mentionedItems.map(item => item.name));
     console.log("🧠 Processing conversational message:", messageContent);
 
     // Convert messages to ConversationMessage format
@@ -226,15 +462,41 @@ export function ChatBox({
 
     try {
       // Process message with synth
+      await logSynthCall(messageContent, synthContext);
       const synthResponse = await synth.processMessage(messageContent, synthContext);
+      await logSynthResponse(synthResponse);
       
       // Handle different response types
-      if (synthResponse.type === 'edit') {
+      if (synthResponse.type === 'probe') {
+        // Probe request - analyze media file and continue conversation
+        console.log("🔍 Probe request:", synthResponse.fileName, synthResponse.question);
+        
+        // Show analyzing message immediately
+        const analyzingMessage = {
+          id: (Date.now() + 1).toString(),
+          content: `Analyzing ${synthResponse.fileName}: ${synthResponse.question}`,
+          isUser: false,
+          timestamp: new Date(),
+          isAnalyzing: true,
+        };
+        
+        // Add analyzing message to UI immediately
+        onMessagesChange(prevMessages => [...prevMessages, analyzingMessage]);
+        
+        // Get probe results 
+        const probeResults = await handleProbeRequest(synthResponse.fileName!, synthResponse.question!, messageContent, conversationMessages, synthContext);
+        
+        // Return the probe results to be added to the UI alongside the analyzing message
+        return probeResults;
+        
+      } else if (synthResponse.type === 'edit') {
         // Edit instructions ready - send to backend for implementation
+        await logEditExecution(synthResponse.content);
         console.log("🎬 Edit instructions generated:", synthResponse.content);
         
         if (onGenerateComposition) {
           const success = await onGenerateComposition(synthResponse.content, mediaBinItems);
+          await logEditResult(success);
           
           return [
             {
@@ -261,6 +523,7 @@ export function ChatBox({
         
       } else if (synthResponse.type === 'chat') {
         // Chat response - just show the synth response
+        await logChatResponse(synthResponse.content);
         return [{
           id: (Date.now() + 1).toString(),
           content: synthResponse.content,
@@ -279,6 +542,7 @@ export function ChatBox({
       
     } catch (error) {
       console.error("❌ Conversational synth failed:", error);
+      await logSynthResponse({ error: error instanceof Error ? error.message : String(error) });
       
       return [{
         id: (Date.now() + 1).toString(),
@@ -286,6 +550,9 @@ export function ChatBox({
         isUser: false,
         timestamp: new Date(),
       }];
+    } finally {
+      // Save log after each conversation turn
+      await logWorkflowComplete();
     }
   };
 
@@ -312,7 +579,7 @@ export function ChatBox({
       timestamp: new Date(),
     };
 
-    onMessagesChange([...messages, userMessage]);
+    onMessagesChange(prevMessages => [...prevMessages, userMessage]);
     setInputValue("");
     setMentionedItems([]); // Clear mentioned items after sending
     setIsTyping(true);
@@ -329,7 +596,18 @@ export function ChatBox({
         console.log("🎬 Standalone preview mode - using conversational synth");
         
         const aiMessages = await handleConversationalMessage(messageContent);
-        onMessagesChange([...messages, userMessage, ...aiMessages]);
+        // Use functional update to get the current messages at the time of the update
+        onMessagesChange(prevMessages => [...prevMessages, ...aiMessages]);
+        
+        // Auto-collapse any analysis result messages
+        const analysisMessages = aiMessages.filter(msg => msg.isAnalysisResult);
+        if (analysisMessages.length > 0) {
+          setCollapsedMessages(prev => {
+            const newSet = new Set(prev);
+            analysisMessages.forEach(msg => newSet.add(msg.id));
+            return newSet;
+          });
+        }
         
         setIsTyping(false);
         return;
@@ -395,7 +673,7 @@ export function ChatBox({
         timestamp: new Date(),
       };
 
-      onMessagesChange([...messages, userMessage, aiMessage]);
+      onMessagesChange(prevMessages => [...prevMessages, userMessage, aiMessage]);
     } catch (error) {
       console.error("Error calling AI API:", error);
       
@@ -406,7 +684,7 @@ export function ChatBox({
         timestamp: new Date(),
       };
       
-      onMessagesChange([...messages, userMessage, errorMessage]);
+      onMessagesChange(prevMessages => [...prevMessages, userMessage, errorMessage]);
     } finally {
       setIsTyping(false);
     }
@@ -450,6 +728,42 @@ export function ChatBox({
         handleSendMessage(sendWithMedia);
       }
     }
+  };
+
+  const toggleMessageCollapsed = (messageId: string) => {
+    setCollapsedMessages(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(messageId)) {
+        newSet.delete(messageId);
+      } else {
+        newSet.add(messageId);
+      }
+      return newSet;
+    });
+  };
+
+  const formatMessageText = (text: string) => {
+    // Simple markdown-like formatting
+    return text
+      .split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/)
+      .map((part, index) => {
+        if (part.startsWith('***') && part.endsWith('***')) {
+          // Bold italic
+          return <strong key={index} className="font-bold italic">{part.slice(3, -3)}</strong>;
+        } else if (part.startsWith('**') && part.endsWith('**')) {
+          // Bold
+          return <strong key={index} className="font-bold">{part.slice(2, -2)}</strong>;
+        } else if (part.startsWith('*') && part.endsWith('*')) {
+          // Italic
+          return <em key={index} className="italic">{part.slice(1, -1)}</em>;
+        } else if (part.startsWith('`') && part.endsWith('`')) {
+          // Code
+          return <code key={index} className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
+        } else {
+          // Regular text
+          return part;
+        }
+      });
   };
 
   const formatTime = (date: Date) => {
@@ -592,14 +906,21 @@ export function ChatBox({
                         ? "bg-primary text-primary-foreground ml-8"
                         : message.isExplanationMode
                         ? "bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 mr-8"
+                        : message.isAnalyzing
+                        ? "bg-transparent mr-8"
+                        : message.isAnalysisResult
+                        ? "bg-slate-800 dark:bg-slate-900 text-white mr-8 cursor-pointer hover:bg-slate-700 dark:hover:bg-slate-800 transition-colors"
                         : "bg-muted mr-8"
                     }`}
+                    onClick={message.isAnalysisResult ? () => toggleMessageCollapsed(message.id) : undefined}
                   >
                     <div className="flex items-start gap-2">
-                      {!message.isUser && (
+                      {!message.isUser && !message.isAnalyzing && (
                         <Bot className={`h-3 w-3 mt-0.5 shrink-0 ${
                           message.isExplanationMode
                             ? "text-green-600 dark:text-green-400"
+                            : message.isAnalysisResult
+                            ? "text-slate-300"
                             : "text-muted-foreground"
                         }`} />
                       )}
@@ -609,13 +930,31 @@ export function ChatBox({
                             📝 Changes made:
                           </div>
                         )}
-                        <p className={`leading-relaxed break-words overflow-wrap-anywhere ${
-                          message.isExplanationMode
-                            ? "text-green-800 dark:text-green-200"
-                            : ""
-                        }`}>
-                          {message.content}
-                        </p>
+                        {message.isAnalysisResult ? (
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-medium text-slate-200">Analysis Result</span>
+                              <ChevronDown className={`h-3 w-3 transition-transform ${
+                                collapsedMessages.has(message.id) ? 'rotate-180' : ''
+                              }`} />
+                            </div>
+                            {!collapsedMessages.has(message.id) && (
+                              <p className="leading-relaxed break-words overflow-wrap-anywhere">
+                                {formatMessageText(message.content)}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className={`leading-relaxed break-words overflow-wrap-anywhere ${
+                            message.isExplanationMode
+                              ? "text-green-800 dark:text-green-200"
+                              : message.isAnalyzing
+                              ? "text-muted-foreground italic"
+                              : ""
+                          }`}>
+                            {formatMessageText(message.content)}
+                          </p>
+                        )}
                         <span className="text-xs opacity-70 mt-1 block">
                           {formatTime(message.timestamp)}
                         </span>
@@ -730,7 +1069,7 @@ export function ChatBox({
                 className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
                 onClick={() => {
                   // Clear current messages and send to new chat
-                  onMessagesChange([]);
+                  onMessagesChange(() => []);
                   setShowSendOptions(false);
                   handleSendMessage(false);
                 }}

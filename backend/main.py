@@ -319,6 +319,45 @@ Fix the error and return the corrected code."""
         )
 
 
+class ChatLogRequest(BaseModel):
+    session_id: str
+    log_entry: Dict[str, Any]
+
+@app.post("/chat/log")
+async def save_chat_log(request: ChatLogRequest):
+    """Save chat workflow log entries to files"""
+    try:
+        logs_dir = "logs"
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        log_file = os.path.join(logs_dir, f"chat_workflow_{request.session_id}.json")
+        
+        # Read existing log or create new one
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                log_data = json.load(f)
+        else:
+            log_data = {
+                "session_id": request.session_id,
+                "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "entries": []
+            }
+        
+        # Append new entry
+        log_data["entries"].append(request.log_entry)
+        log_data["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        log_data["total_entries"] = len(log_data["entries"])
+        
+        # Save updated log
+        with open(log_file, 'w') as f:
+            json.dump(log_data, f, indent=2)
+        
+        return {"success": True, "log_file": log_file, "entry_count": len(log_data["entries"])}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save chat log: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
 
