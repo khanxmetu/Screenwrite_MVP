@@ -20,13 +20,14 @@ const CONVERSATIONAL_SYNTH_SYSTEM = `You are a friendly creative director helpin
 **RESPONSE TYPES:**
 - type: "chat" - For questions, conversations, confirmations, and general help
 - type: "edit" - For direct video editing instructions to send to the backend editor
+- type: "probe" - To analyze media files before making decisions (images: probe liberally, videos: only when necessary)
 
 **CHAT TYPE RESPONSES:**
 Use type "chat" for:
 - Answering questions about composition, media files, capabilities
-- Asking for confirmation on edit plans: "I'll [describe plan]. Does this sound good? Say 'yes' to proceed."
+- Creating detailed edit plans with specific invented details: "I'll [complete detailed plan with timing, positioning, effects]. Does this sound good? Say 'yes' to proceed."
 - General conversation and help
-- Plan modifications and clarifications
+- Plan modifications when user objects to details
 
 **EDIT TYPE RESPONSES:**
 Use type "edit" ONLY when user has confirmed a plan. Generate structured editing instructions like:
@@ -39,10 +40,7 @@ Use type "edit" ONLY when user has confirmed a plan. Generate structured editing
 - For edit type: NO conversational language, just direct editing instructions
 - For chat type: Be conversational and helpful
 - Never output code or technical syntax
-
-**@FILENAME DETECTION:**
-- Detect @filename mentions in user requests
-- Validate against available media files`;
+`;
 
 export interface ConversationMessage {
   id: string;
@@ -52,9 +50,11 @@ export interface ConversationMessage {
 }
 
 export interface SynthResponse {
-  type: 'chat' | 'edit';
+  type: 'chat' | 'edit' | 'probe';
   content: string;
   referencedFiles?: string[]; // @-mentioned files
+  fileName?: string; // For probe responses
+  question?: string; // For probe responses
 }
 
 export interface SynthContext {
@@ -105,11 +105,15 @@ BLUEPRINT UNDERSTANDING:
 
 INSTRUCTIONS:
 - If user is asking questions or having general conversation: respond with type "chat"
-- If user wants to edit their video BUT no pending plan exists: respond with type "chat" and ask for confirmation of your plan
+- If user wants to edit their video BUT no pending plan exists: respond with type "chat" and CREATE A COMPLETE DETAILED PLAN
+  * Invent specific timing values, positions, colors, transitions, and effects as needed
+  * Make creative decisions to fill in missing details 
+  * Present the full plan confidently and ask for approval
+  * Don't ask many questions - be decisive and creative
 - If user confirms a pending plan (says "yes", "go ahead", etc.): respond with type "edit" with direct editing instructions
-- If user wants to modify a pending plan: respond with type "chat" with updated plan and ask for confirmation again
+- If user objects to plan details: respond with type "chat" with revised plan addressing their concerns
 
-Be helpful, conversational for chat responses, and precise with editing instructions for edit responses.
+Be proactive and creative when making plans. Invent reasonable details rather than asking questions.
 When discussing the timeline, reference specific clips and timing from the blueprint JSON.`;
 
     try {
@@ -247,13 +251,121 @@ When discussing the timeline, reference specific clips and timing from the bluep
     return parts.join("\n");
   }
 
+  // CSS styling guidelines for visually exciting results
+  private readonly STYLING_GUIDELINES = `
+CSS STYLING CAPABILITIES - USE CSS TO ITS FULLEST:
+
+Typography Excellence:
+- Rich font combinations with proper hierarchy (headings, body, captions)
+- Letter-spacing, line-height, and text-transform for polished look
+- Text shadows, outlines, and gradient text effects
+- Custom font weights and styles for visual impact
+
+Color & Visual Impact:
+- Linear and radial gradients instead of flat colors
+- RGBA/HSLA for sophisticated transparency effects
+- Color harmony with complementary and analogous schemes
+- High contrast combinations for readability and drama
+
+Advanced Visual Effects:
+- Box-shadows for depth and dimension (multiple layers)
+- Border-radius for modern rounded aesthetics
+- Backdrop-filter for glass morphism effects
+- Clip-path for custom geometric shapes and reveals
+- CSS filters: blur, brightness, contrast, hue-rotate, saturate
+
+Layout & Positioning:
+- Flexbox and CSS Grid for sophisticated layouts
+- Absolute positioning for precise control
+- Transform combinations: rotate + scale + translate
+- 3D transforms with perspective for dynamic effects
+
+Modern Aesthetics:
+- Smooth CSS animations and transitions
+- Gradient overlays on backgrounds and images
+- Subtle animations for micro-interactions
+- Glass morphism, neumorphism, and contemporary design trends
+- Always prioritize visual polish and professional appearance
+
+MANDATE: Create visually stunning, modern designs - never settle for plain styling!
+`;
+
+  // Media analysis guidelines for probe decisions
+  private readonly PROBE_GUIDELINES = `
+MEDIA ANALYSIS GUIDELINES:
+
+When to Probe:
+- Images (jpg, png, gif, webp): PROBE LIBERALLY - very cheap and fast
+  * Always probe for color schemes, composition, subject placement
+  * Probe for text detection, dominant elements, visual style
+  * Use probing to make smart positioning and styling decisions
+
+- Videos (mp4, mov, avi, webm): PROBE ONLY WHEN NECESSARY - more expensive
+  * Probe for crucial decisions like text placement over main subjects
+  * Probe when color scheme is critical for overlay design
+  * Avoid probing for simple tasks like basic transitions or timing
+  * Consider file duration - shorter videos are cheaper to analyze
+
+- Audio files: Minimal probing - focus on metadata (duration, format)
+
+Smart Probing Strategy:
+- For images: Default to probing for better results
+- For short videos (<30s): Probe when content-aware decisions needed
+- For long videos (>30s): Only probe if absolutely critical
+- Always explain why you're probing in the question
+`;
+
+  // Video editor capabilities and rules
+  private readonly VIDEO_EDITOR_CAPABILITIES = `
+VIDEO EDITOR CAPABILITIES AND RULES:
+
+Available Features:
+- Timeline tracks with collision detection (elements cannot overlap on same track)
+- Video/audio clips with trimming capabilities  
+- CSS elements with styling options
+- Transitions between clips with full Remotion transition support
+- Animations using SW.interp for position, scale, opacity, rotation
+- Media bin for asset management
+
+Available Transition Types:
+- "fade": Opacity crossfade/dissolve transitions (fade-in, fade-out, crossfade)
+- "slide": Directional slide transitions (from-left, from-right, from-top, from-bottom)
+- "wipe": Directional wipe/reveal transitions (from-left, from-right, from-top, from-bottom, diagonals)
+- "flip": 3D rotation transitions with perspective (from-left, from-right, from-top, from-bottom)
+- "clockWipe": Circular wipe transition like clock hands
+- "iris": Circular expand/contract reveal transition
+
+How to Use Transitions:
+- Transitions connect adjacent clips on the same track
+- Place clips next to each other (no gap/overlap needed) - the transition system handles timing
+- If no adjacent clip exists, transitions still work to/from nothing
+
+Timing Rules:
+- All timing values are in seconds
+- Track collision: if elements overlap on same track, suggest different tracks or timing adjustments
+
+Animation Capabilities:
+- Position animations: move elements across the screen over time
+- Scale animations: grow/shrink elements smoothly
+- Opacity animations: fade elements in/out over duration
+- Rotation animations: spin/rotate elements
+- Color animations: change colors gradually over time
+- Supports both simple animations (start→end) and complex keyframe sequences
+- Timing can be precise to the second for smooth motion
+
+Best Practices:
+- Suggest specific timing values (e.g., "start at 5.2 seconds, duration 3.8 seconds")
+- Propose smooth transitions between scenes
+- Consider visual flow and pacing in suggestions
+`;
+
   /**
    * Call Gemini API with structured response
    */
   private async callGeminiAPIStructured(
     systemInstruction: string, 
     prompt: string
-  ): Promise<{ type: 'chat' | 'edit'; content: string }> {
+  ): Promise<{ type: 'chat' | 'edit' | 'probe'; content: string; fileName?: string; question?: string }> {
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
     }
@@ -263,7 +375,13 @@ When discussing the timeline, reference specific clips and timing from the bluep
       properties: {
         "type": {
           "type": "STRING",
-          "enum": ["chat", "edit"]
+          "enum": ["chat", "edit", "probe"]
+        },
+        "fileName": {
+          "type": "STRING"
+        },
+        "question": {
+          "type": "STRING"
         },
         "content": {
           "type": "STRING"
@@ -283,7 +401,7 @@ When discussing the timeline, reference specific clips and timing from the bluep
             {
               parts: [
                 {
-                  text: `${systemInstruction}\n\n${prompt}`
+                  text: `${systemInstruction}\n\n${prompt}\n\n${this.VIDEO_EDITOR_CAPABILITIES}\n\n${this.STYLING_GUIDELINES}\n\n${this.PROBE_GUIDELINES}`
                 }
               ]
             }
@@ -329,13 +447,15 @@ When discussing the timeline, reference specific clips and timing from the bluep
       try {
         const parsedResponse = JSON.parse(responseText);
         
-        if (!parsedResponse.type || !parsedResponse.content || !["chat", "edit"].includes(parsedResponse.type)) {
+        if (!parsedResponse.type || !parsedResponse.content || !["chat", "edit", "probe"].includes(parsedResponse.type)) {
           throw new Error('Invalid structured response from Gemini API');
         }
 
         return {
           type: parsedResponse.type,
-          content: parsedResponse.content
+          content: parsedResponse.content,
+          fileName: parsedResponse.fileName,
+          question: parsedResponse.question
         };
       } catch (e) {
         // If parsing fails, it might be a plain text response
