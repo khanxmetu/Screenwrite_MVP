@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertCircle,
+  X,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { type MediaBinItem, type TimelineState } from "../timeline/types";
@@ -106,8 +107,8 @@ export function ChatBox({
   const [sendWithMedia, setSendWithMedia] = useState(false); // Track send mode
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
-  const [loadingResponseId, setLoadingResponseId] = useState<string | null>(null); // Track which message is loading
-  
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+
   // Initialize conversational synth
   const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
   
@@ -122,7 +123,7 @@ export function ChatBox({
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isTyping]);
+  }, [messages]);
 
   // Click outside handler for send options
   useEffect(() => {
@@ -455,7 +456,7 @@ export function ChatBox({
 
     // Add empty message to UI immediately and set loading state
     onMessagesChange(prevMessages => [...prevMessages, streamingMessage]);
-    setLoadingResponseId(streamingMessageId);
+    setIsWaitingForResponse(true);
 
     try {
       let accumulatedContent = "";
@@ -467,7 +468,7 @@ export function ChatBox({
         
         // Hide loading indicator on first chunk
         if (isFirstChunk) {
-          setLoadingResponseId(null);
+          setIsWaitingForResponse(false);
           isFirstChunk = false;
         }
         
@@ -492,7 +493,7 @@ export function ChatBox({
       console.error("❌ Streaming chat failed:", error);
       
       // Clear loading state on error
-      setLoadingResponseId(null);
+      setIsWaitingForResponse(false);
       
       // Update the message with error
       onMessagesChange(prevMessages => 
@@ -530,15 +531,20 @@ export function ChatBox({
     try {
       // Process ALL messages with synth to maintain proper conversation state and workflow
       await logSynthCall(messageContent, synthContext);
+      
+      setIsWaitingForResponse(true);
+      
       const synthResponse = await synth.processMessage(messageContent, synthContext);
       await logSynthResponse(synthResponse);
+      
+      // Clear loading state
+      setIsWaitingForResponse(false);
       
       // Handle different response types
       if (synthResponse.type === 'probe') {
         // Probe request - analyze media file and continue conversation
         console.log("🔍 Probe request:", synthResponse.fileName, synthResponse.question);
         
-        // Show analyzing message immediately
         const analyzingMessage = {
           id: (Date.now() + 1).toString(),
           content: `Analyzing ${synthResponse.fileName}: ${synthResponse.question}`,
@@ -562,16 +568,20 @@ export function ChatBox({
         console.log("🎬 Edit instructions generated:", synthResponse.content);
         
         if (onGenerateComposition) {
+          const applyingMessage = {
+            id: (Date.now() + 1).toString(),
+            content: "Applying your requested edits, this may take a moment...",
+            isUser: false,
+            timestamp: new Date(),
+          };
+          
+          // Add the message immediately
+          onMessagesChange(prevMessages => [...prevMessages, applyingMessage]);
+          
           const success = await onGenerateComposition(synthResponse.content, mediaBinItems);
           await logEditResult(success);
           
           return [
-            {
-              id: (Date.now() + 1).toString(),
-              content: "Perfect! I'll implement that edit now. 🎬",
-              isUser: false,
-              timestamp: new Date(),
-            },
             {
               id: (Date.now() + 2).toString(),
               content: success ? "✨ Edit implemented successfully!" : "❌ Failed to implement the edit. Please try again.",
@@ -592,8 +602,6 @@ export function ChatBox({
         // Chat response - use streaming for better UX
         await logChatResponse(synthResponse.content);
         
-        // For now, return the structured response as fallback
-        // Streaming will be handled separately
         return [{
           id: (Date.now() + 1).toString(),
           content: synthResponse.content,
@@ -1030,14 +1038,6 @@ export function ChatBox({
                               </p>
                             )}
                           </div>
-                        ) : loadingResponseId === message.id && !message.content ? (
-                          <div className="flex items-center gap-1 pt-1">
-                            <div className="flex space-x-1">
-                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
-                            </div>
-                          </div>
                         ) : (
                           <p className={`leading-relaxed break-words overflow-wrap-anywhere ${
                             message.isExplanationMode
@@ -1064,173 +1064,178 @@ export function ChatBox({
               {/* Invisible element to scroll to */}
               <div ref={messagesEndRef} />
             </div>
-          </div>
-        )}
-      </div>
 
-      {/* Input Area with enhanced overlap effect */}
-      <div className="relative bg-gradient-to-t from-background to-background/50 p-3 border-t border-border/30 backdrop-blur-sm -mt-2 pt-4">
-        {/* Mentions Dropdown */}
-        {showMentions && filteredMentions.length > 0 && (
-          <div
-            ref={mentionsRef}
-            className="absolute bottom-full left-4 right-4 mb-2 bg-background border border-border/50 rounded-lg shadow-lg max-h-40 overflow-y-auto z-50"
-          >
-            {filteredMentions.map((item, index) => (
-              <div
-                key={item.id}
-                className={`px-3 py-2 text-xs cursor-pointer flex items-center gap-2 ${
-                  index === selectedMentionIndex
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-muted"
-                }`}
-                onClick={() => insertMention(item)}
-              >
-                <div className="w-6 h-6 bg-muted/50 rounded flex items-center justify-center">
-                  {item.mediaType === "video" ? (
-                    <FileVideo className="h-3 w-3 text-muted-foreground" />
-                  ) : item.mediaType === "image" ? (
-                    <FileImage className="h-3 w-3 text-muted-foreground" />
-                  ) : (
-                    <Type className="h-3 w-3 text-muted-foreground" />
-                  )}
+            {isWaitingForResponse && (
+              <div className="px-3 py-2 flex items-center gap-2">
+                <div className="flex items-start gap-2">
+                  <Bot className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                  <div className="flex items-center gap-1 pt-1">
+                    <div className="flex space-x-1">
+                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
+                    </div>
+                  </div>
                 </div>
-                <span className="flex-1 truncate">{item.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {item.mediaType}
-                </span>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Send Options Dropdown */}
-        {showSendOptions && (
-          <div
-            ref={sendOptionsRef}
-            className="absolute bottom-full right-4 mb-2 bg-background border border-border/50 rounded-md shadow-lg z-50 min-w-48"
-          >
-            <div className="p-1">
-              <div
-                className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
-                onClick={() => {
-                  setSendWithMedia(false);
-                  setShowSendOptions(false);
-                  handleSendMessage(false);
-                }}
-              >
-                <span>Send</span>
-                <span className="text-xs text-muted-foreground font-mono">
-                  Enter
-                </span>
-              </div>
-              <div
-                className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
-                onClick={() => {
-                  setSendWithMedia(true);
-                  setShowSendOptions(false);
-                  handleSendMessage(true);
-                }}
-              >
-                <span>Send with all Media</span>
-              </div>
-              <div
-                className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
-                onClick={() => {
-                  // Clear current messages and send to new chat
-                  onMessagesChange(() => []);
-                  setShowSendOptions(false);
-                  handleSendMessage(false);
-                }}
-              >
-                <span>Send to New Chat</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Input container with subtle shadow and better styling */}
-        <div className="relative border border-border/60 rounded-lg bg-background/90 backdrop-blur-sm focus-within: focus-within:border-ring transition-all duration-200 shadow-sm">
-          {/* Full-width textarea */}
-          <textarea
-            ref={inputRef}
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyPress}
-            placeholder={
-              isStandalonePreview 
-                ? isGeneratingComposition 
-                  ? "Generating composition..." 
-                  : "Describe what you want to see in the preview..."
-                : "Ask Screenwrite..."
-            }
-            className={cn(
-              "w-full min-h-8 max-h-20 resize-none text-xs bg-transparent border-0 px-3 pt-2.5 pb-1 placeholder:text-muted-foreground/60 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
-              "transition-all duration-200 leading-relaxed"
             )}
-            disabled={isTyping || isGeneratingComposition}
-            rows={1}
-            style={{ height: `${Math.max(textareaHeight, 32)}px` }}
-          />
 
-          {/* Buttons row below text with refined styling */}
-          <div className="flex items-center justify-between px-2.5 pb-2 pt-0">
-            {/* @ Button - left side, smaller */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 text-muted-foreground/70 hover:text-foreground hover:bg-muted/50"
-              onClick={() => {
-                if (inputRef.current) {
-                  const cursorPos =
-                    inputRef.current.selectionStart || inputValue.length;
-                  const newValue =
-                    inputValue.slice(0, cursorPos) +
-                    "@" +
-                    inputValue.slice(cursorPos);
-                  setInputValue(newValue);
-                  const newCursorPos = cursorPos + 1;
-                  setCursorPosition(newCursorPos);
-
-                  // Trigger mentions dropdown immediately
-                  setMentionQuery("");
-                  setShowMentions(true);
-                  setSelectedMentionIndex(0);
-
-                  setTimeout(() => {
-                    inputRef.current?.focus();
-                    inputRef.current?.setSelectionRange(
-                      newCursorPos,
-                      newCursorPos
-                    );
-                  }, 0);
-                }
-              }}
-            >
-              <AtSign className="h-2.5 w-2.5" />
-            </Button>
-
-            {/* Send buttons - right side, smaller and refined */}
-            <div className="flex items-center gap-0.5">
-              <Button
-                onClick={() => handleSendMessage(sendWithMedia)}
-                disabled={!inputValue.trim() || isTyping}
-                size="sm"
-                className="h-6 px-2 bg-transparent hover:bg-primary/10 text-primary hover:text-primary text-xs"
-                variant="ghost"
+            {/* Mentions popup */}
+            {showMentions && (
+              <div
+                ref={mentionsRef}
+                className="absolute bottom-full left-4 right-4 mb-2 bg-background border border-border/50 rounded-lg shadow-lg max-h-40 overflow-y-auto z-50"
               >
-                <Send className="h-2.5 w-2.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 text-muted-foreground/70 hover:text-foreground hover:bg-muted/50"
-                disabled={isTyping}
-                onClick={() => setShowSendOptions(!showSendOptions)}
+                {filteredMentions.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className={`px-3 py-2 text-xs cursor-pointer flex items-center gap-2 ${
+                      index === selectedMentionIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                    onClick={() => insertMention(item)}
+                  >
+                    <div className="w-6 h-6 bg-muted/50 rounded flex items-center justify-center">
+                      {item.mediaType === "video" ? (
+                        <FileVideo className="h-3 w-3 text-muted-foreground" />
+                      ) : item.mediaType === "image" ? (
+                        <FileImage className="h-3 w-3 text-muted-foreground" />
+                      ) : (
+                        <Type className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </div>
+                    <span className="flex-1 truncate">{item.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {item.mediaType}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Send Options Dropdown */}
+            {showSendOptions && (
+              <div
+                ref={sendOptionsRef}
+                className="absolute bottom-full right-4 mb-2 bg-background border border-border/50 rounded-md shadow-lg z-50 min-w-48"
               >
-                <ChevronDown className="h-2.5 w-2.5" />
-              </Button>
+                <div className="p-1">
+                  <div
+                    className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
+                    onClick={() => {
+                      setSendWithMedia(false);
+                      setShowSendOptions(false);
+                      handleSendMessage(false);
+                    }}
+                  >
+                    <span>Send</span>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      Enter
+                    </span>
+                  </div>
+                  <div
+                    className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
+                    onClick={() => {
+                      setSendWithMedia(true);
+                      setShowSendOptions(false);
+                      handleSendMessage(true);
+                    }}
+                  >
+                    <span>Send with all Media</span>
+                  </div>
+                  <div
+                    className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
+                    onClick={() => {
+                      // Clear current messages and send to new chat
+                      onMessagesChange(() => []);
+                      setShowSendOptions(false);
+                      handleSendMessage(false);
+                    }}
+                  >
+                    <span>Send to New Chat</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Input Area */}
+        <div className="border-t border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="p-3 relative">
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage(sendWithMedia);
+                  }
+                }}
+                placeholder="Ask Screenwrite to create or edit your video..."
+                className="w-full resize-none border-0 bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-0 pr-12 overflow-hidden"
+                style={{ height: `${textareaHeight}px` }}
+                disabled={isWaitingForResponse}
+              />
+              
+              <div className="absolute right-2 bottom-1 flex items-center gap-1">
+                {(inputValue.trim() || mentionedItems.length > 0) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground relative"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowSendOptions(!showSendOptions);
+                    }}
+                    disabled={isWaitingForResponse}
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                )}
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-primary hover:text-primary/80 hover:bg-primary/10"
+                  onClick={() => handleSendMessage(sendWithMedia)}
+                  disabled={(!inputValue.trim() && mentionedItems.length === 0) || isWaitingForResponse}
+                >
+                  <Send className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
+
+            {mentionedItems.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border/50">
+                {mentionedItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs"
+                  >
+                    <div className="w-3 h-3 bg-muted-foreground/20 rounded flex items-center justify-center">
+                      {item.mediaType === "video" ? (
+                        <FileVideo className="h-2 w-2 text-muted-foreground" />
+                      ) : item.mediaType === "image" ? (
+                        <FileImage className="h-2 w-2 text-muted-foreground" />
+                      ) : (
+                        <Type className="h-2 w-2 text-muted-foreground" />
+                      )}
+                    </div>
+                    <span className="truncate max-w-24">{item.name}</span>
+                    <button
+                      onClick={() => setMentionedItems(prev => prev.filter(i => i.id !== item.id))}
+                      className="text-muted-foreground hover:text-foreground ml-1"
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
