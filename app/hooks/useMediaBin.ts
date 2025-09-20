@@ -250,7 +250,7 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
           item.id === id
             ? {
               ...item,
-              mediaUrlRemote: uploadResult.fullUrl,
+              mediaUrlRemote: apiUrl(uploadResult.url),
               isUploading: false,
               uploadProgress: null,
               gemini_file_id: geminiFileId
@@ -401,7 +401,7 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
         name: `${videoItem.name} (Audio)`,
         mediaType: "audio",
         mediaUrlLocal: videoItem.mediaUrlLocal, // Reuse the original video's blob URL
-        mediaUrlRemote: cloneResult.fullUrl!, // Use the new cloned file URL
+        mediaUrlRemote: apiUrl(cloneResult.url!), // Use the new cloned file URL
         durationInSeconds: videoItem.durationInSeconds,
         media_width: 0, // Audio doesn't have visual dimensions
         media_height: 0,
