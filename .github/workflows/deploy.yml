@@ -1,0 +1,34 @@
+name: Deploy to Remote Server
+
+on:
+  push:
+    branches:
+      - custom
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to Server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.REMOTE_USER }}@${{ secrets.REMOTE_HOST }} << 'EOF'
+            cd Screenwrite_MVP/
+            git fetch --all
+            git reset --hard origin/custom
+
+            # Build docker image
+            docker compose build
+
+            # Restart services
+            docker compose down
+            docker compose up -d
+          EOF
