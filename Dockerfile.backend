@@ -21,6 +21,9 @@ RUN apt install -y \
   libcairo2 \
   libcups2
 
+# Install ffmpeg
+RUN apt install -y ffmpeg
+
 # Install pnpm
 RUN npm install -g pnpm
 
