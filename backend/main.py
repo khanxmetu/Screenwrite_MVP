@@ -112,6 +112,17 @@ class GeminiUploadResponse(BaseModel):
     error_message: Optional[str] = None
 
 
+class VideoAnalysisRequest(BaseModel):
+    gemini_file_id: str
+    question: str
+
+
+class VideoAnalysisResponse(BaseModel):
+    success: bool
+    analysis: Optional[str] = None
+    error_message: Optional[str] = None
+
+
 @app.post("/upload-to-gemini")
 async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse:
     """Upload a file to Gemini Files API or Cloud Storage for later analysis."""
@@ -316,6 +327,61 @@ Fix the error and return the corrected code."""
             duration=10.0,
             success=False,
             error_message=str(e)
+        )
+
+
+@app.post("/analyze-video")
+async def analyze_video(request: VideoAnalysisRequest) -> VideoAnalysisResponse:
+    """Analyze a video file using Gemini Files API reference."""
+    
+    try:
+        print(f"🎬 Video Analysis: Analyzing file {request.gemini_file_id}")
+        print(f"🔍 Question: {request.question}")
+        
+        if USE_VERTEX_AI:
+            # For Vertex AI, the gemini_file_id is actually a Cloud Storage URI
+            # Use a simpler approach - pass the file URI directly in contents
+            response = gemini_api.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[request.gemini_file_id, request.question],
+                config=types.GenerateContentConfig(temperature=0.1)
+            )
+        else:
+            # For regular Gemini API, use the file reference directly
+            # The gemini_file_id is the file name from Files API (e.g., "files/abc123")
+            response = gemini_api.models.generate_content(
+                model="gemini-2.5-flash", 
+                contents=[request.gemini_file_id, request.question],
+                config=types.GenerateContentConfig(temperature=0.1)
+            )
+        
+        analysis_result = response.text
+        print(f"✅ Video Analysis: Success - {len(analysis_result)} characters")
+        
+        return VideoAnalysisResponse(
+            success=True,
+            analysis=analysis_result
+        )
+        
+    except Exception as e:
+        print(f"❌ Video Analysis: Failed - {str(e)}")
+        
+        # Provide user-friendly error messages
+        error_msg = str(e)
+        if "API key" in error_msg.lower():
+            user_error = "AI service authentication failed. Please check server configuration."
+        elif "network" in error_msg.lower() or "connection" in error_msg.lower():
+            user_error = "Network connection error. Please check your internet connection and try again."
+        elif "quota" in error_msg.lower() or "limit" in error_msg.lower():
+            user_error = "AI service quota exceeded. Please try again later."
+        elif "not found" in error_msg.lower():
+            user_error = "Video file not found. Please try uploading the video again."
+        else:
+            user_error = f"Video analysis failed: {error_msg}"
+        
+        return VideoAnalysisResponse(
+            success=False,
+            error_message=user_error
         )
 
 

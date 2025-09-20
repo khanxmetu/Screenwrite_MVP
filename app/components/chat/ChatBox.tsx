@@ -108,8 +108,9 @@ export function ChatBox({
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [pendingProbe, setPendingProbe] = useState<{fileName: string, question: string} | null>(null);
 
-  // Initialize conversational synth
+  // Initialize Conversational Synth
   const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -142,6 +143,33 @@ export function ChatBox({
         document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showSendOptions]);
+
+  // Monitor for video uploads completing and retry pending probes
+  useEffect(() => {
+    if (pendingProbe) {
+      const mediaFile = mediaBinItems.find(item => item.name === pendingProbe.fileName);
+      if (mediaFile?.gemini_file_id) {
+        console.log("🔄 Retrying pending probe for:", pendingProbe.fileName);
+        // Clear pending probe and retry
+        const { fileName, question } = pendingProbe;
+        setPendingProbe(null);
+        
+        // Retry the probe and add results to UI
+        handleProbeRequestInternal(fileName, question).then(newMessages => {
+          onMessagesChange(prevMessages => [...prevMessages, ...newMessages]);
+        }).catch(error => {
+          console.error("❌ Retry failed:", error);
+          const errorMessage: Message = {
+            id: Date.now().toString(),
+            content: `❌ Analysis retry failed: ${error.message}`,
+            isUser: false,
+            timestamp: new Date(),
+          };
+          onMessagesChange(prevMessages => [...prevMessages, errorMessage]);
+        });
+      }
+    }
+  }, [mediaBinItems, pendingProbe]);
 
   // Filter media bin items based on mention query
   const filteredMentions = mediaBinItems.filter((item) =>
@@ -222,12 +250,12 @@ export function ChatBox({
   };
 
   // New conversational message handler using ConversationalSynth
-  const handleProbeRequest = async (
+  const handleProbeRequestInternal = async (
     fileName: string, 
     question: string, 
-    originalMessage: string, 
-    conversationMessages: ConversationMessage[],
-    synthContext: SynthContext
+    originalMessage?: string, 
+    conversationMessages?: ConversationMessage[],
+    synthContext?: SynthContext
   ): Promise<Message[]> => {
     await logProbeStart(fileName, question);
     console.log("🔍 Handling probe request for:", fileName);
@@ -268,7 +296,7 @@ export function ChatBox({
       const analysisResult = await analyzeMediaWithGemini(mediaFile, question);
       await logProbeAnalysis(fileName, analysisResult);
       
-      // Create analysis result message and add to UI incrementally
+      // Create analysis result message
       const analysisMessage: Message = {
         id: (Date.now() + 2).toString(),
         content: analysisResult,
@@ -277,9 +305,12 @@ export function ChatBox({
         isAnalysisResult: true,
       };
 
-      // We'll add this message after the follow-up response to avoid multiple UI updates
+      // If this is a standalone probe (from retry), just return the analysis
+      if (!originalMessage || !conversationMessages || !synthContext) {
+        return [analysisMessage];
+      }
 
-      // Update conversation history with probe results
+      // Otherwise, continue with full conversational flow
       const updatedMessages: ConversationMessage[] = [
         ...conversationMessages,
         {
@@ -296,7 +327,6 @@ export function ChatBox({
         }
       ];
 
-      // Call synth again with updated context including probe results
       const updatedSynthContext: SynthContext = {
         ...synthContext,
         messages: updatedMessages
@@ -306,7 +336,6 @@ export function ChatBox({
       const followUpResponse = await synth.processMessage(originalMessage, updatedSynthContext);
       await logSynthResponse(followUpResponse);
       
-      // Add the follow-up response to UI
       const followUpMessage: Message = {
         id: (Date.now() + 3).toString(),
         content: followUpResponse.content,
@@ -314,9 +343,6 @@ export function ChatBox({
         timestamp: new Date(),
       };
 
-      // Add both messages to UI at once to avoid multiple re-renders
-      // Note: We can't use currentMessages here since it's stale, so we'll return the messages instead
-      // and let the calling function handle UI updates
       return [analysisMessage, followUpMessage];
 
     } catch (error) {
@@ -331,6 +357,36 @@ export function ChatBox({
       };
       return [errorMessage];
     }
+  };
+
+  const handleProbeRequest = async (
+    fileName: string, 
+    question: string, 
+    originalMessage: string, 
+    conversationMessages: ConversationMessage[],
+    synthContext: SynthContext
+  ): Promise<Message[]> => {
+    // Check if this is a video without gemini_file_id (race condition)
+    const mediaFile = mediaBinItems.find(item => item.name === fileName);
+    const fileExtension = mediaFile?.name.split('.').pop()?.toLowerCase();
+    const isVideo = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'].includes(fileExtension || '');
+    
+    if (mediaFile && isVideo && !mediaFile.gemini_file_id) {
+      console.log("⏳ Video still uploading, storing pending probe:", fileName);
+      setPendingProbe({ fileName, question });
+      
+      // Return a pending message
+      const pendingMessage: Message = {
+        id: Date.now().toString(),
+        content: `⏳ Video is still being processed for analysis. Your request will continue automatically once ready...`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      return [pendingMessage];
+    }
+
+    // Otherwise, proceed with normal probe
+    return handleProbeRequestInternal(fileName, question, originalMessage, conversationMessages, synthContext);
   };
 
   const analyzeMediaWithGemini = async (mediaFile: MediaBinItem, question: string): Promise<string> => {
@@ -350,54 +406,86 @@ export function ChatBox({
     }
 
     try {
-      // Use the correct media URL (prefer remote, fallback to local)
-      const fileUrl = mediaFile.mediaUrlRemote || mediaFile.mediaUrlLocal;
-      console.log("🔍 Media file URLs:", { remote: mediaFile.mediaUrlRemote, local: mediaFile.mediaUrlLocal, using: fileUrl });
-      
-      if (!fileUrl) {
-        throw new Error("No valid media URL found for this file");
-      }
-      
-      const response = await fetch(fileUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch media file: ${response.status} ${response.statusText}`);
-      }
-      const blob = await response.blob();
-      console.log("🔍 Blob info:", { type: blob.type, size: blob.size });
-      
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          // Remove the data:mime/type;base64, prefix
-          const base64 = result.split(',')[1];
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
+      let requestBody: any;
 
-      // Prepare the request body for Gemini multimodal API
-      const requestBody = {
-        contents: [
-          {
-            parts: [
-              {
-                text: question
-              },
-              {
-                inline_data: {
-                  mime_type: blob.type,
-                  data: base64Data
-                }
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.1
+      if (isVideo && mediaFile.gemini_file_id) {
+        // For videos, use the backend video analysis endpoint
+        console.log("🔍 Using backend video analysis for:", mediaFile.gemini_file_id);
+        
+        const response = await fetch(apiUrl('/analyze-video', true), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            gemini_file_id: mediaFile.gemini_file_id,
+            question: question
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Backend video analysis failed: ${response.status}`);
         }
-      };
+
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.error_message || 'Video analysis failed');
+        }
+
+        return result.analysis;
+      } else if (isVideo && !mediaFile.gemini_file_id) {
+        // Video without Gemini file ID - should not happen as videos are uploaded on add
+        throw new Error("Video file is still being processed for analysis. Please wait a moment and try again.");
+      } else {
+        // For images, use base64 inline data
+        const fileUrl = mediaFile.mediaUrlRemote || mediaFile.mediaUrlLocal;
+        console.log("🔍 Media file URLs:", { remote: mediaFile.mediaUrlRemote, local: mediaFile.mediaUrlLocal, using: fileUrl });
+        
+        if (!fileUrl) {
+          throw new Error("No valid media URL found for this file");
+        }
+        
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch media file: ${response.status} ${response.statusText}`);
+        }
+        const blob = await response.blob();
+        console.log("🔍 Blob info:", { type: blob.type, size: blob.size });
+        
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            // Remove the data:mime/type;base64, prefix
+            const base64 = result.split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+
+        requestBody = {
+          contents: [
+            {
+              parts: [
+                {
+                  text: question
+                },
+                {
+                  inline_data: {
+                    mime_type: blob.type,
+                    data: base64Data
+                  }
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.1
+          }
+        };
+      }
 
       const apiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
         method: 'POST',
