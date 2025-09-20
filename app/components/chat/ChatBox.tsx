@@ -108,7 +108,13 @@ export function ChatBox({
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
-  const [pendingProbe, setPendingProbe] = useState<{fileName: string, question: string} | null>(null);
+  const [pendingProbe, setPendingProbe] = useState<{
+    fileName: string, 
+    question: string, 
+    originalMessage: string, 
+    conversationMessages: ConversationMessage[], 
+    synthContext: SynthContext
+  } | null>(null);
 
   // Initialize Conversational Synth
   const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
@@ -151,11 +157,21 @@ export function ChatBox({
       if (mediaFile?.gemini_file_id) {
         console.log("🔄 Retrying pending probe for:", pendingProbe.fileName);
         // Clear pending probe and retry
-        const { fileName, question } = pendingProbe;
+        const { fileName, question, originalMessage, conversationMessages, synthContext } = pendingProbe;
         setPendingProbe(null);
         
-        // Retry the probe and add results to UI
-        handleProbeRequestInternal(fileName, question).then(newMessages => {
+        // Add "now analyzing" message to show the retry is happening
+        const analyzingMessage: Message = {
+          id: Date.now().toString(),
+          content: `🔍 Video ready! Now analyzing ${fileName}...`,
+          isUser: false,
+          timestamp: new Date(),
+          isAnalyzing: true,
+        };
+        onMessagesChange(prevMessages => [...prevMessages, analyzingMessage]);
+        
+        // Retry the probe using the main flow with all context
+        handleProbeRequest(fileName, question, originalMessage, conversationMessages, synthContext).then(newMessages => {
           onMessagesChange(prevMessages => [...prevMessages, ...newMessages]);
         }).catch(error => {
           console.error("❌ Retry failed:", error);
@@ -373,7 +389,7 @@ export function ChatBox({
     
     if (mediaFile && isVideo && !mediaFile.gemini_file_id) {
       console.log("⏳ Video still uploading, storing pending probe:", fileName);
-      setPendingProbe({ fileName, question });
+      setPendingProbe({ fileName, question, originalMessage, conversationMessages, synthContext });
       
       // Return a pending message
       const pendingMessage: Message = {
