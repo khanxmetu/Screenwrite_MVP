@@ -527,26 +527,8 @@ export function ChatBox({
       compositionDuration: undefined // Will be calculated from composition
     };
 
-    // Check if this looks like a simple chat conversation (no @ mentions, no specific edit commands)
-    const hasMediaMentions = messageContent.includes('@');
-    const hasEditKeywords = /\b(add|create|make|edit|remove|delete|change|modify|insert|place|put|move)\b/i.test(messageContent);
-    const isSimpleChat = !hasMediaMentions && !hasEditKeywords && messageContent.length < 200;
-
-    console.log("🔍 Message analysis:", {
-      messageContent,
-      hasMediaMentions,
-      hasEditKeywords,
-      length: messageContent.length,
-      isSimpleChat
-    });
-
-    if (isSimpleChat) {
-      console.log("🌊 Using streaming for simple chat message");
-      return await handleStreamingChatMessage(messageContent, synthContext);
-    }
-
     try {
-      // Process message with synth (for complex messages that need structured responses)
+      // Process ALL messages with synth to maintain proper conversation state and workflow
       await logSynthCall(messageContent, synthContext);
       const synthResponse = await synth.processMessage(messageContent, synthContext);
       await logSynthResponse(synthResponse);

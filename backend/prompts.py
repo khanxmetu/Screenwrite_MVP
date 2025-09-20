@@ -159,6 +159,7 @@ Transition Precedence Rules:
 
 **TRANSITION REQUIREMENTS & CONSTRAINTS**
 
+
 Cross Transitions:
 - Work with adjacent clips on the same track for smooth clip-to-clip transitions
 
