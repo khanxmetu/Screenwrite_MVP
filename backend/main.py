@@ -348,10 +348,13 @@ async def analyze_video(request: VideoAnalysisRequest) -> VideoAnalysisResponse:
             )
         else:
             # For regular Gemini API, use the file reference directly
-            # The gemini_file_id is the file name from Files API (e.g., "files/abc123")
+            # The gemini_file_id is the file URI from Files API (e.g., "files/abc123")
+            # We need to get the file object from the file ID
+            file_obj = gemini_api.files.get(name=request.gemini_file_id)
+            
             response = gemini_api.models.generate_content(
                 model="gemini-2.5-flash", 
-                contents=[request.gemini_file_id, request.question],
+                contents=[file_obj, request.question],
                 config=types.GenerateContentConfig(temperature=0.1)
             )
         
