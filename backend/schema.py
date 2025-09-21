@@ -81,3 +81,14 @@ class LLMMoveScrubberArgs(BaseModel):
 
 class FunctionCallResponse(BaseModel):
     function_call: LLMAddScrubberToTimelineArgs | LLMMoveScrubberArgs
+
+
+class VideoAnalysisRequest(BaseModel):
+    gemini_file_id: str = Field(description="Gemini Files API file ID for the video")
+    question: str = Field(description="Question or analysis prompt for the video")
+
+
+class VideoAnalysisResponse(BaseModel):
+    success: bool = Field(description="Whether the analysis was successful")
+    analysis: Optional[str] = Field(description="AI analysis of the video content", default=None)
+    error_message: Optional[str] = Field(description="Error message if analysis failed", default=None)

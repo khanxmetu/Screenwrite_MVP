@@ -182,8 +182,14 @@ const createSW = () => ({
   Audio: SafeAudioComponent,
   Img: SafeImgComponent,
   AbsoluteFill: SafeAbsoluteFillComponent,
-  interp: (startTime: number, endTime: number, fromValue: number, toValue: number, easing?: any) => {
-    return interp(startTime, endTime, fromValue, toValue, easing);
+  interp: (
+    startTimeOrTimePoints: number | number[], 
+    endTimeOrValues?: number | number[], 
+    fromValueOrEasing?: number | 'in' | 'out' | 'inOut' | 'linear', 
+    toValue?: number, 
+    easing?: 'in' | 'out' | 'inOut' | 'linear'
+  ) => {
+    return interp(startTimeOrTimePoints as any, endTimeOrValues as any, fromValueOrEasing as any, toValue, easing);
   },
   interpolateColors: safeInterpolateColors,
   spring: safeSpring,

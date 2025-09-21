@@ -55,9 +55,9 @@ You are editing an existing composition. Output ONLY the specific changes, addit
 AVAILABLE OPERATIONS:
 
 TRANSITIONS:
-🎬 **CRITICAL: REMOTION TRANSITIONSERIES OVERLAP MECHANICS**
+**CRITICAL: REMOTION TRANSITIONSERIES OVERLAP MECHANICS**
 
-**🚨 FUNDAMENTAL RULE:**
+**FUNDAMENTAL RULE:**
 - Transitions create overlaps that REDUCE total timeline duration
 - Formula: Total = Seq1Duration + Seq2Duration - TransitionDuration
 

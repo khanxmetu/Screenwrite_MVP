@@ -11,15 +11,31 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertCircle,
+  X,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { type MediaBinItem, type TimelineState } from "../timeline/types";
 import { cn } from "~/lib/utils";
 import axios from "axios";
 import { apiUrl } from "~/utils/api";
+import { 
+  logUserMessage, 
+  logSynthCall, 
+  logSynthResponse, 
+  logProbeStart, 
+  logProbeAnalysis, 
+  logProbeError,
+  logEditExecution,
+  logEditResult,
+  logChatResponse,
+  logWorkflowComplete 
+} from "~/utils/fileLogger";
 
 // llm tools
 import { llmAddScrubberToTimeline } from "~/utils/llm-handler";
+
+// Conversational Synth
+import { ConversationalSynth, type SynthContext, type ConversationMessage } from "./ConversationalSynth";
 
 interface Message {
   id: string;
@@ -27,6 +43,8 @@ interface Message {
   isUser: boolean;
   timestamp: Date;
   isExplanationMode?: boolean; // For post-edit explanations
+  isAnalyzing?: boolean; // For analyzing messages that appear as plain text
+  isAnalysisResult?: boolean; // For analysis results that appear in darker bubbles
 }
 
 interface ChatBoxProps {
@@ -40,7 +58,7 @@ interface ChatBoxProps {
   isMinimized?: boolean;
   onToggleMinimize?: () => void;
   messages: Message[];
-  onMessagesChange: (messages: Message[]) => void;
+  onMessagesChange: (updater: (messages: Message[]) => Message[]) => void;
   timelineState: TimelineState;
   // New props for AI composition generation
   isStandalonePreview?: boolean;
@@ -88,6 +106,18 @@ export function ChatBox({
   const [textareaHeight, setTextareaHeight] = useState(36); // Starting height for proper size
   const [sendWithMedia, setSendWithMedia] = useState(false); // Track send mode
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
+  const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [pendingProbe, setPendingProbe] = useState<{
+    fileName: string, 
+    question: string, 
+    originalMessage: string, 
+    conversationMessages: ConversationMessage[], 
+    synthContext: SynthContext
+  } | null>(null);
+
+  // Initialize Conversational Synth
+  const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -100,7 +130,7 @@ export function ChatBox({
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isTyping]);
+  }, [messages]);
 
   // Click outside handler for send options
   useEffect(() => {
@@ -119,6 +149,56 @@ export function ChatBox({
         document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showSendOptions]);
+
+  // Monitor for video uploads completing and retry pending probes
+  useEffect(() => {
+    if (pendingProbe) {
+      const mediaFile = mediaBinItems.find(item => item.name === pendingProbe.fileName);
+      if (mediaFile?.gemini_file_id) {
+        console.log("🔄 Retrying pending probe for:", pendingProbe.fileName);
+        // Clear pending probe and retry
+        const { fileName, question, originalMessage, conversationMessages, synthContext } = pendingProbe;
+        setPendingProbe(null);
+        
+        // Add "now analyzing" message to show the retry is happening
+        const analyzingMessage: Message = {
+          id: Date.now().toString(),
+          content: `Video ready! Now analyzing ${fileName}...`,
+          isUser: false,
+          timestamp: new Date(),
+          isAnalyzing: true,
+        };
+        onMessagesChange(prevMessages => [...prevMessages, analyzingMessage]);
+        
+        // Retry the probe using the main flow with all context
+        handleProbeRequest(fileName, question, originalMessage, conversationMessages, synthContext).then(newMessages => {
+          onMessagesChange(prevMessages => [...prevMessages, ...newMessages]);
+          autoCollapseAnalysisResults(newMessages);
+        }).catch(error => {
+          console.error("❌ Retry failed:", error);
+          const errorMessage: Message = {
+            id: Date.now().toString(),
+            content: `❌ Analysis retry failed: ${error.message}`,
+            isUser: false,
+            timestamp: new Date(),
+          };
+          onMessagesChange(prevMessages => [...prevMessages, errorMessage]);
+        });
+      }
+    }
+  }, [mediaBinItems, pendingProbe]);
+
+  // Helper function to auto-collapse analysis result messages
+  const autoCollapseAnalysisResults = (messages: Message[]) => {
+    const analysisMessages = messages.filter((msg: Message) => msg.isAnalysisResult);
+    if (analysisMessages.length > 0) {
+      setCollapsedMessages(prev => {
+        const newSet = new Set(prev);
+        analysisMessages.forEach((msg: Message) => newSet.add(msg.id));
+        return newSet;
+      });
+    }
+  };
 
   // Filter media bin items based on mention query
   const filteredMentions = mediaBinItems.filter((item) =>
@@ -198,6 +278,479 @@ export function ChatBox({
     }, 0);
   };
 
+  // New conversational message handler using ConversationalSynth
+  const handleProbeRequestInternal = async (
+    fileName: string, 
+    question: string, 
+    originalMessage?: string, 
+    conversationMessages?: ConversationMessage[],
+    synthContext?: SynthContext
+  ): Promise<Message[]> => {
+    await logProbeStart(fileName, question);
+    console.log("🔍 Handling probe request for:", fileName);
+    console.log("🔍 Available media files:", mediaBinItems.map(item => item.name));
+    
+    // Smart file matching logic
+    let mediaFile = mediaBinItems.find(item => item.name === fileName);
+    
+    // If exact match not found, try fuzzy matching or default selection
+    if (!mediaFile) {
+      // If no filename provided or not found, and only one media file exists, use it
+      if (mediaBinItems.length === 1) {
+        mediaFile = mediaBinItems[0];
+        console.log(`🔍 Using only available media file: ${mediaFile.name}`);
+      } else {
+        // Try partial name matching
+        mediaFile = mediaBinItems.find(item => 
+          item.name.toLowerCase().includes(fileName.toLowerCase()) ||
+          fileName.toLowerCase().includes(item.name.toLowerCase())
+        );
+      }
+    }
+    
+    if (!mediaFile) {
+      const availableFiles = mediaBinItems.map(f => f.name).join(', ');
+      await logProbeError(fileName, `Media file not found. Available files: ${availableFiles}`);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `❌ Could not find media file: ${fileName}. Available files: ${availableFiles}`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      return [errorMessage];
+    }
+
+    try {
+      // Call Gemini Vision API to analyze the media file
+      const analysisResult = await analyzeMediaWithGemini(mediaFile, question);
+      await logProbeAnalysis(fileName, analysisResult);
+      
+      // Create analysis result message
+      const analysisMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        content: analysisResult,
+        isUser: false,
+        timestamp: new Date(),
+        isAnalysisResult: true,
+      };
+
+      // If this is a standalone probe (from retry), just return the analysis
+      if (!originalMessage || !conversationMessages || !synthContext) {
+        return [analysisMessage];
+      }
+
+      // Otherwise, continue with full conversational flow
+      const updatedMessages: ConversationMessage[] = [
+        ...conversationMessages,
+        {
+          id: (Date.now() + 1).toString(),
+          content: `🔍 Probing ${fileName}: ${question}`,
+          isUser: false,
+          timestamp: new Date(),
+        },
+        {
+          id: (Date.now() + 2).toString(),
+          content: `📄 Analysis: ${analysisResult}`,
+          isUser: false,
+          timestamp: new Date(),
+        }
+      ];
+
+      const updatedSynthContext: SynthContext = {
+        ...synthContext,
+        messages: updatedMessages
+      };
+
+      await logSynthCall(`[POST-PROBE] ${originalMessage}`, updatedSynthContext);
+      const followUpResponse = await synth.processMessage(originalMessage, updatedSynthContext);
+      await logSynthResponse(followUpResponse);
+      
+      const followUpMessage: Message = {
+        id: (Date.now() + 3).toString(),
+        content: followUpResponse.content,
+        isUser: false,
+        timestamp: new Date(),
+      };
+
+      return [analysisMessage, followUpMessage];
+
+    } catch (error) {
+      console.error("❌ Probe analysis failed:", error);
+      await logProbeError(fileName, error instanceof Error ? error.message : String(error));
+      const errorMessage: Message = {
+        id: (Date.now() + 3).toString(),
+        content: `❌ Failed to analyze ${fileName}. ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isUser: false,
+        timestamp: new Date(),
+        isAnalysisResult: true,
+      };
+      return [errorMessage];
+    }
+  };
+
+  const handleProbeRequest = async (
+    fileName: string, 
+    question: string, 
+    originalMessage: string, 
+    conversationMessages: ConversationMessage[],
+    synthContext: SynthContext
+  ): Promise<Message[]> => {
+    // Check if this is a video without gemini_file_id (race condition)
+    const mediaFile = mediaBinItems.find(item => item.name === fileName);
+    const fileExtension = mediaFile?.name.split('.').pop()?.toLowerCase();
+    const isVideo = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'].includes(fileExtension || '');
+    
+    if (mediaFile && isVideo && !mediaFile.gemini_file_id) {
+      console.log("⏳ Video still uploading, storing pending probe:", fileName);
+      setPendingProbe({ fileName, question, originalMessage, conversationMessages, synthContext });
+      
+      // Return a pending message
+      const pendingMessage: Message = {
+        id: Date.now().toString(),
+        content: `Video is still being uploaded for analysis. Your request will continue automatically once ready...`,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      return [pendingMessage];
+    }
+
+    // Otherwise, proceed with normal probe
+    return handleProbeRequestInternal(fileName, question, originalMessage, conversationMessages, synthContext);
+  };
+
+  const analyzeMediaWithGemini = async (mediaFile: MediaBinItem, question: string): Promise<string> => {
+    const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+    const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
+    }
+
+    const fileExtension = mediaFile.name.split('.').pop()?.toLowerCase();
+    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
+    const isVideo = ['mp4', 'mov', 'avi', 'webm'].includes(fileExtension || '');
+    
+    if (!isImage && !isVideo) {
+      throw new Error(`Unsupported file type: ${fileExtension}. Only images and videos can be analyzed.`);
+    }
+
+    try {
+      let requestBody: any;
+
+      if (isVideo && mediaFile.gemini_file_id) {
+        // For videos, use the backend video analysis endpoint
+        console.log("🔍 Using backend video analysis for:", mediaFile.gemini_file_id);
+        
+        const response = await fetch(apiUrl('/analyze-video', true), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            gemini_file_id: mediaFile.gemini_file_id,
+            question: question
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Backend video analysis failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.error_message || 'Video analysis failed');
+        }
+
+        return result.analysis;
+      } else if (isVideo && !mediaFile.gemini_file_id) {
+        // Video without Gemini file ID - should not happen as videos are uploaded on add
+        throw new Error("Video file is still being processed for analysis. Please wait a moment and try again.");
+      } else {
+        // For images, use base64 inline data
+        const fileUrl = mediaFile.mediaUrlRemote || mediaFile.mediaUrlLocal;
+        console.log("🔍 Media file URLs:", { remote: mediaFile.mediaUrlRemote, local: mediaFile.mediaUrlLocal, using: fileUrl });
+        
+        if (!fileUrl) {
+          throw new Error("No valid media URL found for this file");
+        }
+        
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch media file: ${response.status} ${response.statusText}`);
+        }
+        const blob = await response.blob();
+        console.log("🔍 Blob info:", { type: blob.type, size: blob.size });
+        
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            // Remove the data:mime/type;base64, prefix
+            const base64 = result.split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+
+        requestBody = {
+          contents: [
+            {
+              parts: [
+                {
+                  text: question
+                },
+                {
+                  inline_data: {
+                    mime_type: blob.type,
+                    data: base64Data
+                  }
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.1
+          }
+        };
+      }
+
+      const apiResponse = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!apiResponse.ok) {
+        const errorData = await apiResponse.json().catch(() => ({}));
+        throw new Error(`Gemini API error: ${apiResponse.status} - ${errorData.error?.message || 'Unknown error'}`);
+      }
+
+      const data = await apiResponse.json();
+      console.log("🔍 Gemini Vision API response:", JSON.stringify(data, null, 2));
+      
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        console.error("❌ Missing candidates or content in response:", data);
+        throw new Error('Invalid response format from Gemini API - no candidates or content');
+      }
+
+      const candidate = data.candidates[0];
+      const content = candidate.content;
+      
+      if (!content.parts || !Array.isArray(content.parts) || content.parts.length === 0) {
+        console.error("❌ Missing parts in content:", content);
+        throw new Error('Invalid response format from Gemini API - no parts in content');
+      }
+      
+      const firstPart = content.parts[0];
+      if (!firstPart || !firstPart.text) {
+        console.error("❌ Missing text in first part:", firstPart);
+        throw new Error('Invalid response format from Gemini API - no text in first part');
+      }
+
+      return firstPart.text;
+
+    } catch (error) {
+      console.error("❌ Gemini Vision API failed:", error);
+      throw error;
+    }
+  };
+
+  const handleStreamingChatMessage = async (messageContent: string, synthContext: SynthContext): Promise<Message[]> => {
+    console.log("🌊 Starting streaming chat response");
+    
+    // Create the streaming message container
+    const streamingMessageId = (Date.now() + 1).toString();
+    const streamingMessage: Message = {
+      id: streamingMessageId,
+      content: "",
+      isUser: false,
+      timestamp: new Date(),
+    };
+
+    // Add empty message to UI immediately and set loading state
+    onMessagesChange(prevMessages => [...prevMessages, streamingMessage]);
+    setIsWaitingForResponse(true);
+
+    try {
+      let accumulatedContent = "";
+      let isFirstChunk = true;
+      
+      // Stream the response
+      await synth.streamChatResponse(messageContent, synthContext, (chunk: string) => {
+        console.log("📝 Received chunk in ChatBox:", chunk);
+        
+        // Hide loading indicator on first chunk
+        if (isFirstChunk) {
+          setIsWaitingForResponse(false);
+          isFirstChunk = false;
+        }
+        
+        accumulatedContent += chunk;
+        
+        // Update the streaming message with accumulated content
+        onMessagesChange(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === streamingMessageId 
+              ? { ...msg, content: accumulatedContent }
+              : msg
+          )
+        );
+      });
+
+      await logChatResponse(accumulatedContent);
+      
+      // Return empty array since message was already added via onMessagesChange
+      return [];
+      
+    } catch (error) {
+      console.error("❌ Streaming chat failed:", error);
+      
+      // Clear loading state on error
+      setIsWaitingForResponse(false);
+      
+      // Update the message with error
+      onMessagesChange(prevMessages => 
+        prevMessages.map(msg => 
+          msg.id === streamingMessageId 
+            ? { ...msg, content: "I'm having trouble processing your message right now. Could you try again?" }
+            : msg
+        )
+      );
+      
+      return [];
+    }
+  };
+
+  const handleConversationalMessage = async (messageContent: string) => {
+    await logUserMessage(messageContent, mentionedItems.map(item => item.name));
+    console.log("🧠 Processing conversational message:", messageContent);
+
+    // Convert messages to ConversationMessage format
+    const conversationMessages: ConversationMessage[] = messages.map(msg => ({
+      id: msg.id,
+      content: msg.content,
+      isUser: msg.isUser,
+      timestamp: msg.timestamp
+    }));
+
+    // Build synth context
+    const synthContext: SynthContext = {
+      messages: conversationMessages,
+      currentComposition: currentComposition ? JSON.parse(currentComposition) : undefined,
+      mediaLibrary: mediaBinItems,
+      compositionDuration: undefined // Will be calculated from composition
+    };
+
+    try {
+      // Process ALL messages with synth to maintain proper conversation state and workflow
+      await logSynthCall(messageContent, synthContext);
+      
+      setIsWaitingForResponse(true);
+      
+      const synthResponse = await synth.processMessage(messageContent, synthContext);
+      await logSynthResponse(synthResponse);
+      
+      // Clear loading state
+      setIsWaitingForResponse(false);
+      
+      // Handle different response types
+      if (synthResponse.type === 'probe') {
+        // Probe request - analyze media file and continue conversation
+        console.log("🔍 Probe request:", synthResponse.fileName, synthResponse.question);
+        
+        const analyzingMessage = {
+          id: (Date.now() + 1).toString(),
+          content: `Analyzing ${synthResponse.fileName}: ${synthResponse.question}`,
+          isUser: false,
+          timestamp: new Date(),
+          isAnalyzing: true,
+        };
+        
+        // Add analyzing message to UI immediately
+        onMessagesChange(prevMessages => [...prevMessages, analyzingMessage]);
+        
+        // Get probe results 
+        const probeResults = await handleProbeRequest(synthResponse.fileName!, synthResponse.question!, messageContent, conversationMessages, synthContext);
+        
+        // Return the probe results to be added to the UI alongside the analyzing message
+        return probeResults;
+        
+      } else if (synthResponse.type === 'edit') {
+        // Edit instructions ready - send to backend for implementation
+        await logEditExecution(synthResponse.content);
+        console.log("🎬 Edit instructions generated:", synthResponse.content);
+        
+        if (onGenerateComposition) {
+          const applyingMessage = {
+            id: (Date.now() + 1).toString(),
+            content: "Applying your requested edits, this may take a moment...",
+            isUser: false,
+            timestamp: new Date(),
+          };
+          
+          // Add the message immediately
+          onMessagesChange(prevMessages => [...prevMessages, applyingMessage]);
+          
+          const success = await onGenerateComposition(synthResponse.content, mediaBinItems);
+          await logEditResult(success);
+          
+          return [
+            {
+              id: (Date.now() + 2).toString(),
+              content: success ? "✨ Edit implemented successfully!" : "❌ Failed to implement the edit. Please try again.",
+              isUser: false,
+              timestamp: new Date(),
+            }
+          ];
+        } else {
+          return [{
+            id: (Date.now() + 1).toString(),
+            content: "Edit instructions ready, but no implementation handler available.",
+            isUser: false,
+            timestamp: new Date(),
+          }];
+        }
+        
+      } else if (synthResponse.type === 'chat') {
+        // Chat response - use streaming for better UX
+        await logChatResponse(synthResponse.content);
+        
+        return [{
+          id: (Date.now() + 1).toString(),
+          content: synthResponse.content,
+          isUser: false,
+          timestamp: new Date(),
+        }];
+      } else {
+        // Fallback for unknown types
+        return [{
+          id: (Date.now() + 1).toString(),
+          content: synthResponse.content,
+          isUser: false,
+          timestamp: new Date(),
+        }];
+      }
+      
+    } catch (error) {
+      console.error("❌ Conversational synth failed:", error);
+      await logSynthResponse({ error: error instanceof Error ? error.message : String(error) });
+      
+      return [{
+        id: (Date.now() + 1).toString(),
+        content: "I'm having trouble processing your message right now. Could you try again?",
+        isUser: false,
+        timestamp: new Date(),
+      }];
+    } finally {
+      // Save log after each conversation turn
+      await logWorkflowComplete();
+    }
+  };
+
   const handleSendMessage = async (includeAllMedia = false) => {
     if (!inputValue.trim()) return;
 
@@ -221,7 +774,7 @@ export function ChatBox({
       timestamp: new Date(),
     };
 
-    onMessagesChange([...messages, userMessage]);
+    onMessagesChange(prevMessages => [...prevMessages, userMessage]);
     setInputValue("");
     setMentionedItems([]); // Clear mentioned items after sending
     setIsTyping(true);
@@ -233,23 +786,22 @@ export function ChatBox({
     }
 
     try {
-      // Check if we're in standalone preview mode
-      if (isStandalonePreview && onGenerateComposition) {
-        console.log("🎬 Standalone preview mode - directly calling composition generation");
+      // Check if we're in standalone preview mode - use conversational synth
+      if (isStandalonePreview) {
+        console.log("🎬 Standalone preview mode - using conversational synth");
         
-        // Store the current composition before any changes
-        const oldComposition = currentComposition || "";
+        const aiMessages = await handleConversationalMessage(messageContent);
+        // Use functional update to get the current messages at the time of the update
+        onMessagesChange(prevMessages => {
+          // Update any analyzing messages to remove loading state
+          const updatedMessages = prevMessages.map(msg => 
+            msg.isAnalyzing ? { ...msg, isAnalyzing: false } : msg
+          );
+          return [...updatedMessages, ...aiMessages];
+        });
         
-        // Directly call composition generation without validation
-        const success = await onGenerateComposition(messageContent, mediaBinItems);
-        
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: success ? "✨ I've updated your composition based on your request!" : "❌ Error connecting to AI service.",
-          isUser: false,
-          timestamp: new Date(),
-        };
-        onMessagesChange([...messages, userMessage, aiMessage]);
+        // Auto-collapse any analysis result messages
+        autoCollapseAnalysisResults(aiMessages);
         
         setIsTyping(false);
         return;
@@ -315,7 +867,7 @@ export function ChatBox({
         timestamp: new Date(),
       };
 
-      onMessagesChange([...messages, userMessage, aiMessage]);
+      onMessagesChange(prevMessages => [...prevMessages, userMessage, aiMessage]);
     } catch (error) {
       console.error("Error calling AI API:", error);
       
@@ -326,7 +878,7 @@ export function ChatBox({
         timestamp: new Date(),
       };
       
-      onMessagesChange([...messages, userMessage, errorMessage]);
+      onMessagesChange(prevMessages => [...prevMessages, userMessage, errorMessage]);
     } finally {
       setIsTyping(false);
     }
@@ -370,6 +922,58 @@ export function ChatBox({
         handleSendMessage(sendWithMedia);
       }
     }
+  };
+
+  const toggleMessageCollapsed = (messageId: string) => {
+    setCollapsedMessages(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(messageId)) {
+        newSet.delete(messageId);
+      } else {
+        newSet.add(messageId);
+      }
+      return newSet;
+    });
+  };
+
+  const formatMessageText = (text: string) => {
+    // Simple markdown-like formatting
+    return text
+      .split(/(\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|^---+$|^#{1,6}\s+.+$)/gm)
+      .map((part, index) => {
+        if (part.startsWith('***') && part.endsWith('***')) {
+          // Bold italic
+          return <strong key={index} className="font-bold italic">{part.slice(3, -3)}</strong>;
+        } else if (part.startsWith('**') && part.endsWith('**')) {
+          // Bold
+          return <strong key={index} className="font-bold">{part.slice(2, -2)}</strong>;
+        } else if (part.startsWith('*') && part.endsWith('*')) {
+          // Italic
+          return <em key={index} className="italic">{part.slice(1, -1)}</em>;
+        } else if (part.startsWith('`') && part.endsWith('`')) {
+          // Code
+          return <code key={index} className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
+        } else if (/^---+$/.test(part.trim())) {
+          // Horizontal rule
+          return <hr key={index} className="my-2 border-gray-300 dark:border-gray-600" />;
+        } else if (/^#{1,6}\s+/.test(part)) {
+          // Headings
+          const level = part.match(/^(#{1,6})/)?.[1].length || 1;
+          const content = part.replace(/^#{1,6}\s+/, '');
+          if (level === 1) {
+            return <h1 key={index} className="text-lg font-bold mt-2 mb-1">{content}</h1>;
+          } else if (level === 2) {
+            return <h2 key={index} className="text-base font-bold mt-2 mb-1">{content}</h2>;
+          } else if (level === 3) {
+            return <h3 key={index} className="text-sm font-semibold mt-1 mb-1">{content}</h3>;
+          } else {
+            return <h4 key={index} className="text-sm font-medium mt-1 mb-1">{content}</h4>;
+          }
+        } else {
+          // Regular text
+          return part;
+        }
+      });
   };
 
   const formatTime = (date: Date) => {
@@ -500,26 +1104,44 @@ export function ChatBox({
               )}
               
               {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    message.isUser ? "justify-end" : "justify-start"
-                  }`}
-                >
+                message.isAnalyzing ? (
+                  // Render analyzing messages as plain text without bubble
+                  <div key={message.id} className="px-3 py-1 text-xs text-muted-foreground italic">
+                    <div className="flex items-center gap-2">
+                      <span>{formatMessageText(message.content)}</span>
+                      <div className="flex space-x-1">
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
                   <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
-                      message.isUser
-                        ? "bg-primary text-primary-foreground ml-8"
-                        : message.isExplanationMode
-                        ? "bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 mr-8"
-                        : "bg-muted mr-8"
+                    key={message.id}
+                    className={`flex ${
+                      message.isUser ? "justify-end" : "justify-start"
                     }`}
                   >
+                    <div
+                      className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
+                        message.isUser
+                          ? "bg-primary text-primary-foreground ml-8"
+                          : message.isExplanationMode
+                          ? "bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 mr-8"
+                          : message.isAnalysisResult
+                          ? "bg-slate-800 dark:bg-slate-900 text-white mr-8 cursor-pointer hover:bg-slate-700 dark:hover:bg-slate-800 transition-colors"
+                          : "bg-muted mr-8"
+                      }`}
+                      onClick={message.isAnalysisResult ? () => toggleMessageCollapsed(message.id) : undefined}
+                    >
                     <div className="flex items-start gap-2">
-                      {!message.isUser && (
+                      {!message.isUser && !message.isAnalyzing && (
                         <Bot className={`h-3 w-3 mt-0.5 shrink-0 ${
                           message.isExplanationMode
                             ? "text-green-600 dark:text-green-400"
+                            : message.isAnalysisResult
+                            ? "text-slate-300"
                             : "text-muted-foreground"
                         }`} />
                       )}
@@ -529,13 +1151,29 @@ export function ChatBox({
                             📝 Changes made:
                           </div>
                         )}
-                        <p className={`leading-relaxed break-words overflow-wrap-anywhere ${
-                          message.isExplanationMode
-                            ? "text-green-800 dark:text-green-200"
-                            : ""
-                        }`}>
-                          {message.content}
-                        </p>
+                        {message.isAnalysisResult ? (
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-medium text-slate-200">Analysis Result</span>
+                              <ChevronDown className={`h-3 w-3 transition-transform ${
+                                collapsedMessages.has(message.id) ? 'rotate-180' : ''
+                              }`} />
+                            </div>
+                            {!collapsedMessages.has(message.id) && (
+                              <p className="leading-relaxed break-words overflow-wrap-anywhere">
+                                {formatMessageText(message.content)}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className={`leading-relaxed break-words overflow-wrap-anywhere ${
+                            message.isExplanationMode
+                              ? "text-green-800 dark:text-green-200"
+                              : ""
+                          }`}>
+                            {formatMessageText(message.content)}
+                          </p>
+                        )}
                         <span className="text-xs opacity-70 mt-1 block">
                           {formatTime(message.timestamp)}
                         </span>
@@ -546,203 +1184,184 @@ export function ChatBox({
                     </div>
                   </div>
                 </div>
+                )
               ))}
-
-              {/* Typing Indicator */}
-              {isTyping && (
-                <div className="flex justify-start">
-                  <div className="max-w-[80%] rounded-lg px-3 py-2 text-xs bg-muted mr-8">
-                    <div className="flex items-center gap-2">
-                      <Bot className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <div className="flex space-x-1">
-                        <div
-                          className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
-                          style={{ animationDelay: "0ms" }}
-                        />
-                        <div
-                          className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
-                          style={{ animationDelay: "150ms" }}
-                        />
-                        <div
-                          className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
-                          style={{ animationDelay: "300ms" }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Invisible element to scroll to */}
               <div ref={messagesEndRef} />
             </div>
-          </div>
-        )}
-      </div>
 
-      {/* Input Area with enhanced overlap effect */}
-      <div className="relative bg-gradient-to-t from-background to-background/50 p-3 border-t border-border/30 backdrop-blur-sm -mt-2 pt-4">
-        {/* Mentions Dropdown */}
-        {showMentions && filteredMentions.length > 0 && (
-          <div
-            ref={mentionsRef}
-            className="absolute bottom-full left-4 right-4 mb-2 bg-background border border-border/50 rounded-lg shadow-lg max-h-40 overflow-y-auto z-50"
-          >
-            {filteredMentions.map((item, index) => (
-              <div
-                key={item.id}
-                className={`px-3 py-2 text-xs cursor-pointer flex items-center gap-2 ${
-                  index === selectedMentionIndex
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-muted"
-                }`}
-                onClick={() => insertMention(item)}
-              >
-                <div className="w-6 h-6 bg-muted/50 rounded flex items-center justify-center">
-                  {item.mediaType === "video" ? (
-                    <FileVideo className="h-3 w-3 text-muted-foreground" />
-                  ) : item.mediaType === "image" ? (
-                    <FileImage className="h-3 w-3 text-muted-foreground" />
-                  ) : (
-                    <Type className="h-3 w-3 text-muted-foreground" />
-                  )}
+            {isWaitingForResponse && (
+              <div className="px-3 py-2 flex items-center gap-2">
+                <div className="flex items-start gap-2">
+                  <Bot className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                  <div className="flex items-center gap-1 pt-1">
+                    <div className="flex space-x-1">
+                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
+                    </div>
+                  </div>
                 </div>
-                <span className="flex-1 truncate">{item.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {item.mediaType}
-                </span>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Send Options Dropdown */}
-        {showSendOptions && (
-          <div
-            ref={sendOptionsRef}
-            className="absolute bottom-full right-4 mb-2 bg-background border border-border/50 rounded-md shadow-lg z-50 min-w-48"
-          >
-            <div className="p-1">
-              <div
-                className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
-                onClick={() => {
-                  setSendWithMedia(false);
-                  setShowSendOptions(false);
-                  handleSendMessage(false);
-                }}
-              >
-                <span>Send</span>
-                <span className="text-xs text-muted-foreground font-mono">
-                  Enter
-                </span>
-              </div>
-              <div
-                className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
-                onClick={() => {
-                  setSendWithMedia(true);
-                  setShowSendOptions(false);
-                  handleSendMessage(true);
-                }}
-              >
-                <span>Send with all Media</span>
-              </div>
-              <div
-                className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
-                onClick={() => {
-                  // Clear current messages and send to new chat
-                  onMessagesChange([]);
-                  setShowSendOptions(false);
-                  handleSendMessage(false);
-                }}
-              >
-                <span>Send to New Chat</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Input container with subtle shadow and better styling */}
-        <div className="relative border border-border/60 rounded-lg bg-background/90 backdrop-blur-sm focus-within: focus-within:border-ring transition-all duration-200 shadow-sm">
-          {/* Full-width textarea */}
-          <textarea
-            ref={inputRef}
-            value={inputValue}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyPress}
-            placeholder={
-              isStandalonePreview 
-                ? isGeneratingComposition 
-                  ? "Generating composition..." 
-                  : "Describe what you want to see in the preview..."
-                : "Ask Screenwrite..."
-            }
-            className={cn(
-              "w-full min-h-8 max-h-20 resize-none text-xs bg-transparent border-0 px-3 pt-2.5 pb-1 placeholder:text-muted-foreground/60 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
-              "transition-all duration-200 leading-relaxed"
             )}
-            disabled={isTyping || isGeneratingComposition}
-            rows={1}
-            style={{ height: `${Math.max(textareaHeight, 32)}px` }}
-          />
 
-          {/* Buttons row below text with refined styling */}
-          <div className="flex items-center justify-between px-2.5 pb-2 pt-0">
-            {/* @ Button - left side, smaller */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 text-muted-foreground/70 hover:text-foreground hover:bg-muted/50"
-              onClick={() => {
-                if (inputRef.current) {
-                  const cursorPos =
-                    inputRef.current.selectionStart || inputValue.length;
-                  const newValue =
-                    inputValue.slice(0, cursorPos) +
-                    "@" +
-                    inputValue.slice(cursorPos);
-                  setInputValue(newValue);
-                  const newCursorPos = cursorPos + 1;
-                  setCursorPosition(newCursorPos);
-
-                  // Trigger mentions dropdown immediately
-                  setMentionQuery("");
-                  setShowMentions(true);
-                  setSelectedMentionIndex(0);
-
-                  setTimeout(() => {
-                    inputRef.current?.focus();
-                    inputRef.current?.setSelectionRange(
-                      newCursorPos,
-                      newCursorPos
-                    );
-                  }, 0);
-                }
-              }}
-            >
-              <AtSign className="h-2.5 w-2.5" />
-            </Button>
-
-            {/* Send buttons - right side, smaller and refined */}
-            <div className="flex items-center gap-0.5">
-              <Button
-                onClick={() => handleSendMessage(sendWithMedia)}
-                disabled={!inputValue.trim() || isTyping}
-                size="sm"
-                className="h-6 px-2 bg-transparent hover:bg-primary/10 text-primary hover:text-primary text-xs"
-                variant="ghost"
+            {/* Mentions popup */}
+            {showMentions && (
+              <div
+                ref={mentionsRef}
+                className="absolute bottom-full left-4 right-4 mb-2 bg-background border border-border/50 rounded-lg shadow-lg max-h-40 overflow-y-auto z-50"
               >
-                <Send className="h-2.5 w-2.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 text-muted-foreground/70 hover:text-foreground hover:bg-muted/50"
-                disabled={isTyping}
-                onClick={() => setShowSendOptions(!showSendOptions)}
+                {filteredMentions.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className={`px-3 py-2 text-xs cursor-pointer flex items-center gap-2 ${
+                      index === selectedMentionIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                    onClick={() => insertMention(item)}
+                  >
+                    <div className="w-6 h-6 bg-muted/50 rounded flex items-center justify-center">
+                      {item.mediaType === "video" ? (
+                        <FileVideo className="h-3 w-3 text-muted-foreground" />
+                      ) : item.mediaType === "image" ? (
+                        <FileImage className="h-3 w-3 text-muted-foreground" />
+                      ) : (
+                        <Type className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </div>
+                    <span className="flex-1 truncate">{item.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {item.mediaType}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Send Options Dropdown */}
+            {showSendOptions && (
+              <div
+                ref={sendOptionsRef}
+                className="absolute bottom-full right-4 mb-2 bg-background border border-border/50 rounded-md shadow-lg z-50 min-w-48"
               >
-                <ChevronDown className="h-2.5 w-2.5" />
-              </Button>
+                <div className="p-1">
+                  <div
+                    className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
+                    onClick={() => {
+                      setSendWithMedia(false);
+                      setShowSendOptions(false);
+                      handleSendMessage(false);
+                    }}
+                  >
+                    <span>Send</span>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      Enter
+                    </span>
+                  </div>
+                  <div
+                    className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
+                    onClick={() => {
+                      setSendWithMedia(true);
+                      setShowSendOptions(false);
+                      handleSendMessage(true);
+                    }}
+                  >
+                    <span>Send with all Media</span>
+                  </div>
+                  <div
+                    className="px-3 py-2 text-xs cursor-pointer hover:bg-muted rounded flex items-center justify-between"
+                    onClick={() => {
+                      // Clear current messages and send to new chat
+                      onMessagesChange(() => []);
+                      setShowSendOptions(false);
+                      handleSendMessage(false);
+                    }}
+                  >
+                    <span>Send to New Chat</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Input Area */}
+        <div className="border-t border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="p-3 relative">
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage(sendWithMedia);
+                  }
+                }}
+                placeholder="Ask Screenwrite to create or edit your video..."
+                className="w-full resize-none border-0 bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-0 pr-12 overflow-hidden"
+                style={{ height: `${textareaHeight}px` }}
+                disabled={isWaitingForResponse}
+              />
+              
+              <div className="absolute right-2 bottom-1 flex items-center gap-1">
+                {(inputValue.trim() || mentionedItems.length > 0) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground relative"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowSendOptions(!showSendOptions);
+                    }}
+                    disabled={isWaitingForResponse}
+                  >
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                )}
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-primary hover:text-primary/80 hover:bg-primary/10"
+                  onClick={() => handleSendMessage(sendWithMedia)}
+                  disabled={(!inputValue.trim() && mentionedItems.length === 0) || isWaitingForResponse}
+                >
+                  <Send className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
+
+            {mentionedItems.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-border/50">
+                {mentionedItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-1 px-2 py-1 bg-muted rounded text-xs"
+                  >
+                    <div className="w-3 h-3 bg-muted-foreground/20 rounded flex items-center justify-center">
+                      {item.mediaType === "video" ? (
+                        <FileVideo className="h-2 w-2 text-muted-foreground" />
+                      ) : item.mediaType === "image" ? (
+                        <FileImage className="h-2 w-2 text-muted-foreground" />
+                      ) : (
+                        <Type className="h-2 w-2 text-muted-foreground" />
+                      )}
+                    </div>
+                    <span className="truncate max-w-24">{item.name}</span>
+                    <button
+                      onClick={() => setMentionedItems(prev => prev.filter(i => i.id !== item.id))}
+                      className="text-muted-foreground hover:text-foreground ml-1"
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -827,12 +827,9 @@ export default function TimelineEditor() {
                   onMessagesChange={setChatMessages}
                   timelineState={{ tracks: [] }} // Empty timeline for now
                   isStandalonePreview={true}
+                  currentComposition={JSON.stringify(currentComposition)} // Pass current blueprint as JSON string
                   onGenerateComposition={handleGenerateComposition} // AI generation function implemented!
                   isGeneratingComposition={isAiGenerating}
-                  currentComposition={undefined}
-                  generationError={undefined}
-                  onRetryFix={undefined}
-                  onClearError={undefined}
                 />
               </div>
             </ResizablePanel>

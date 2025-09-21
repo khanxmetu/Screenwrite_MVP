@@ -112,6 +112,17 @@ class GeminiUploadResponse(BaseModel):
     error_message: Optional[str] = None
 
 
+class VideoAnalysisRequest(BaseModel):
+    gemini_file_id: str
+    question: str
+
+
+class VideoAnalysisResponse(BaseModel):
+    success: bool
+    analysis: Optional[str] = None
+    error_message: Optional[str] = None
+
+
 @app.post("/upload-to-gemini")
 async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse:
     """Upload a file to Gemini Files API or Cloud Storage for later analysis."""
@@ -174,6 +185,30 @@ async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse
                 
                 # Clean up temporary file
                 os.unlink(tmp_file.name)
+                
+                # Wait for file to be ready for analysis (max 30 seconds)
+                import time
+                max_wait_time = 30
+                wait_interval = 2
+                elapsed_time = 0
+                
+                while elapsed_time < max_wait_time:
+                    try:
+                        file_status = gemini_api.files.get(name=uploaded_file.name)
+                        if hasattr(file_status, 'state') and file_status.state == 'ACTIVE':
+                            print(f"✅ File is ACTIVE and ready for analysis: {uploaded_file.name}")
+                            break
+                        else:
+                            print(f"⏳ File not ready yet, state: {getattr(file_status, 'state', 'UNKNOWN')}, waiting...")
+                            time.sleep(wait_interval)
+                            elapsed_time += wait_interval
+                    except Exception as e:
+                        print(f"⚠️ Error checking file state: {e}, continuing...")
+                        time.sleep(wait_interval)
+                        elapsed_time += wait_interval
+                
+                if elapsed_time >= max_wait_time:
+                    print(f"⚠️ File upload completed but may not be fully ready for analysis yet: {uploaded_file.name}")
             
             print(f"✅ Gemini Upload: Success - File ID: {uploaded_file.name}")
             
@@ -317,6 +352,111 @@ Fix the error and return the corrected code."""
             success=False,
             error_message=str(e)
         )
+
+
+@app.post("/analyze-video")
+async def analyze_video(request: VideoAnalysisRequest) -> VideoAnalysisResponse:
+    """Analyze a video file using Gemini Files API reference."""
+    
+    try:
+        print(f"🎬 Video Analysis: Analyzing file {request.gemini_file_id}")
+        print(f"🔍 Question: {request.question}")
+        
+        if USE_VERTEX_AI:
+            # For Vertex AI, the gemini_file_id is actually a Cloud Storage URI
+            # Use a simpler approach - pass the file URI directly in contents
+            response = gemini_api.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[request.gemini_file_id, request.question],
+                config=types.GenerateContentConfig(temperature=0.1)
+            )
+        else:
+            # For regular Gemini API, use the file reference directly
+            # The gemini_file_id is the file URI from Files API (e.g., "files/abc123")
+            # We need to get the file object from the file ID
+            file_obj = gemini_api.files.get(name=request.gemini_file_id)
+            
+            # Check if file is ready for analysis
+            if hasattr(file_obj, 'state') and file_obj.state != 'ACTIVE':
+                raise Exception(f"Video file is not ready for analysis yet (state: {file_obj.state}). Please wait a moment and try again.")
+            
+            response = gemini_api.models.generate_content(
+                model="gemini-2.5-flash", 
+                contents=[file_obj, request.question],
+                config=types.GenerateContentConfig(temperature=0.1)
+            )
+        
+        analysis_result = response.text
+        print(f"✅ Video Analysis: Success - {len(analysis_result)} characters")
+        
+        return VideoAnalysisResponse(
+            success=True,
+            analysis=analysis_result
+        )
+        
+    except Exception as e:
+        print(f"❌ Video Analysis: Failed - {str(e)}")
+        
+        # Provide user-friendly error messages
+        error_msg = str(e)
+        if "API key" in error_msg.lower():
+            user_error = "AI service authentication failed. Please check server configuration."
+        elif "network" in error_msg.lower() or "connection" in error_msg.lower():
+            user_error = "Network connection error. Please check your internet connection and try again."
+        elif "quota" in error_msg.lower() or "limit" in error_msg.lower():
+            user_error = "AI service quota exceeded. Please try again later."
+        elif "not found" in error_msg.lower():
+            user_error = "Video file not found. Please try uploading the video again."
+        elif "failed_precondition" in error_msg.lower() or "not in an active state" in error_msg.lower():
+            user_error = "Video is still being processed by the AI service. Please wait a moment and try again."
+        elif "not ready for analysis yet" in error_msg.lower():
+            user_error = "Video is still being processed. Please wait a moment and try again."
+        else:
+            user_error = f"Video analysis failed: {error_msg}"
+        
+        return VideoAnalysisResponse(
+            success=False,
+            error_message=user_error
+        )
+
+
+class ChatLogRequest(BaseModel):
+    session_id: str
+    log_entry: Dict[str, Any]
+
+@app.post("/chat/log")
+async def save_chat_log(request: ChatLogRequest):
+    """Save chat workflow log entries to files"""
+    try:
+        logs_dir = "logs"
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        log_file = os.path.join(logs_dir, f"chat_workflow_{request.session_id}.json")
+        
+        # Read existing log or create new one
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                log_data = json.load(f)
+        else:
+            log_data = {
+                "session_id": request.session_id,
+                "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "entries": []
+            }
+        
+        # Append new entry
+        log_data["entries"].append(request.log_entry)
+        log_data["last_updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        log_data["total_entries"] = len(log_data["entries"])
+        
+        # Save updated log
+        with open(log_file, 'w') as f:
+            json.dump(log_data, f, indent=2)
+        
+        return {"success": True, "log_file": log_file, "entry_count": len(log_data["entries"])}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save chat log: {str(e)}")
 
 
 if __name__ == "__main__":
