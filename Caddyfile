@@ -1,4 +1,22 @@
 pengwin.live {
+	@upload {
+		path /api/upload
+		method POST
+	}
+
+	request_body @upload {
+		max_size 2GB
+	}
+
+	reverse_proxy @upload http://backend:3000 {
+		transport http {
+			response_header_timeout 0
+			read_timeout 0
+			write_timeout 0
+			expect_continue_timeout 0
+		}
+	}
+
 	handle_path /ai/api/* {
 		reverse_proxy fastapi:3000
 	}
