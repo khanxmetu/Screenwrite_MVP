@@ -149,8 +149,8 @@ Available Transition Types:
 - "iris": Circular expand/contract
 
 Optional Directions:
-- "from-left", "from-right", "from-top", "from-bottom"
-- "to-left", "to-right", "to-top", "to-bottom"
+- For slide, flip transitions: "from-left", "from-right", "from-top", "from-bottom"
+- For wipe transitions: "from-left", "from-right", "from-top", "from-bottom", "from-top-left", "from-top-right", "from-bottom-left", "from-bottom-right"
 
 Transition Precedence Rules:
 - If Clip A has "transitionToNext" and Clip B has "transitionFromPrevious"
@@ -181,45 +181,46 @@ Comprehensive guide to styling and visual effects for video compositions.
 
 Absolute Positioning:
 - Use for precise element placement
-- position: 'absolute' with top, left, right, bottom
+- position: 'absolute' with top, left, right, bottom properties
 - Transform for center positioning: transform: 'translate(-50%, -50%)'
-- Z-index for layering control
+- zIndex for layering control (note: zIndex in React, z-index in CSS)
 
-Flexbox Patterns:
-- display: 'flex' for flexible layouts
-- justifyContent: 'center', 'space-between', 'flex-start', 'flex-end'
-- alignItems: 'center', 'flex-start', 'flex-end', 'stretch'
-- flexDirection: 'row', 'column', 'row-reverse', 'column-reverse'
-
-Grid Systems:
-- display: 'grid' for complex layouts
-- gridTemplateColumns, gridTemplateRows for structure
-- gap for spacing between items
-- gridArea for item placement
+Flexbox Properties:
+- display: 'flex' creates a flex container
+- justifyContent: 'flex-start', 'flex-end', 'center', 'space-between', 'space-around', 'space-evenly'
+- alignItems: 'flex-start', 'flex-end', 'center', 'stretch', 'baseline'
+- flexDirection: 'row', 'row-reverse', 'column', 'column-reverse'
+- flexWrap: 'nowrap', 'wrap', 'wrap-reverse'
+- gap: specify spacing between flex items
 
 Responsive Sizing:
-- Use viewport units: 'vw' (viewport width), 'vh' (viewport height)
+- Use viewport units: 'vw' (viewport width), 'vh' (viewport height), 'vmin', 'vmax'
 - Percentage units for relative sizing
 - rem/em for scalable typography
-- calc() for computed dimensions
+- calc() for computed dimensions with mixed units
 
 **VISUAL EFFECTS & STYLING**
 
-Filter Effects:
-- blur(px): Gaussian blur effect
-- brightness(%): Adjust brightness (100% = normal)
-- contrast(%): Adjust contrast (100% = normal)
-- saturate(%): Color saturation (100% = normal)
-- hue-rotate(deg): Shift color hue
-- sepia(%): Sepia tone effect
-- grayscale(%): Convert to grayscale
-- invert(%): Invert colors
+Filter Effects (filter property):
+- blur(px): Gaussian blur effect (e.g., blur(5px))
+- brightness(% or number): Adjust brightness (1 or 100% = normal, 0 = black, >1 = brighter)
+- contrast(% or number): Adjust contrast (1 or 100% = normal, 0 = gray, >1 = higher contrast)
+- saturate(% or number): Color saturation (1 or 100% = normal, 0 = grayscale, >1 = oversaturated)
+- hue-rotate(deg or turn): Shift color hue around color wheel
+- sepia(% or number): Sepia tone effect (1 or 100% = full sepia)
+- grayscale(% or number): Convert to grayscale (1 or 100% = full grayscale)
+- invert(% or number): Invert colors (1 or 100% = fully inverted)
+- opacity(% or number): Transparency (0 = transparent, 1 or 100% = opaque)
+- drop-shadow(offset-x offset-y blur-radius color): Drop shadow effect
 
 Gradient Backgrounds:
-- linear-gradient(direction, color1, color2, ...)
-- radial-gradient(shape, color1, color2, ...)
-- conic-gradient(from angle, color1, color2, ...)
-- Multiple gradients with comma separation
+- linear-gradient(direction, color-stop1, color-stop2, ...)
+  Direction: 'to right', 'to left', 'to bottom', 'to top', '45deg', '90deg'
+- radial-gradient(shape size at position, color1, color2, ...)
+  Shape: 'circle', 'ellipse'; Size: 'closest-side', 'farthest-corner'
+- conic-gradient(from angle at position, color1, color2, ...)
+- repeating-linear-gradient(), repeating-radial-gradient(), repeating-conic-gradient()
+- Multiple gradients with comma separation for layered effects
 
 Box Shadow Effects:
 - box-shadow: 'offsetX offsetY blur spread color'
@@ -228,31 +229,34 @@ Box Shadow Effects:
 - Use for depth, glow, and outline effects
 
 Text Styling:
-- textShadow: 'offsetX offsetY blur color'
-- textStroke: width and color for outlines
-- textTransform: 'uppercase', 'lowercase', 'capitalize'
-- letterSpacing, wordSpacing for typography control
+- textShadow: 'offset-x offset-y blur-radius color' (e.g., '2px 2px 4px rgba(0,0,0,0.5)')
+- WebkitTextStroke: 'width color' for text outlines (browser-specific)
+- textTransform: 'none', 'uppercase', 'lowercase', 'capitalize', 'full-width'
+- letterSpacing: space between characters (px, em, rem)
+- wordSpacing: space between words
+- lineHeight: vertical spacing between lines
+- textAlign: 'left', 'right', 'center', 'justify', 'start', 'end'
+- textDecoration: 'none', 'underline', 'overline', 'line-through'
+- fontWeight: 'normal', 'bold', 'lighter', 'bolder', or numeric values (100-900)
 
 **ANIMATION & MOTION**
 
-Transform Properties:
-- translate(X,Y): Move elements without affecting layout
-- translateX(), translateY(), translateZ() for individual axes
-- rotate(deg): Rotate elements around center point
-- rotateX(), rotateY(), rotateZ() for 3D rotation
-- scale(factor): Resize elements proportionally
-- scaleX(), scaleY() for directional scaling
-- skew(X,Y): Distort element shape
+Transform Functions (transform property):
+- translate(x, y): Move element by x and y distances
+- translateX(x), translateY(y), translateZ(z): Move along individual axes
+- rotate(angle): Rotate around center point (deg, rad, or turn units)
+- rotateX(angle), rotateY(angle), rotateZ(angle): 3D rotation around specific axes
+- scale(x, y): Resize element (1 = normal, 0.5 = half size, 2 = double size)
+- scaleX(factor), scaleY(factor), scaleZ(factor): Scale along individual axes
+- skew(x-angle, y-angle): Distort element shape along axes
+- skewX(angle), skewY(angle): Skew along individual axes
+- matrix(a, b, c, d, tx, ty): 2D transformation matrix
+- perspective(length): Set 3D perspective distance
 
 Transform Origin:
 - transformOrigin: Control rotation and scaling center point
 - Values: 'center', 'top left', 'bottom right', percentages
 - Essential for proper rotation animations
-
-3D Transforms:
-- perspective: Add 3D depth perception
-- transform-style: 'preserve-3d' for nested 3D elements
-- backface-visibility: 'hidden' to hide element backs
 
 Animation Timing:
 - Use SW.interp() for smooth value interpolation
@@ -263,47 +267,304 @@ Animation Timing:
 **ADVANCED TECHNIQUES**
 
 Clip Path Masking:
-- clipPath: Create custom shapes and masks
-- circle(), ellipse(), polygon() shapes
-- inset() for rectangular clips
-- Custom SVG paths for complex shapes
+- clipPath: Create custom shapes and masks using CSS functions
+- circle(radius at position): circular clipping
+- ellipse(rx ry at position): elliptical clipping  
+- polygon(x1 y1, x2 y2, ...): custom polygon shapes
+- inset(top right bottom left): rectangular clips with rounded corners
+- path('SVG path data'): complex custom shapes
 
 Backdrop Effects:
-- backdropFilter: Apply effects to elements behind
-- Combine with semi-transparent backgrounds
-- Common: blur() for glass effects
+- backdropFilter: Apply filter effects to area behind element
+- Same filter functions as regular filter property
+- Requires semi-transparent background to see effect
+- Common use: backdropFilter: 'blur(10px)' for glass/frosted effect
 
-CSS Variables:
-- Use with SW.interp() for dynamic values
-- '--custom-property': Define reusable values
-- 'var(--custom-property)' to use variables
+CSS Custom Properties (Variables):
+- '--variable-name': value to define custom properties
+- 'var(--variable-name, fallback)' to use variables
+- Can be used with SW.interp() for dynamic animated values
+- Scope: global (:root) or local to specific elements
 
 Multiple Backgrounds:
 - Comma-separate multiple background layers
-- Control individual background properties
-- Layer images, gradients, and colors
+- Control individual background properties with background-size, background-position
+- Layer images, gradients, and colors (first listed appears on top)
 
-**ABSOLUTEFILL STYLING PATTERNS**
+**MODERN CSS FEATURES**
 
-Background Compositions:
-- Use React.createElement(SW.AbsoluteFill, ...) for full-screen backgrounds
-- Apply gradients, images, or videos as backgrounds
-- Layer multiple AbsoluteFill elements with different z-index
+Color Functions:
+- rgb(r g b / alpha), hsl(h s l / alpha) modern syntax
+- hwb(hue whiteness blackness / alpha) for intuitive color mixing
+- color(display-p3 r g b) for wide gamut colors
+- color-mix(in oklch, color1, color2) for color mixing
 
-Content Centering:
-- Flexbox centering within AbsoluteFill containers
-- display: 'flex', justifyContent: 'center', alignItems: 'center'
-- Perfect for titles, overlays, and focal content
+**BLUEPRINT CSS POSITIONING & STYLING GUIDELINES**
 
-Multi-Layer Compositions:
-- Stack multiple React.createElement(SW.AbsoluteFill, ...) elements
-- Use z-index or render order for layering
-- Background layer (z-index: 1) + content layers (z-index: 2+)
+**CRITICAL: SW Framework Container Model**
 
-Layout Systems:
-- Grid or flexbox systems within AbsoluteFill
-- Divide screen into sections and regions
-- Responsive layouts using viewport units
+The Blueprint system uses **absolute positioning as the foundation**. Understanding container responsibility is essential:
+
+- `SW.AbsoluteFill` = **Positioned Container** (100% width/height, position: absolute)
+- Child elements = **Content Elements** (positioned within the container)
+
+**Rule 1: Primary Positioning - Use Absolute Properties**
+
+For positioning elements within SW.AbsoluteFill, ALWAYS use absolute CSS properties:
+
+```javascript
+// ✅ CORRECT: Direct absolute positioning
+return React.createElement(SW.AbsoluteFill, {}, 
+  React.createElement('div', {
+    style: {
+      position: 'absolute',
+      bottom: '10%',        // Distance from bottom
+      left: '50%',          // 50% from left edge
+      transform: 'translateX(-50%)', // Center horizontally
+      fontSize: '48px'
+    }
+  }, 'Text Content')
+);
+
+// ❌ WRONG: Using flexbox for primary positioning
+return React.createElement(SW.AbsoluteFill, {
+  style: {
+    display: 'flex',
+    alignItems: 'flex-end',  // This is WRONG for bottom positioning
+    justifyContent: 'center'
+  }
+}, /* content */);
+```
+
+**Rule 2: Common Positioning Patterns**
+
+Center Text at Bottom (10% margin):
+```javascript
+style: {
+  position: 'absolute',
+  bottom: '10%',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  textAlign: 'center'
+}
+```
+
+Top-Left Corner with Margins:
+```javascript
+style: {
+  position: 'absolute',
+  top: '20px',
+  left: '20px'
+}
+```
+
+Full-Width Header at Top:
+```javascript
+style: {
+  position: 'absolute',
+  top: '0',
+  left: '0',
+  right: '0',
+  textAlign: 'center',
+  padding: '20px 0'
+}
+```
+
+Bottom-Right Corner:
+```javascript
+style: {
+  position: 'absolute',
+  bottom: '20px',
+  right: '20px'
+}
+```
+
+Perfectly Centered (both axes):
+```javascript
+style: {
+  position: 'absolute',
+  top: '50%',
+  left: '50%',
+  transform: 'translate(-50%, -50%)'
+}
+```
+
+**Rule 3: When to Use Flexbox**
+
+ONLY use flexbox for internal element arrangement, NOT primary positioning:
+
+```javascript
+// ✅ CORRECT: Flex for arranging multiple children within positioned container
+return React.createElement(SW.AbsoluteFill, {}, 
+  React.createElement('div', {
+    style: {
+      position: 'absolute',
+      bottom: '10%',           // Position the container first
+      left: '0',
+      right: '0',
+      display: 'flex',         // Then use flex for internal layout
+      justifyContent: 'center',
+      gap: '20px'
+    }
+  }, [
+    React.createElement('span', {key: 1}, 'Item 1'),
+    React.createElement('span', {key: 2}, 'Item 2')
+  ])
+);
+```
+
+**Rule 4: Container Responsibility Hierarchy**
+
+```
+SW.AbsoluteFill (Screen Container)
+├── style: {} ← Usually empty or background only
+└── Child Elements (Content Containers)
+    ├── style: { position: 'absolute', top/bottom/left/right } ← POSITIONING
+    └── Grandchild Elements (Content)
+        └── style: { fontSize, color, etc. } ← STYLING
+```
+
+Example Breakdown:
+```javascript
+return React.createElement(SW.AbsoluteFill, 
+  { style: { background: 'rgba(0,0,0,0.1)' } },  // Screen-level styling only
+  React.createElement('div', {
+    style: {
+      position: 'absolute',    // POSITIONING LAYER
+      bottom: '15%',
+      left: '50%',
+      transform: 'translateX(-50%)'
+    }
+  },
+    React.createElement('h1', {
+      style: {                 // CONTENT STYLING LAYER
+        fontSize: '48px',
+        fontFamily: 'sans-serif',
+        color: '#FFD700',
+        textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+        textAlign: 'center',
+        margin: '0'
+      }
+    }, 'Title Text')
+  )
+);
+```
+
+**Rule 5: Common Mistakes to Avoid**
+
+❌ Mistake 1: Wrong positioning method
+```javascript
+// WRONG: Using flex alignment for screen positioning
+style: {
+  display: 'flex',
+  alignItems: 'flex-end'  // This puts content on the RIGHT, not bottom!
+}
+
+// CORRECT: Direct positioning
+style: {
+  position: 'absolute',
+  bottom: '10%'
+}
+```
+
+❌ Mistake 2: Styling wrong container
+```javascript
+// WRONG: Putting content styles on positioning container
+React.createElement('div', {
+  style: {
+    position: 'absolute',
+    bottom: '10%',
+    fontSize: '48px',      // Style pollution - should be on content element
+    color: 'gold'          // Style pollution - should be on content element
+  }
+}, 'Text')
+
+// CORRECT: Separate positioning from content styling
+React.createElement('div', {
+  style: { position: 'absolute', bottom: '10%' }  // Position only
+}, 
+  React.createElement('span', {
+    style: { fontSize: '48px', color: 'gold' }    // Content styling
+  }, 'Text')
+)
+```
+
+❌ Mistake 3: Over-nesting containers
+```javascript
+// WRONG: Unnecessary container layers
+React.createElement(SW.AbsoluteFill, {},
+  React.createElement('div', { style: { display: 'flex' } },
+    React.createElement('div', { style: { alignItems: 'center' } },
+      React.createElement('div', {}, 'Simple Text')
+    )
+  )
+)
+
+// CORRECT: Direct approach
+React.createElement(SW.AbsoluteFill, {},
+  React.createElement('div', {
+    style: {
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)'
+    }
+  }, 'Simple Text')
+)
+```
+
+**Rule 6: Responsive Design Patterns**
+
+Use percentage-based positioning for responsive layouts:
+```javascript
+// Mobile-friendly bottom text
+style: {
+  position: 'absolute',
+  bottom: '8vh',        // Viewport height unit
+  left: '5vw',          // Viewport width unit
+  right: '5vw',         // Creates side margins
+  textAlign: 'center'
+}
+
+// Scalable corner elements
+style: {
+  position: 'absolute',
+  top: '2%',           // Percentage of container
+  right: '3%',
+  fontSize: '3vw'      // Scales with viewport
+}
+```
+
+**Rule 7: Visual Hierarchy Best Practices**
+
+Layer Management (multiple elements):
+```javascript
+return React.createElement(SW.AbsoluteFill, {}, [
+  // Background layer
+  React.createElement('div', {
+    key: 'bg',
+    style: {
+      position: 'absolute',
+      top: '0', left: '0', right: '0', bottom: '0',
+      background: 'linear-gradient(rgba(0,0,0,0.3), transparent)',
+      zIndex: 1
+    }
+  }),
+  // Content layer
+  React.createElement('div', {
+    key: 'content',
+    style: {
+      position: 'absolute',
+      bottom: '10%',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: 2              // Above background
+    }
+  }, 'Main Content')
+]);
+```
+
+**Remember: SW.AbsoluteFill is your positioned stage. Place elements on it directly using absolute positioning, then style the content.**
 """
 
 # ============================================================================
