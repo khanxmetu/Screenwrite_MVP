@@ -779,7 +779,13 @@ export function ChatBox({
         
         const aiMessages = await handleConversationalMessage(messageContent);
         // Use functional update to get the current messages at the time of the update
-        onMessagesChange(prevMessages => [...prevMessages, ...aiMessages]);
+        onMessagesChange(prevMessages => {
+          // Update any analyzing messages to remove loading state
+          const updatedMessages = prevMessages.map(msg => 
+            msg.isAnalyzing ? { ...msg, isAnalyzing: false } : msg
+          );
+          return [...updatedMessages, ...aiMessages];
+        });
         
         // Auto-collapse any analysis result messages
         const analysisMessages = aiMessages.filter((msg: Message) => msg.isAnalysisResult);
@@ -1142,12 +1148,21 @@ export function ChatBox({
                               </p>
                             )}
                           </div>
+                        ) : message.isAnalyzing ? (
+                          <div className="flex items-center gap-2">
+                            <p className="leading-relaxed break-words overflow-wrap-anywhere text-muted-foreground italic">
+                              {formatMessageText(message.content)}
+                            </p>
+                            <div className="flex space-x-1 ml-2">
+                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
+                            </div>
+                          </div>
                         ) : (
                           <p className={`leading-relaxed break-words overflow-wrap-anywhere ${
                             message.isExplanationMode
                               ? "text-green-800 dark:text-green-200"
-                              : message.isAnalyzing
-                              ? "text-muted-foreground italic"
                               : ""
                           }`}>
                             {formatMessageText(message.content)}
