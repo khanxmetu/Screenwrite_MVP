@@ -163,7 +163,7 @@ export function ChatBox({
         // Add "now analyzing" message to show the retry is happening
         const analyzingMessage: Message = {
           id: Date.now().toString(),
-          content: `🔍 Video ready! Now analyzing ${fileName}...`,
+          content: `Video ready! Now analyzing ${fileName}...`,
           isUser: false,
           timestamp: new Date(),
           isAnalyzing: true,
@@ -173,6 +173,7 @@ export function ChatBox({
         // Retry the probe using the main flow with all context
         handleProbeRequest(fileName, question, originalMessage, conversationMessages, synthContext).then(newMessages => {
           onMessagesChange(prevMessages => [...prevMessages, ...newMessages]);
+          autoCollapseAnalysisResults(newMessages);
         }).catch(error => {
           console.error("❌ Retry failed:", error);
           const errorMessage: Message = {
@@ -186,6 +187,18 @@ export function ChatBox({
       }
     }
   }, [mediaBinItems, pendingProbe]);
+
+  // Helper function to auto-collapse analysis result messages
+  const autoCollapseAnalysisResults = (messages: Message[]) => {
+    const analysisMessages = messages.filter((msg: Message) => msg.isAnalysisResult);
+    if (analysisMessages.length > 0) {
+      setCollapsedMessages(prev => {
+        const newSet = new Set(prev);
+        analysisMessages.forEach((msg: Message) => newSet.add(msg.id));
+        return newSet;
+      });
+    }
+  };
 
   // Filter media bin items based on mention query
   const filteredMentions = mediaBinItems.filter((item) =>
@@ -394,7 +407,7 @@ export function ChatBox({
       // Return a pending message
       const pendingMessage: Message = {
         id: Date.now().toString(),
-        content: `⏳ Video is still being processed for analysis. Your request will continue automatically once ready...`,
+        content: `Video is still being uploaded for analysis. Your request will continue automatically once ready...`,
         isUser: false,
         timestamp: new Date(),
       };
@@ -788,14 +801,7 @@ export function ChatBox({
         });
         
         // Auto-collapse any analysis result messages
-        const analysisMessages = aiMessages.filter((msg: Message) => msg.isAnalysisResult);
-        if (analysisMessages.length > 0) {
-          setCollapsedMessages(prev => {
-            const newSet = new Set(prev);
-            analysisMessages.forEach((msg: Message) => newSet.add(msg.id));
-            return newSet;
-          });
-        }
+        autoCollapseAnalysisResults(aiMessages);
         
         setIsTyping(false);
         return;
@@ -1098,26 +1104,37 @@ export function ChatBox({
               )}
               
               {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${
-                    message.isUser ? "justify-end" : "justify-start"
-                  }`}
-                >
+                message.isAnalyzing ? (
+                  // Render analyzing messages as plain text without bubble
+                  <div key={message.id} className="px-3 py-1 text-xs text-muted-foreground italic">
+                    <div className="flex items-center gap-2">
+                      <span>{formatMessageText(message.content)}</span>
+                      <div className="flex space-x-1">
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
                   <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
-                      message.isUser
-                        ? "bg-primary text-primary-foreground ml-8"
-                        : message.isExplanationMode
-                        ? "bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 mr-8"
-                        : message.isAnalyzing
-                        ? "bg-transparent mr-8"
-                        : message.isAnalysisResult
-                        ? "bg-slate-800 dark:bg-slate-900 text-white mr-8 cursor-pointer hover:bg-slate-700 dark:hover:bg-slate-800 transition-colors"
-                        : "bg-muted mr-8"
+                    key={message.id}
+                    className={`flex ${
+                      message.isUser ? "justify-end" : "justify-start"
                     }`}
-                    onClick={message.isAnalysisResult ? () => toggleMessageCollapsed(message.id) : undefined}
                   >
+                    <div
+                      className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
+                        message.isUser
+                          ? "bg-primary text-primary-foreground ml-8"
+                          : message.isExplanationMode
+                          ? "bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 mr-8"
+                          : message.isAnalysisResult
+                          ? "bg-slate-800 dark:bg-slate-900 text-white mr-8 cursor-pointer hover:bg-slate-700 dark:hover:bg-slate-800 transition-colors"
+                          : "bg-muted mr-8"
+                      }`}
+                      onClick={message.isAnalysisResult ? () => toggleMessageCollapsed(message.id) : undefined}
+                    >
                     <div className="flex items-start gap-2">
                       {!message.isUser && !message.isAnalyzing && (
                         <Bot className={`h-3 w-3 mt-0.5 shrink-0 ${
@@ -1148,17 +1165,6 @@ export function ChatBox({
                               </p>
                             )}
                           </div>
-                        ) : message.isAnalyzing ? (
-                          <div className="flex items-center gap-2">
-                            <p className="leading-relaxed break-words overflow-wrap-anywhere text-muted-foreground italic">
-                              {formatMessageText(message.content)}
-                            </p>
-                            <div className="flex space-x-1 ml-2">
-                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                              <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
-                            </div>
-                          </div>
                         ) : (
                           <p className={`leading-relaxed break-words overflow-wrap-anywhere ${
                             message.isExplanationMode
@@ -1178,6 +1184,7 @@ export function ChatBox({
                     </div>
                   </div>
                 </div>
+                )
               ))}
 
               {/* Invisible element to scroll to */}

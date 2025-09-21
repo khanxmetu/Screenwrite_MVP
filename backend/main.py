@@ -185,6 +185,30 @@ async def upload_to_gemini(file: UploadFile = File(...)) -> GeminiUploadResponse
                 
                 # Clean up temporary file
                 os.unlink(tmp_file.name)
+                
+                # Wait for file to be ready for analysis (max 30 seconds)
+                import time
+                max_wait_time = 30
+                wait_interval = 2
+                elapsed_time = 0
+                
+                while elapsed_time < max_wait_time:
+                    try:
+                        file_status = gemini_api.files.get(name=uploaded_file.name)
+                        if hasattr(file_status, 'state') and file_status.state == 'ACTIVE':
+                            print(f"✅ File is ACTIVE and ready for analysis: {uploaded_file.name}")
+                            break
+                        else:
+                            print(f"⏳ File not ready yet, state: {getattr(file_status, 'state', 'UNKNOWN')}, waiting...")
+                            time.sleep(wait_interval)
+                            elapsed_time += wait_interval
+                    except Exception as e:
+                        print(f"⚠️ Error checking file state: {e}, continuing...")
+                        time.sleep(wait_interval)
+                        elapsed_time += wait_interval
+                
+                if elapsed_time >= max_wait_time:
+                    print(f"⚠️ File upload completed but may not be fully ready for analysis yet: {uploaded_file.name}")
             
             print(f"✅ Gemini Upload: Success - File ID: {uploaded_file.name}")
             
@@ -352,6 +376,10 @@ async def analyze_video(request: VideoAnalysisRequest) -> VideoAnalysisResponse:
             # We need to get the file object from the file ID
             file_obj = gemini_api.files.get(name=request.gemini_file_id)
             
+            # Check if file is ready for analysis
+            if hasattr(file_obj, 'state') and file_obj.state != 'ACTIVE':
+                raise Exception(f"Video file is not ready for analysis yet (state: {file_obj.state}). Please wait a moment and try again.")
+            
             response = gemini_api.models.generate_content(
                 model="gemini-2.5-flash", 
                 contents=[file_obj, request.question],
@@ -379,6 +407,10 @@ async def analyze_video(request: VideoAnalysisRequest) -> VideoAnalysisResponse:
             user_error = "AI service quota exceeded. Please try again later."
         elif "not found" in error_msg.lower():
             user_error = "Video file not found. Please try uploading the video again."
+        elif "failed_precondition" in error_msg.lower() or "not in an active state" in error_msg.lower():
+            user_error = "Video is still being processed by the AI service. Please wait a moment and try again."
+        elif "not ready for analysis yet" in error_msg.lower():
+            user_error = "Video is still being processed. Please wait a moment and try again."
         else:
             user_error = f"Video analysis failed: {error_msg}"
         
