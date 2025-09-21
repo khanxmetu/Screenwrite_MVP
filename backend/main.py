@@ -325,7 +325,6 @@ Fix the error and return the corrected code."""
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.1,  # Low temperature for precise fixes
-                max_output_tokens=4000,
                 thinking_config=thinking_config
             ),
             contents=user_prompt

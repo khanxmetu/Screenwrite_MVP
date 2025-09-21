@@ -120,7 +120,6 @@ class ClaudeProvider(AIProvider):
     
     def generate_content(self, system_instruction: str, user_prompt: str) -> str:
         response = self.client.messages.create(
-            max_tokens=8192,
             model="claude-sonnet-4-20250514",
             temperature=0.3,
             system=system_instruction,

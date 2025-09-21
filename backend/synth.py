@@ -554,7 +554,6 @@ ANALYSIS CONTEXT (for understanding current state only - DO NOT copy or referenc
             
             config = GenerationConfig(
                 temperature=0.0,
-                max_output_tokens=8192
             )
             
             response = model.generate_content(
