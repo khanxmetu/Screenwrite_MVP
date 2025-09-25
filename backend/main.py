@@ -6,6 +6,8 @@ import time
 import re
 import shutil
 import uuid
+from PIL import Image
+from io import BytesIO
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -17,7 +19,12 @@ from typing import List, Dict, Any, Optional
 
 # Import code generation functionality
 import code_generator
-from code_generator import generate_composition_with_validation
+
+from schema import (
+    GenerateContentRequest, GenerateContentResponse, GeneratedAsset,
+    CheckGenerationStatusRequest, CheckGenerationStatusResponse
+)
+from providers import ContentGenerationProvider
 
 load_dotenv()
 
@@ -417,6 +424,208 @@ async def analyze_video(request: VideoAnalysisRequest) -> VideoAnalysisResponse:
         return VideoAnalysisResponse(
             success=False,
             error_message=user_error
+        )
+
+
+# Initialize content generation provider
+content_generator = ContentGenerationProvider()
+
+# Store active generation operations
+active_operations = {}
+
+
+@app.post("/generate-content", response_model=GenerateContentResponse)
+async def generate_content(request: GenerateContentRequest):
+    """Generate video or image content using Gemini AI"""
+    try:
+        print(f"🎨 Generating {request.content_type} with prompt: '{request.prompt[:100]}...'")
+        
+        if request.content_type == "video":
+            # Handle reference image if provided
+            reference_image = None
+            if request.reference_image:
+                try:
+                    # Decode base64 image
+                    import base64
+                    image_data = base64.b64decode(request.reference_image)
+                    reference_image = Image.open(BytesIO(image_data))
+                except Exception as e:
+                    print(f"⚠️ Failed to process reference image: {e}")
+            
+            # Start video generation (async)
+            operation = await content_generator.generate_video(
+                prompt=request.prompt,
+                negative_prompt=request.negative_prompt,
+                aspect_ratio=request.aspect_ratio,
+                resolution=request.resolution,
+                reference_image=reference_image
+            )
+            
+            # Store operation for status checking
+            operation_id = str(uuid.uuid4())
+            active_operations[operation_id] = operation
+            
+            return GenerateContentResponse(
+                success=True,
+                operation_id=operation_id,
+                status="processing"
+            )
+            
+        elif request.content_type == "image":
+            # Handle reference images if provided
+            reference_images = []
+            if request.reference_image:
+                try:
+                    import base64
+                    image_data = base64.b64decode(request.reference_image)
+                    reference_image = Image.open(BytesIO(image_data))
+                    reference_images.append(reference_image)
+                except Exception as e:
+                    print(f"⚠️ Failed to process reference image: {e}")
+            
+            # Generate image (synchronous)
+            response = await content_generator.generate_image(
+                prompt=request.prompt,
+                reference_images=reference_images
+            )
+            
+            # Save generated image
+            asset_id = str(uuid.uuid4())
+            file_name = f"generated_image_{asset_id}.png"
+            file_path = os.path.join("../out", file_name)
+            
+            # Ensure output directory exists
+            os.makedirs("../out", exist_ok=True)
+            
+            # Extract and save image from Imagen response
+            if response.generated_images and len(response.generated_images) > 0:
+                print(f"🎯 Found {len(response.generated_images)} generated images")
+                generated_image = response.generated_images[0]
+                
+                # Get the PIL Image object from the Google GenAI Image object
+                pil_image = generated_image.image._pil_image
+                print(f"📸 PIL image size: {pil_image.size}")
+                
+                # Save the PIL Image object to file
+                print(f"💾 Saving to: {file_path}")
+                pil_image.save(file_path)
+                print(f"✅ File saved successfully")
+                
+                # Get dimensions from the image
+                width, height = pil_image.size
+                file_size = os.path.getsize(file_path)
+                print(f"📏 Image dimensions: {width}x{height}, file size: {file_size} bytes")
+                
+                # Create asset response
+                generated_asset = GeneratedAsset(
+                    asset_id=asset_id,
+                    content_type="image",
+                    file_path=file_path,
+                    file_url=f"/media/{file_name}",
+                    prompt=request.prompt,
+                    width=width,
+                    height=height,
+                    file_size=file_size
+                )
+                
+                return GenerateContentResponse(
+                    success=True,
+                    generated_asset=generated_asset,
+                    status="completed"
+                )
+            
+            raise HTTPException(status_code=500, detail="No image generated in response")
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported content type: {request.content_type}")
+            
+    except Exception as e:
+        print(f"❌ Content generation failed: {str(e)}")
+        return GenerateContentResponse(
+            success=False,
+            status="failed",
+            error_message=str(e)
+        )
+
+
+@app.post("/check-generation-status", response_model=CheckGenerationStatusResponse)
+async def check_generation_status(request: CheckGenerationStatusRequest):
+    """Check status of video generation operation"""
+    try:
+        operation_id = request.operation_id
+        
+        if operation_id not in active_operations:
+            raise HTTPException(status_code=404, detail="Operation not found")
+        
+        operation = active_operations[operation_id]
+        
+        # Check current status
+        updated_operation = await content_generator.check_video_status(operation)
+        
+        if updated_operation.done:
+            # Generation completed
+            try:
+                # Download the generated video
+                generated_video = updated_operation.response.generated_videos[0]
+                
+                # Create unique filename
+                asset_id = str(uuid.uuid4())
+                file_name = f"generated_video_{asset_id}.mp4"
+                file_path = os.path.join("out", file_name)
+                
+                # Ensure output directory exists
+                os.makedirs("out", exist_ok=True)
+                
+                # Download video file
+                content_generator.api_client.files.download(file=generated_video.video)
+                generated_video.video.save(file_path)
+                
+                # Get file size (video dimensions would need separate analysis)
+                file_size = os.path.getsize(file_path)
+                
+                # Create asset response
+                generated_asset = GeneratedAsset(
+                    asset_id=asset_id,
+                    content_type="video",
+                    file_path=file_path,
+                    file_url=f"/media/{file_name}",
+                    prompt="Video generation prompt",  # Could store this in operation
+                    duration_seconds=8.0,  # Veo generates 8-second videos
+                    width=1280 if "720p" in str(updated_operation) else 1920,  # Estimate based on resolution
+                    height=720 if "720p" in str(updated_operation) else 1080,
+                    file_size=file_size
+                )
+                
+                # Clean up operation
+                del active_operations[operation_id]
+                
+                return CheckGenerationStatusResponse(
+                    success=True,
+                    status="completed",
+                    generated_asset=generated_asset
+                )
+                
+            except Exception as e:
+                print(f"❌ Failed to download generated video: {e}")
+                del active_operations[operation_id]
+                return CheckGenerationStatusResponse(
+                    success=False,
+                    status="failed",
+                    error_message=f"Failed to download video: {str(e)}"
+                )
+        else:
+            # Still processing
+            return CheckGenerationStatusResponse(
+                success=True,
+                status="processing"
+            )
+            
+    except Exception as e:
+        print(f"❌ Status check failed: {str(e)}")
+        return CheckGenerationStatusResponse(
+            success=False,
+            status="failed", 
+            error_message=str(e)
         )
 
 

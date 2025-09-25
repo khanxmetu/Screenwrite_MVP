@@ -1,4 +1,6 @@
 import os
+import time
+import uuid
 from typing import Any
 from google import genai
 from google.genai import types
@@ -178,3 +180,79 @@ def create_ai_provider(provider_type: str = None) -> AIProvider:
         from google import genai
         gemini_api = genai.Client(api_key=gemini_api_key)
         return GeminiProvider(gemini_api)
+
+
+class ContentGenerationProvider:
+    """Google Gemini Content Generation Provider for video and image generation"""
+    
+    def __init__(self, api_client: Any = None):
+        if api_client is None:
+            # Create our own client if none provided
+            import os
+            from google import genai
+            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            if not api_key:
+                raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required")
+            self.api_client = genai.Client(api_key=api_key)
+        else:
+            self.api_client = api_client
+    
+    async def generate_video(
+        self, 
+        prompt: str, 
+        negative_prompt: str = None, 
+        aspect_ratio: str = "16:9", 
+        resolution: str = "720p",
+        reference_image = None
+    ):
+        """Generate video using Veo 3 model"""
+        try:
+            # Choose model based on requirements
+            model = "veo-3.0-fast-generate-001"  # Use fast model for better performance
+            
+            # Build generation config
+            config_params = {}
+            if negative_prompt:
+                config_params["negative_prompt"] = negative_prompt
+            
+            config = types.GenerateVideosConfig(**config_params) if config_params else None
+            
+            # Start video generation (async operation)
+            operation = self.api_client.models.generate_videos(
+                model=model,
+                prompt=prompt,
+                image=reference_image,  # Optional image for image-to-video
+                config=config
+            )
+            
+            return operation
+            
+        except Exception as e:
+            print(f"❌ Video generation failed: {str(e)}")
+            raise e
+    
+    async def generate_image(self, prompt: str, reference_images: list = None):
+        """Generate image using Imagen 4.0 Fast model"""
+        try:
+            # For image generation, use the dedicated generate_images method with Imagen 4.0 Fast
+            response = self.api_client.models.generate_images(
+                model="imagen-4.0-fast-generate-001",
+                prompt=prompt
+            )
+            
+            return response
+            
+        except Exception as e:
+            print(f"❌ Image generation failed: {str(e)}")
+            raise e
+    
+    async def check_video_status(self, operation):
+        """Check status of video generation operation"""
+        try:
+            # Refresh operation status
+            updated_operation = self.api_client.operations.get(operation)
+            return updated_operation
+            
+        except Exception as e:
+            print(f"❌ Status check failed: {str(e)}")
+            raise e

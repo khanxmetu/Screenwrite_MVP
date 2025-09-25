@@ -92,3 +92,43 @@ class VideoAnalysisResponse(BaseModel):
     success: bool = Field(description="Whether the analysis was successful")
     analysis: Optional[str] = Field(description="AI analysis of the video content", default=None)
     error_message: Optional[str] = Field(description="Error message if analysis failed", default=None)
+
+
+class GenerateContentRequest(BaseModel):
+    content_type: Literal["video", "image"] = Field(description="Type of content to generate")
+    prompt: str = Field(description="Text prompt for content generation")
+    negative_prompt: Optional[str] = Field(description="What to avoid in generation", default=None)
+    aspect_ratio: Optional[Literal["16:9", "9:16"]] = Field(description="Aspect ratio for video generation", default="16:9")
+    resolution: Optional[Literal["720p", "1080p"]] = Field(description="Resolution for video generation", default="720p")
+    reference_image: Optional[str] = Field(description="Base64 encoded reference image for image-to-video", default=None)
+
+
+class GeneratedAsset(BaseModel):
+    asset_id: str = Field(description="Unique identifier for the generated asset")
+    content_type: Literal["video", "image"] = Field(description="Type of generated content")
+    file_path: str = Field(description="Local file path to the generated content")
+    file_url: str = Field(description="URL to access the generated content")
+    prompt: str = Field(description="Prompt used for generation")
+    duration_seconds: Optional[float] = Field(description="Duration for video content", default=None)
+    width: int = Field(description="Width in pixels")
+    height: int = Field(description="Height in pixels")
+    file_size: int = Field(description="File size in bytes")
+
+
+class GenerateContentResponse(BaseModel):
+    success: bool = Field(description="Whether generation was successful")
+    generated_asset: Optional[GeneratedAsset] = Field(description="Generated asset details", default=None)
+    operation_id: Optional[str] = Field(description="Operation ID for async video generation", default=None)
+    status: Literal["completed", "processing", "failed"] = Field(description="Generation status")
+    error_message: Optional[str] = Field(description="Error message if generation failed", default=None)
+
+
+class CheckGenerationStatusRequest(BaseModel):
+    operation_id: str = Field(description="Operation ID to check status for")
+
+
+class CheckGenerationStatusResponse(BaseModel):
+    success: bool = Field(description="Whether status check was successful")
+    status: Literal["completed", "processing", "failed"] = Field(description="Current generation status")
+    generated_asset: Optional[GeneratedAsset] = Field(description="Generated asset if completed", default=None)
+    error_message: Optional[str] = Field(description="Error message if failed", default=None)
