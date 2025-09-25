@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Send,
   Bot,
@@ -45,6 +45,10 @@ interface Message {
   isExplanationMode?: boolean; // For post-edit explanations
   isAnalysisResult?: boolean; // For analysis results that appear in darker bubbles
   isSystemMessage?: boolean; // For system messages (analyzing, generating, etc.) that appear as raw text
+  hasRetryButton?: boolean; // For messages that allow retry
+  retryData?: {
+    originalMessage: string;
+  }; // Data needed for retry
 }
 
 interface ChatBoxProps {
@@ -107,13 +111,6 @@ export function ChatBox({
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
   const [isInSynthLoop, setIsInSynthLoop] = useState(false); // Track when unified workflow is active
-  const [pendingProbe, setPendingProbe] = useState<{
-    fileName: string, 
-    question: string, 
-    originalMessage: string, 
-    conversationMessages: ConversationMessage[], 
-    synthContext: SynthContext
-  } | null>(null);
 
   // Initialize Conversational Synth
   const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
@@ -149,42 +146,18 @@ export function ChatBox({
     }
   }, [showSendOptions]);
 
-  // Monitor for video uploads completing and retry pending probes
-  useEffect(() => {
-    if (pendingProbe) {
-      const mediaFile = mediaBinItems.find(item => item.name === pendingProbe.fileName);
-      if (mediaFile?.gemini_file_id) {
-        console.log("🔄 Retrying pending probe for:", pendingProbe.fileName);
-        // Clear pending probe and retry
-        const { fileName, question, originalMessage, conversationMessages, synthContext } = pendingProbe;
-        setPendingProbe(null);
-        
-        // Add "now analyzing" message to show the retry is happening
-        const analyzingMessage: Message = {
-          id: Date.now().toString(),
-          content: `Video ready! Now analyzing ${fileName}...`,
-          isUser: false,
-          timestamp: new Date(),
-        };
-        onMessagesChange(prevMessages => [...prevMessages, analyzingMessage]);
-        
-        // Retry the probe using the main flow with all context
-        handleProbeRequest(fileName, question, originalMessage, conversationMessages, synthContext).then(newMessages => {
-          onMessagesChange(prevMessages => [...prevMessages, ...newMessages]);
-        }).catch(error => {
-          console.error("Retry failed:", error);
-          const errorMessage: Message = {
-            id: Date.now().toString(),
-            content: `Analysis retry failed: ${error.message}`,
-            isUser: false,
-            timestamp: new Date(),
-            isSystemMessage: true,
-          };
-          onMessagesChange(prevMessages => [...prevMessages, errorMessage]);
-        });
-      }
+  // Handle retry button click
+  const handleRetry = useCallback((message: Message) => {
+    if (message.retryData?.originalMessage) {
+      console.log("🔄 Retrying with message:", message.retryData.originalMessage);
+      console.log("🔄 Current media bin items:", mediaBinItems.map(item => ({
+        name: item.name,
+        gemini_file_id: item.gemini_file_id,
+        isUploading: item.isUploading
+      })));
+      handleConversationalMessage(message.retryData.originalMessage);
     }
-  }, [mediaBinItems, pendingProbe]);
+  }, [mediaBinItems]);
 
   // Filter media bin items based on mention query
   const filteredMentions = mediaBinItems.filter((item) =>
@@ -271,13 +244,18 @@ export function ChatBox({
   ): Promise<Message[]> => {
     await logProbeStart(fileName, question);
     console.log("🔍 Executing probe request for:", fileName);
-    console.log("🔍 Available media files:", mediaBinItems.map(item => item.name));
+    console.log("🔍 Available media files:", mediaBinItems.map(item => ({
+      name: item.name,
+      gemini_file_id: item.gemini_file_id,
+      isUploading: item.isUploading
+    })));
     
     // Smart file matching logic
     let mediaFile = mediaBinItems.find(item => item.name === fileName);
     
-    // If exact match not found, try fuzzy matching or default selection
     if (!mediaFile) {
+      console.log(`🔍 Exact match not found for "${fileName}". Trying fuzzy matching...`);
+      
       // If no filename provided or not found, and only one media file exists, use it
       if (mediaBinItems.length === 1) {
         mediaFile = mediaBinItems[0];
@@ -288,7 +266,15 @@ export function ChatBox({
           item.name.toLowerCase().includes(fileName.toLowerCase()) ||
           fileName.toLowerCase().includes(item.name.toLowerCase())
         );
+        
+        if (mediaFile) {
+          console.log(`🔍 Found fuzzy match: "${mediaFile.name}" for "${fileName}"`);
+        } else {
+          console.log(`🔍 No fuzzy matches found for "${fileName}"`);
+        }
       }
+    } else {
+      console.log(`🔍 Found exact match: "${mediaFile.name}"`);
     }
     
     if (!mediaFile) {
@@ -329,6 +315,25 @@ export function ChatBox({
 
     } catch (error) {
       console.error("Probe analysis failed:", error);
+      
+      // Handle video still uploading case
+      if (error instanceof Error && error.message === "VIDEO_STILL_UPLOADING") {
+        await logProbeError(fileName, "Video still uploading to analysis service");
+        const waitingMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: `Video is still being uploaded to the analysis service. Please wait and try again.`,
+          isUser: false,
+          timestamp: new Date(),
+          isSystemMessage: true,
+          hasRetryButton: true,
+          retryData: {
+            originalMessage: `whats in the ${fileName}?` // Simple retry message that will work with current state
+          }
+        };
+        return [waitingMessage];
+      }
+      
+      // Handle other errors
       await logProbeError(fileName, error instanceof Error ? error.message : String(error));
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -353,21 +358,7 @@ export function ChatBox({
     const fileExtension = mediaFile?.name.split('.').pop()?.toLowerCase();
     const isVideo = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'].includes(fileExtension || '');
     
-    if (mediaFile && isVideo && !mediaFile.gemini_file_id) {
-      console.log("⏳ Video still uploading, storing pending probe:", fileName);
-      setPendingProbe({ fileName, question, originalMessage, conversationMessages, synthContext });
-      
-      // Return a pending message
-      const pendingMessage: Message = {
-        id: Date.now().toString(),
-        content: `Video is still being uploaded for analysis. Your request will continue automatically once ready...`,
-        isUser: false,
-        timestamp: new Date(),
-      };
-      return [pendingMessage];
-    }
-
-    // Otherwise, proceed with simple probe execution (unified system handles continuation)
+    // Simply proceed with internal handler - it will handle the "still uploading" case with retry button
     return handleProbeRequestInternal(fileName, question);
   };
 
@@ -417,8 +408,8 @@ export function ChatBox({
 
         return result.analysis;
       } else if (isVideo && !mediaFile.gemini_file_id) {
-        // Video without Gemini file ID - should not happen as videos are uploaded on add
-        throw new Error("Video file is still being processed for analysis. Please wait a moment and try again.");
+        // Video without Gemini file ID - video is still uploading
+        throw new Error("VIDEO_STILL_UPLOADING");
       } else {
         // For images, use base64 inline data
         const fileUrl = mediaFile.mediaUrlRemote || mediaFile.mediaUrlLocal;
@@ -621,6 +612,9 @@ export function ChatBox({
         // Check if workflow should continue
         if (synthResponse.type === 'sleep') {
           console.log("💤 Sleep response - stopping unified workflow");
+          continueWorkflow = false;
+        } else if (stepMessages.some(msg => msg.hasRetryButton)) {
+          console.log("⏸️ Retry button message - stopping workflow until retry");
           continueWorkflow = false;
         } else if (synthResponse.type === 'chat') {
           console.log("💬 Chat response - continuing workflow automatically");
@@ -1139,6 +1133,16 @@ export function ChatBox({
                   // Render system messages as raw text
                   <div key={message.id} className="px-3 py-1 text-xs text-muted-foreground">
                     {message.content}
+                    {message.hasRetryButton && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-2 text-xs h-6"
+                        onClick={() => handleRetry(message)}
+                      >
+                        Retry
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div
