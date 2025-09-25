@@ -44,6 +44,7 @@ interface Message {
   timestamp: Date;
   isExplanationMode?: boolean; // For post-edit explanations
   isAnalysisResult?: boolean; // For analysis results that appear in darker bubbles
+  isSystemMessage?: boolean; // For system messages (analyzing, generating, etc.) that appear as raw text
 }
 
 interface ChatBoxProps {
@@ -171,12 +172,13 @@ export function ChatBox({
         handleProbeRequest(fileName, question, originalMessage, conversationMessages, synthContext).then(newMessages => {
           onMessagesChange(prevMessages => [...prevMessages, ...newMessages]);
         }).catch(error => {
-          console.error("❌ Retry failed:", error);
+          console.error("Retry failed:", error);
           const errorMessage: Message = {
             id: Date.now().toString(),
-            content: `❌ Analysis retry failed: ${error.message}`,
+            content: `Analysis retry failed: ${error.message}`,
             isUser: false,
             timestamp: new Date(),
+            isSystemMessage: true,
           };
           onMessagesChange(prevMessages => [...prevMessages, errorMessage]);
         });
@@ -294,9 +296,10 @@ export function ChatBox({
       await logProbeError(fileName, `Media file not found. Available files: ${availableFiles}`);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `❌ Could not find media file: ${fileName}. Available files: ${availableFiles}`,
+        content: `Could not find media file: ${fileName}. Available files: ${availableFiles}`,
         isUser: false,
         timestamp: new Date(),
+        isSystemMessage: true,
       };
       return [errorMessage];
     }
@@ -325,14 +328,14 @@ export function ChatBox({
       return [analysisMessage];
 
     } catch (error) {
-      console.error("❌ Probe analysis failed:", error);
+      console.error("Probe analysis failed:", error);
       await logProbeError(fileName, error instanceof Error ? error.message : String(error));
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `❌ Failed to analyze ${fileName}. ${error instanceof Error ? error.message : 'Unknown error'}`,
+        content: `Failed to analyze ${fileName}. ${error instanceof Error ? error.message : 'Unknown error'}`,
         isUser: false,
         timestamp: new Date(),
-        isAnalysisResult: true,
+        isSystemMessage: true,
       };
       return [errorMessage];
     }
@@ -530,9 +533,10 @@ export function ChatBox({
       // Create generation result message
       const generationMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `✨ Generated: ${generatedFileName}`,
+        content: `Generated: ${generatedFileName}`,
         isUser: false,
         timestamp: new Date(),
+        isSystemMessage: true,
       };
 
       // Note: In real implementation, this would call backend to generate and add to media library
@@ -540,12 +544,13 @@ export function ChatBox({
       return [generationMessage];
 
     } catch (error) {
-      console.error("❌ Generation failed:", error);
+      console.error("Generation failed:", error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `❌ Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        content: `Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`,
         isUser: false,
         timestamp: new Date(),
+        isSystemMessage: true,
       };
       return [errorMessage];
     }
@@ -694,6 +699,16 @@ export function ChatBox({
       // Probe request - analyze media file (only show analysis result)
       console.log("🔍 Executing probe:", synthResponse.fileName, synthResponse.question);
       
+      // Add immediate feedback message
+      const analyzingMessage: Message = {
+        id: Date.now().toString(),
+        content: `Analysing ${synthResponse.fileName}: ${synthResponse.question}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+      onMessagesChange(prev => [...prev, analyzingMessage]);
+      
       const probeResults = await handleProbeRequestInternal(synthResponse.fileName!, synthResponse.question!);
       
       return probeResults; // Only return analysis result, no "Analyzing..." message
@@ -701,6 +716,16 @@ export function ChatBox({
     } else if (synthResponse.type === 'generate') {
       // Generate request - create image (only show generation result)
       console.log("🎨 Executing generation:", synthResponse.prompt, synthResponse.suggestedName);
+      
+      // Add immediate feedback message
+      const generatingMessage: Message = {
+        id: Date.now().toString(),
+        content: `Generating media: ${synthResponse.prompt}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+      onMessagesChange(prev => [...prev, generatingMessage]);
       
       const generateResults = await handleGenerateRequestInternal(synthResponse.prompt!, synthResponse.suggestedName!, synthResponse.content);
       
@@ -717,9 +742,10 @@ export function ChatBox({
         
         const resultMessage = {
           id: (Date.now() + 1).toString(),
-          content: success ? "✨ Edit implemented successfully!" : "❌ Failed to implement the edit. Please try again.",
+          content: success ? "Edit implemented successfully!" : "Failed to implement the edit. Please try again.",
           isUser: false,
           timestamp: new Date(),
+          isSystemMessage: true,
         };
         
         return [resultMessage]; // Only return final result, no "Applying..." message
@@ -729,6 +755,7 @@ export function ChatBox({
           content: "Edit instructions ready, but no implementation handler available.",
           isUser: false,
           timestamp: new Date(),
+          isSystemMessage: true,
         }];
       }
       
@@ -1108,6 +1135,12 @@ export function ChatBox({
               )}
               
               {messages.map((message) => (
+                message.isSystemMessage ? (
+                  // Render system messages as raw text
+                  <div key={message.id} className="px-3 py-1 text-xs text-muted-foreground">
+                    {message.content}
+                  </div>
+                ) : (
                   <div
                     key={message.id}
                     className={`flex ${
@@ -1139,7 +1172,7 @@ export function ChatBox({
                       <div className="flex-1 min-w-0">
                         {message.isExplanationMode && (
                           <div className="text-xs font-medium text-green-700 dark:text-green-300 mb-1">
-                            📝 Changes made:
+                            Changes made:
                           </div>
                         )}
                         {message.isAnalysisResult ? (
@@ -1175,6 +1208,7 @@ export function ChatBox({
                     </div>
                   </div>
                 </div>
+                )
               ))}
 
               {/* Simple loading indicator while in synth loop */}
