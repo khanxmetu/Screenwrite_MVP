@@ -312,54 +312,129 @@ function SegmentRenderer({
       const clip = segment.clips[0];
       const clipDurationFrames = Math.round((clip.endTimeInSeconds - clip.startTimeInSeconds) * fps);
       
-      // Calculate transition durations
-      const transitionFromDuration = segment.hasOrphanedStart && clip.transitionFromPrevious
+      // Calculate initial transition durations
+      let transitionFromDuration = segment.hasOrphanedStart && clip.transitionFromPrevious
         ? Math.round(clip.transitionFromPrevious.durationInSeconds * fps)
         : 0;
-      const transitionToDuration = segment.hasOrphanedEnd && clip.transitionToNext
+      let transitionToDuration = segment.hasOrphanedEnd && clip.transitionToNext
         ? Math.round(clip.transitionToNext.durationInSeconds * fps)
         : 0;
       
-      // Total duration includes ALL parts: transition from + clip + transition to
-      totalDurationFrames = transitionFromDuration + clipDurationFrames + transitionToDuration;
+      // Safeguard: Ensure orphaned transitions don't exceed clip duration
+      const totalTransitionDuration = transitionFromDuration + transitionToDuration;
+      if (totalTransitionDuration > clipDurationFrames) {
+        // Scale down transitions proportionally to fit within clip duration
+        const scaleFactor = Math.max(0.1, (clipDurationFrames * 0.9) / totalTransitionDuration); // Leave at least 10% for content
+        transitionFromDuration = Math.round(transitionFromDuration * scaleFactor);
+        transitionToDuration = Math.round(transitionToDuration * scaleFactor);
+        
+        console.warn(`🎬 Orphaned transitions too long for clip ${clip.id}: scaled down by ${(scaleFactor * 100).toFixed(1)}%`);
+        console.warn(`🎬 Original: ${transitionFromDuration / scaleFactor}+${transitionToDuration / scaleFactor} frames, Scaled: ${transitionFromDuration}+${transitionToDuration} frames`);
+      }
       
-      // Add empty div for transition from (if needed)
-      if (segment.hasOrphanedStart && clip.transitionFromPrevious) {
+      // For orphaned transitions, keep within clip boundaries (don't extend duration)
+      // Total duration should equal the original clip duration
+      totalDurationFrames = clipDurationFrames;
+      
+      // For orphaned transitions, structure the sequence to keep transitions within clip duration
+      
+      if (segment.hasOrphanedStart && segment.hasOrphanedEnd) {
+        // Both transitions: fade in + content + fade out (all within clip duration)
+        const contentDuration = clipDurationFrames - transitionFromDuration - transitionToDuration;
+        const executionContext = createExecutionContext(clip.startTimeInSeconds);
+        
+        // Empty sequence for fade in
         sequences.push(
-          <TransitionSeries.Sequence 
-            durationInFrames={transitionFromDuration}
-          >
-            <div style={{ width: '100%', height: '100%' }} />
+          <TransitionSeries.Sequence durationInFrames={transitionFromDuration}>
+            <div style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }} />
           </TransitionSeries.Sequence>
         );
         
+        // Transition in
+        sequences.push(
+          <TransitionSeries.Transition
+            presentation={getTransitionPresentation(clip.transitionFromPrevious!, videoConfig)}
+            timing={linearTiming({ durationInFrames: transitionFromDuration })}
+          />
+        );
+        
+        // Main content (shortened to accommodate transitions)
+        sequences.push(
+          <TransitionSeries.Sequence durationInFrames={contentDuration + transitionToDuration}>
+            <ClipContentWithFreeze 
+              clip={clip} 
+              executionContext={executionContext} 
+              freezeAfterFrames={contentDuration}
+              totalSequenceDuration={contentDuration + transitionToDuration}
+            />
+          </TransitionSeries.Sequence>
+        );
+        
+        // Transition out
+        sequences.push(
+          <TransitionSeries.Transition
+            presentation={getTransitionPresentation(clip.transitionToNext!, videoConfig)}
+            timing={linearTiming({ durationInFrames: transitionToDuration })}
+          />
+        );
+        
+        // Empty sequence for fade out
+        sequences.push(
+          <TransitionSeries.Sequence durationInFrames={transitionToDuration}>
+            <div style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }} />
+          </TransitionSeries.Sequence>
+        );
+        
+      } else if (segment.hasOrphanedStart && clip.transitionFromPrevious) {
+        // Only fade in: empty + transition + content
+        const contentDuration = clipDurationFrames - transitionFromDuration;
+        const executionContext = createExecutionContext(clip.startTimeInSeconds);
+        
+        // Empty sequence for fade in
+        sequences.push(
+          <TransitionSeries.Sequence durationInFrames={transitionFromDuration}>
+            <div style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }} />
+          </TransitionSeries.Sequence>
+        );
+        
+        // Transition in
         sequences.push(
           <TransitionSeries.Transition
             presentation={getTransitionPresentation(clip.transitionFromPrevious, videoConfig)}
             timing={linearTiming({ durationInFrames: transitionFromDuration })}
           />
         );
-      }
-      
-      // Add the main clip content
-      const clipSequenceDuration = clipDurationFrames + transitionToDuration;
-      // Create execution context for TransitionSeries clips
-      const executionContext = createExecutionContext(clip.startTimeInSeconds);
-      sequences.push(
-        <TransitionSeries.Sequence 
-          durationInFrames={clipSequenceDuration}
-        >
-          <ClipContentWithFreeze 
-            clip={clip} 
-            executionContext={executionContext} 
-            freezeAfterFrames={clipDurationFrames}
-            totalSequenceDuration={clipSequenceDuration}
-          />
-        </TransitionSeries.Sequence>
-      );
-      
-      // Add transition to empty div (if needed)
-      if (segment.hasOrphanedEnd && clip.transitionToNext) {
+        
+        // Main content (remaining duration)
+        sequences.push(
+          <TransitionSeries.Sequence durationInFrames={contentDuration}>
+            <ClipContentWithFreeze 
+              clip={clip} 
+              executionContext={executionContext} 
+              freezeAfterFrames={contentDuration}
+              totalSequenceDuration={contentDuration}
+            />
+          </TransitionSeries.Sequence>
+        );
+        
+      } else if (segment.hasOrphanedEnd && clip.transitionToNext) {
+        // Only fade out: content + transition + empty
+        const contentDuration = clipDurationFrames - transitionToDuration;
+        const executionContext = createExecutionContext(clip.startTimeInSeconds);
+        
+        // Main content (shortened for transition)
+        sequences.push(
+          <TransitionSeries.Sequence durationInFrames={contentDuration + transitionToDuration}>
+            <ClipContentWithFreeze 
+              clip={clip} 
+              executionContext={executionContext} 
+              freezeAfterFrames={contentDuration}
+              totalSequenceDuration={contentDuration + transitionToDuration}
+            />
+          </TransitionSeries.Sequence>
+        );
+        
+        // Transition out
         sequences.push(
           <TransitionSeries.Transition
             presentation={getTransitionPresentation(clip.transitionToNext, videoConfig)}
@@ -367,11 +442,10 @@ function SegmentRenderer({
           />
         );
         
+        // Empty sequence for fade out
         sequences.push(
-          <TransitionSeries.Sequence 
-            durationInFrames={transitionToDuration}
-          >
-            <div style={{ width: '100%', height: '100%' }} />
+          <TransitionSeries.Sequence durationInFrames={transitionToDuration}>
+            <div style={{ width: '100%', height: '100%', backgroundColor: 'transparent' }} />
           </TransitionSeries.Sequence>
         );
       }
