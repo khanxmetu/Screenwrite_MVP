@@ -105,6 +105,7 @@ export function ChatBox({
   const [sendWithMedia, setSendWithMedia] = useState(false); // Track send mode
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
+  const [isInSynthLoop, setIsInSynthLoop] = useState(false); // Track when unified workflow is active
   const [pendingProbe, setPendingProbe] = useState<{
     fileName: string, 
     question: string, 
@@ -567,10 +568,14 @@ export function ChatBox({
     let iterationCount = 0;
     const MAX_ITERATIONS = 10; // Prevent infinite loops
     
-    // Unified workflow loop: synth → route → execute → check continuation → repeat until sleep
-    while (continueWorkflow && iterationCount < MAX_ITERATIONS) {
-      iterationCount++;
-      console.log(`🔄 Unified workflow iteration ${iterationCount}`);
+    // Start the loading indicator for the entire workflow
+    setIsInSynthLoop(true);
+    
+    try {
+      // Unified workflow loop: synth → route → execute → check continuation → repeat until sleep
+      while (continueWorkflow && iterationCount < MAX_ITERATIONS) {
+        iterationCount++;
+        console.log(`🔄 Unified workflow iteration ${iterationCount}`);
       
       try {
         // Build current conversation state (including all new messages from this workflow)
@@ -663,6 +668,21 @@ export function ChatBox({
     
     // Save log after complete workflow
     await logWorkflowComplete();
+    
+    } catch (error) {
+      console.error("❌ Unified workflow failed:", error);
+      // Add error message to UI
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        content: "I'm having trouble processing your request. Please try again.",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      onMessagesChange(prevMessages => [...prevMessages, errorMessage]);
+    } finally {
+      // Always clear the loading indicator when workflow ends
+      setIsInSynthLoop(false);
+    }
     
     // Unified workflow handles all UI updates internally
     return;
@@ -1163,6 +1183,22 @@ export function ChatBox({
                   </div>
                 </div>
               ))}
+
+              {/* Simple loading indicator while in synth loop */}
+              {isInSynthLoop && (
+                <div className="px-3 py-2 flex items-center gap-2">
+                  <div className="flex items-start gap-2">
+                    <Bot className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                    <div className="flex items-center gap-1 pt-1">
+                      <div className="flex space-x-1">
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Invisible element to scroll to */}
               <div ref={messagesEndRef} />
