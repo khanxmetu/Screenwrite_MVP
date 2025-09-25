@@ -16,7 +16,10 @@ import {
   VIDEO_EDITOR_CAPABILITIES,
   PROBE_GUIDELINES,
   CHAT_GUIDELINES,
-  EDIT_GUIDELINES
+  EDIT_GUIDELINES,
+  GENERATION_GUIDELINES,
+  PLANNING_GUIDELINES,
+  SLEEP_GUIDELINES
 } from "./PromptComponents";
 
 // Gemini API configuration
@@ -31,11 +34,13 @@ export interface ConversationMessage {
 }
 
 export interface SynthResponse {
-  type: 'chat' | 'edit' | 'probe';
+  type: 'chat' | 'edit' | 'probe' | 'generate' | 'sleep';
   content: string;
   referencedFiles?: string[]; // @-mentioned files
   fileName?: string; // For probe responses
   question?: string; // For probe responses
+  prompt?: string; // For generate responses - image generation prompt
+  suggestedName?: string; // For generate responses - AI-chosen filename
 }
 
 export interface SynthContext {
@@ -46,9 +51,6 @@ export interface SynthContext {
 }
 
 export class ConversationalSynth {
-  private pendingPlan: string | null = null;
-  private pendingPlanContext: string | null = null;
-
   constructor(apiKey?: string) {
     // API key is now handled globally in the file
     // This constructor is kept for compatibility
@@ -69,14 +71,13 @@ export class ConversationalSynth {
 
     // Build context for the AI
     const contextText = this.buildContextText(context, true);
+    const conversationHistory = this.buildConversationHistory(context);
 
     // Create comprehensive prompt for structured response
     let prompt = `USER MESSAGE: "${userMessage}"
 
 CONTEXT:
 ${contextText}
-
-PENDING PLAN STATUS: ${this.pendingPlan ? 'User has a pending edit plan awaiting confirmation' : 'No pending plan'}
 
 BLUEPRINT UNDERSTANDING:
 - The "Current Timeline Blueprint JSON" shows the exact structure of what's currently on the timeline
@@ -93,28 +94,37 @@ RESPONSE TYPE RULES:
 - If user wants to edit their video BUT no pending plan exists: respond with type "chat" and CREATE A COMPLETE DETAILED PLAN
 - If user confirms a pending plan: respond with type "edit" with direct editing instructions
 
-Be proactive about probing - when in doubt about media content, probe first for better results.`;
+Be proactive about probing - when in doubt about media content, probe first for better results.
+
+${conversationHistory}`;
 
     try {
-      const fullSystemPrompt = `${AI_PERSONA}\n\n${CONVERSATIONAL_SYNTH_SYSTEM}`;
+      const fullSystemPrompt = `${AI_PERSONA}
+
+${CONVERSATIONAL_SYNTH_SYSTEM}
+
+${VIDEO_EDITOR_CAPABILITIES}
+
+${STYLING_GUIDELINES}
+
+${PROBE_GUIDELINES}
+
+${CHAT_GUIDELINES}
+
+${EDIT_GUIDELINES}
+
+${GENERATION_GUIDELINES}
+
+${PLANNING_GUIDELINES}
+
+${SLEEP_GUIDELINES}`;
       const structuredResponse = await this.callGeminiAPIStructured(fullSystemPrompt, prompt);
       
       // Handle the structured response
       if (structuredResponse.type === 'edit') {
-        // Clear any pending plan since we're executing
-        this.pendingPlan = null;
-        this.pendingPlanContext = null;
         console.log("🎬 Generated edit instructions:", structuredResponse.content);
       } else if (structuredResponse.type === 'chat') {
-        // Check if this is setting up a new plan
-        if (structuredResponse.content.toLowerCase().includes('does this') || 
-            structuredResponse.content.toLowerCase().includes('sound good') ||
-            structuredResponse.content.toLowerCase().includes('say \'yes\'')) {
-          // Store pending plan
-          this.pendingPlan = userMessage;
-          this.pendingPlanContext = userMessage;
-          console.log("📋 Created pending plan for approval");
-        }
+        console.log("💬 Generated chat response:", structuredResponse.content);
       }
       
       return {
@@ -122,7 +132,9 @@ Be proactive about probing - when in doubt about media content, probe first for 
         content: structuredResponse.content,
         referencedFiles,
         fileName: structuredResponse.fileName,
-        question: structuredResponse.question
+        question: structuredResponse.question,
+        prompt: structuredResponse.prompt,
+        suggestedName: structuredResponse.suggestedName
       };
 
     } catch (error) {
@@ -182,15 +194,6 @@ Be proactive about probing - when in doubt about media content, probe first for 
   private buildContextText(context: SynthContext, isEdit: boolean): string {
     const parts: string[] = [];
     
-    // Recent conversation (last 4 messages)
-    if (context.messages.length > 0) {
-      const recent = context.messages.slice(-4);
-      parts.push("Recent conversation:");
-      recent.forEach(msg => {
-        parts.push(`${msg.isUser ? 'User' : 'Assistant'}: ${msg.content}`);
-      });
-    }
-    
     // Current composition info - full blueprint JSON
     console.log("🔍 ConversationalSynth: currentComposition =", context.currentComposition);
     
@@ -234,12 +237,37 @@ Be proactive about probing - when in doubt about media content, probe first for 
   }
 
   /**
+   * Build conversation history text - moved to separate method for reuse
+   */
+  private buildConversationHistory(context: SynthContext): string {
+    if (context.messages.length === 0) {
+      return "";
+    }
+    
+    const recent = context.messages.slice(-8);
+    const conversationParts: string[] = [];
+    
+    conversationParts.push("=== RECENT CONVERSATION HISTORY (MOST IMPORTANT) ===");
+    conversationParts.push("This is the most critical context - pay close attention to the conversation flow:");
+    conversationParts.push("");
+    
+    recent.forEach(msg => {
+      conversationParts.push(`${msg.isUser ? 'User' : 'Assistant'}: ${msg.content}`);
+    });
+    
+    conversationParts.push("");
+    conversationParts.push("=== END OF CONVERSATION HISTORY ===");
+    
+    return conversationParts.join("\n");
+  }
+
+  /**
    * Call Gemini API with structured response
    */
   private async callGeminiAPIStructured(
     systemInstruction: string, 
     prompt: string
-  ): Promise<{ type: 'chat' | 'edit' | 'probe'; content: string; fileName?: string; question?: string }> {
+  ): Promise<{ type: 'chat' | 'edit' | 'probe' | 'generate'; content: string; fileName?: string; question?: string; prompt?: string; suggestedName?: string }> {
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
     }
@@ -249,12 +277,18 @@ Be proactive about probing - when in doubt about media content, probe first for 
       properties: {
         "type": {
           "type": "STRING",
-          "enum": ["chat", "edit", "probe"]
+          "enum": ["chat", "edit", "probe", "generate", "sleep"]
         },
         "fileName": {
           "type": "STRING"
         },
         "question": {
+          "type": "STRING"
+        },
+        "prompt": {
+          "type": "STRING"
+        },
+        "suggestedName": {
           "type": "STRING"
         },
         "content": {
@@ -275,7 +309,7 @@ Be proactive about probing - when in doubt about media content, probe first for 
             {
               parts: [
                 {
-                  text: `${systemInstruction}\n\n${prompt}\n\n${VIDEO_EDITOR_CAPABILITIES}\n\n${STYLING_GUIDELINES}\n\n${PROBE_GUIDELINES}\n\n${CHAT_GUIDELINES}\n\n${EDIT_GUIDELINES}`
+                  text: `${systemInstruction}\n\n${prompt}`
                 }
               ]
             }
@@ -321,7 +355,7 @@ Be proactive about probing - when in doubt about media content, probe first for 
       try {
         const parsedResponse = JSON.parse(responseText);
         
-        if (!parsedResponse.type || !parsedResponse.content || !["chat", "edit", "probe"].includes(parsedResponse.type)) {
+        if (!parsedResponse.type || !parsedResponse.content || !["chat", "edit", "probe", "generate", "sleep"].includes(parsedResponse.type)) {
           throw new Error('Invalid structured response from Gemini API');
         }
 
@@ -329,7 +363,9 @@ Be proactive about probing - when in doubt about media content, probe first for 
           type: parsedResponse.type,
           content: parsedResponse.content,
           fileName: parsedResponse.fileName,
-          question: parsedResponse.question
+          question: parsedResponse.question,
+          prompt: parsedResponse.prompt,
+          suggestedName: parsedResponse.suggestedName
         };
       } catch (e) {
         // If parsing fails, it might be a plain text response
@@ -363,6 +399,7 @@ Be proactive about probing - when in doubt about media content, probe first for 
     
     // Build context for the AI
     const contextText = this.buildContextText(context, false);
+    const conversationHistory = this.buildConversationHistory(context);
     
     // Create chat-only prompt (no structured JSON needed for streaming)
     const prompt = `${AI_PERSONA}
@@ -374,7 +411,9 @@ Be helpful, creative, and engaging. If the user wants to make edits, create a de
 USER MESSAGE: "${userMessage}"
 
 CONTEXT:
-${contextText}`;
+${contextText}
+
+${conversationHistory}`;
 
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
@@ -483,20 +522,5 @@ ${contextText}`;
       console.error("💥 Gemini streaming API error:", error);
       throw error;
     }
-  }
-
-  /**
-   * Clear any pending plans
-   */
-  clearPendingPlan(): void {
-    this.pendingPlan = null;
-    this.pendingPlanContext = null;
-  }
-
-  /**
-   * Check if there's a pending plan awaiting approval
-   */
-  hasPendingPlan(): boolean {
-    return this.pendingPlan !== null;
   }
 }

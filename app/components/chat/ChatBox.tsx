@@ -559,6 +559,196 @@ export function ChatBox({
     }
   };
 
+  // Generate request handler - creates image and continues conversation
+  const handleGenerateRequest = async (
+    prompt: string,
+    suggestedName: string,
+    description: string,
+    originalMessage: string,
+    conversationMessages: ConversationMessage[],
+    synthContext: SynthContext
+  ): Promise<Message[]> => {
+    console.log("🎨 Handling generate request:", { prompt, suggestedName, description });
+    
+    try {
+      // For now, mock the image generation (will implement actual backend call later)
+      console.log("🎨 Mocking image generation for:", prompt);
+      
+      // Simulate generation delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Mock generated filename (will be returned from backend later)
+      const generatedFileName = `${suggestedName}.png`;
+      
+      // Create generation result message
+      const generationMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        content: `✨ Generated: ${generatedFileName}`,
+        isUser: false,
+        timestamp: new Date(),
+        // Normal AI message styling (not analysis result)
+      };
+
+      // Simulate adding to media library (will be done by backend later)
+      // For now, just continue with the conversation
+      
+      // Update conversation messages to include generation
+      const updatedMessages: ConversationMessage[] = [
+        ...conversationMessages,
+        {
+          id: (Date.now() + 1).toString(),
+          content: `🎨 Generating: ${description}`,
+          isUser: false,
+          timestamp: new Date(),
+        },
+        {
+          id: (Date.now() + 2).toString(),
+          content: `✨ Generated: ${generatedFileName}`,
+          isUser: false,
+          timestamp: new Date(),
+        }
+      ];
+
+      const updatedSynthContext: SynthContext = {
+        ...synthContext,
+        messages: updatedMessages
+        // Note: mediaLibrary will be updated with the new image when we implement the real backend call
+      };
+
+      console.log("🧠 Calling synth for post-generation continuation");
+      const followUpResponse = await synth.processMessage(originalMessage, updatedSynthContext);
+      console.log("🧠 Post-generation synth response:", followUpResponse);
+      
+      // Process the follow-up response based on its type (same logic as main handler)
+      let followUpMessages: Message[] = [];
+      
+      if (followUpResponse.type === 'edit') {
+        // Edit instructions - send to backend for implementation (don't display raw code)
+        console.log("🎬 Post-generation edit instructions:", followUpResponse.content);
+        
+        if (onGenerateComposition) {
+          const applyingMessage = {
+            id: (Date.now() + 3).toString(),
+            content: "Applying your requested edits to the timeline...",
+            isUser: false,
+            timestamp: new Date(),
+          };
+          
+          // Add the applying message to the return array
+          followUpMessages.push(applyingMessage);
+          
+          // Execute the edit in the background
+          try {
+            const success = await onGenerateComposition(followUpResponse.content, mediaBinItems);
+            followUpMessages.push({
+              id: (Date.now() + 4).toString(),
+              content: success ? "✨ Timeline updated successfully!" : "❌ Failed to update timeline. Please try again.",
+              isUser: false,
+              timestamp: new Date(),
+            });
+          } catch (error) {
+            followUpMessages.push({
+              id: (Date.now() + 4).toString(),
+              content: "❌ Error updating timeline. Please try again.",
+              isUser: false,
+              timestamp: new Date(),
+            });
+          }
+        } else {
+          followUpMessages.push({
+            id: (Date.now() + 3).toString(),
+            content: "Edit instructions ready, but no implementation handler available.",
+            isUser: false,
+            timestamp: new Date(),
+          });
+        }
+        
+      } else if (followUpResponse.type === 'generate') {
+        // Another generation request - trigger it
+        console.log("🎨 Post-generation requesting another generation:", followUpResponse.prompt);
+        
+        followUpMessages.push({
+          id: (Date.now() + 3).toString(),
+          content: `Generating: ${followUpResponse.content}`,
+          isUser: false,
+          timestamp: new Date(),
+          isAnalyzing: true, // Use analyzing state for UI
+        });
+        
+        // Recursively handle the next generation
+        try {
+          const nextGenerationResults = await handleGenerateRequest(
+            followUpResponse.prompt!,
+            followUpResponse.suggestedName!,
+            followUpResponse.content,
+            originalMessage,
+            updatedMessages,
+            updatedSynthContext
+          );
+          followUpMessages.push(...nextGenerationResults);
+        } catch (error) {
+          followUpMessages.push({
+            id: (Date.now() + 4).toString(),
+            content: `❌ Failed to generate next image: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            isUser: false,
+            timestamp: new Date(),
+          });
+        }
+        
+      } else if (followUpResponse.type === 'probe') {
+        // Probe request after generation (unlikely but handle it)
+        followUpMessages.push({
+          id: (Date.now() + 3).toString(),
+          content: `Analyzing ${followUpResponse.fileName}: ${followUpResponse.question}`,
+          isUser: false,
+          timestamp: new Date(),
+          isAnalyzing: true,
+        });
+        
+      } else if (followUpResponse.type === 'chat') {
+        // Chat response - display and CONTINUE processing (might lead to more actions)
+        followUpMessages.push({
+          id: (Date.now() + 3).toString(),
+          content: followUpResponse.content,
+          isUser: false,
+          timestamp: new Date(),
+        });
+        
+      } else if (followUpResponse.type === 'sleep') {
+        // Sleep response - display and STOP processing (wait for user input)
+        followUpMessages.push({
+          id: (Date.now() + 3).toString(),
+          content: followUpResponse.content,
+          isUser: false,
+          timestamp: new Date(),
+        });
+        // No further processing - workflow stops here
+        
+      } else {
+        // Fallback for unknown types - display and stop
+        followUpMessages.push({
+          id: (Date.now() + 3).toString(),
+          content: followUpResponse.content,
+          isUser: false,
+          timestamp: new Date(),
+        });
+      }
+
+      return [generationMessage, ...followUpMessages];
+
+    } catch (error) {
+      console.error("❌ Generation failed:", error);
+      const errorMessage: Message = {
+        id: (Date.now() + 3).toString(),
+        content: `❌ Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isUser: false,
+        timestamp: new Date(),
+        // Normal AI message styling for errors too
+      };
+      return [errorMessage];
+    }
+  };
+
   const handleStreamingChatMessage = async (messageContent: string, synthContext: SynthContext): Promise<Message[]> => {
     console.log("🌊 Starting streaming chat response");
     
@@ -679,6 +869,27 @@ export function ChatBox({
         // Return the probe results to be added to the UI alongside the analyzing message
         return probeResults;
         
+      } else if (synthResponse.type === 'generate') {
+        // Generate request - create image and continue conversation
+        console.log("🎨 Generate request:", synthResponse.prompt, synthResponse.suggestedName);
+        
+        const generatingMessage = {
+          id: (Date.now() + 1).toString(),
+          content: `Generating: ${synthResponse.content}`,
+          isUser: false,
+          timestamp: new Date(),
+          isAnalyzing: true, // Reuse analyzing state for UI
+        };
+        
+        // Add generating message to UI immediately
+        onMessagesChange(prevMessages => [...prevMessages, generatingMessage]);
+        
+        // Get generate results 
+        const generateResults = await handleGenerateRequest(synthResponse.prompt!, synthResponse.suggestedName!, synthResponse.content, messageContent, conversationMessages, synthContext);
+        
+        // Return the generate results to be added to the UI alongside the generating message
+        return generateResults;
+        
       } else if (synthResponse.type === 'edit') {
         // Edit instructions ready - send to backend for implementation
         await logEditExecution(synthResponse.content);
@@ -717,6 +928,16 @@ export function ChatBox({
         
       } else if (synthResponse.type === 'chat') {
         // Chat response - use streaming for better UX
+        await logChatResponse(synthResponse.content);
+        
+        return [{
+          id: (Date.now() + 1).toString(),
+          content: synthResponse.content,
+          isUser: false,
+          timestamp: new Date(),
+        }];
+      } else if (synthResponse.type === 'sleep') {
+        // Sleep response - display message and STOP (no further processing)
         await logChatResponse(synthResponse.content);
         
         return [{
