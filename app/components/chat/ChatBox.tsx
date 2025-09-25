@@ -170,7 +170,6 @@ export function ChatBox({
         // Retry the probe using the main flow with all context
         handleProbeRequest(fileName, question, originalMessage, conversationMessages, synthContext).then(newMessages => {
           onMessagesChange(prevMessages => [...prevMessages, ...newMessages]);
-          autoCollapseAnalysisResults(newMessages);
         }).catch(error => {
           console.error("❌ Retry failed:", error);
           const errorMessage: Message = {
@@ -184,18 +183,6 @@ export function ChatBox({
       }
     }
   }, [mediaBinItems, pendingProbe]);
-
-  // Helper function to auto-collapse analysis result messages
-  const autoCollapseAnalysisResults = (messages: Message[]) => {
-    const analysisMessages = messages.filter((msg: Message) => msg.isAnalysisResult);
-    if (analysisMessages.length > 0) {
-      setCollapsedMessages(prev => {
-        const newSet = new Set(prev);
-        analysisMessages.forEach((msg: Message) => newSet.add(msg.id));
-        return newSet;
-      });
-    }
-  };
 
   // Filter media bin items based on mention query
   const filteredMentions = mediaBinItems.filter((item) =>
@@ -327,6 +314,13 @@ export function ChatBox({
         timestamp: new Date(),
         isAnalysisResult: true,
       };
+
+      // Immediately add to collapsed state so it appears collapsed from the start
+      setCollapsedMessages(prev => {
+        const newSet = new Set(prev);
+        newSet.add(analysisMessage.id);
+        return newSet;
+      });
 
       return [analysisMessage];
 
@@ -663,8 +657,7 @@ export function ChatBox({
       onMessagesChange(prevMessages => [...prevMessages, maxIterationMessage]);
     }
 
-    // Auto-collapse any analysis result messages
-    autoCollapseAnalysisResults(allResponseMessages);
+    // Auto-collapse any analysis result messages (removed - now handled immediately when creating messages)
     
     // Save log after complete workflow
     await logWorkflowComplete();
