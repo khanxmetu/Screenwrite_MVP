@@ -35,7 +35,7 @@ import {
 import { llmAddScrubberToTimeline } from "~/utils/llm-handler";
 
 // Conversational Synth
-import { ConversationalSynth, type SynthContext, type ConversationMessage } from "./ConversationalSynth";
+import { ConversationalSynth, type SynthContext, type ConversationMessage, type SynthResponse } from "./ConversationalSynth";
 
 interface Message {
   id: string;
@@ -43,7 +43,6 @@ interface Message {
   isUser: boolean;
   timestamp: Date;
   isExplanationMode?: boolean; // For post-edit explanations
-  isAnalyzing?: boolean; // For analyzing messages that appear as plain text
   isAnalysisResult?: boolean; // For analysis results that appear in darker bubbles
 }
 
@@ -97,7 +96,6 @@ export function ChatBox({
   onClearError,
 }: ChatBoxProps) {
   const [inputValue, setInputValue] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
   const [showMentions, setShowMentions] = useState(false);
   const [showSendOptions, setShowSendOptions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -107,7 +105,6 @@ export function ChatBox({
   const [sendWithMedia, setSendWithMedia] = useState(false); // Track send mode
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
-  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [pendingProbe, setPendingProbe] = useState<{
     fileName: string, 
     question: string, 
@@ -166,7 +163,6 @@ export function ChatBox({
           content: `Video ready! Now analyzing ${fileName}...`,
           isUser: false,
           timestamp: new Date(),
-          isAnalyzing: true,
         };
         onMessagesChange(prevMessages => [...prevMessages, analyzingMessage]);
         
@@ -278,16 +274,13 @@ export function ChatBox({
     }, 0);
   };
 
-  // New conversational message handler using ConversationalSynth
+  // Simple internal probe handler that just does media analysis (no nested synth calls)
   const handleProbeRequestInternal = async (
     fileName: string, 
-    question: string, 
-    originalMessage?: string, 
-    conversationMessages?: ConversationMessage[],
-    synthContext?: SynthContext
+    question: string
   ): Promise<Message[]> => {
     await logProbeStart(fileName, question);
-    console.log("🔍 Handling probe request for:", fileName);
+    console.log("🔍 Executing probe request for:", fileName);
     console.log("🔍 Available media files:", mediaBinItems.map(item => item.name));
     
     // Smart file matching logic
@@ -325,60 +318,22 @@ export function ChatBox({
       const analysisResult = await analyzeMediaWithGemini(mediaFile, question);
       await logProbeAnalysis(fileName, analysisResult);
       
-      // Create analysis result message
+      // Create analysis result message (just return the analysis, don't call synth)
       const analysisMessage: Message = {
-        id: (Date.now() + 2).toString(),
+        id: (Date.now() + 1).toString(),
         content: analysisResult,
         isUser: false,
         timestamp: new Date(),
         isAnalysisResult: true,
       };
 
-      // If this is a standalone probe (from retry), just return the analysis
-      if (!originalMessage || !conversationMessages || !synthContext) {
-        return [analysisMessage];
-      }
-
-      // Otherwise, continue with full conversational flow
-      const updatedMessages: ConversationMessage[] = [
-        ...conversationMessages,
-        {
-          id: (Date.now() + 1).toString(),
-          content: `🔍 Probing ${fileName}: ${question}`,
-          isUser: false,
-          timestamp: new Date(),
-        },
-        {
-          id: (Date.now() + 2).toString(),
-          content: `📄 Analysis: ${analysisResult}`,
-          isUser: false,
-          timestamp: new Date(),
-        }
-      ];
-
-      const updatedSynthContext: SynthContext = {
-        ...synthContext,
-        messages: updatedMessages
-      };
-
-      await logSynthCall(`[POST-PROBE] ${originalMessage}`, updatedSynthContext);
-      const followUpResponse = await synth.processMessage(originalMessage, updatedSynthContext);
-      await logSynthResponse(followUpResponse);
-      
-      const followUpMessage: Message = {
-        id: (Date.now() + 3).toString(),
-        content: followUpResponse.content,
-        isUser: false,
-        timestamp: new Date(),
-      };
-
-      return [analysisMessage, followUpMessage];
+      return [analysisMessage];
 
     } catch (error) {
       console.error("❌ Probe analysis failed:", error);
       await logProbeError(fileName, error instanceof Error ? error.message : String(error));
       const errorMessage: Message = {
-        id: (Date.now() + 3).toString(),
+        id: (Date.now() + 1).toString(),
         content: `❌ Failed to analyze ${fileName}. ${error instanceof Error ? error.message : 'Unknown error'}`,
         isUser: false,
         timestamp: new Date(),
@@ -414,8 +369,8 @@ export function ChatBox({
       return [pendingMessage];
     }
 
-    // Otherwise, proceed with normal probe
-    return handleProbeRequestInternal(fileName, question, originalMessage, conversationMessages, synthContext);
+    // Otherwise, proceed with simple probe execution (unified system handles continuation)
+    return handleProbeRequestInternal(fileName, question);
   };
 
   const analyzeMediaWithGemini = async (mediaFile: MediaBinItem, question: string): Promise<string> => {
@@ -559,16 +514,13 @@ export function ChatBox({
     }
   };
 
-  // Generate request handler - creates image and continues conversation
-  const handleGenerateRequest = async (
+  // Simple internal handlers that just execute actions (no nested synth calls)
+  const handleGenerateRequestInternal = async (
     prompt: string,
     suggestedName: string,
-    description: string,
-    originalMessage: string,
-    conversationMessages: ConversationMessage[],
-    synthContext: SynthContext
+    description: string
   ): Promise<Message[]> => {
-    console.log("🎨 Handling generate request:", { prompt, suggestedName, description });
+    console.log("🎨 Executing generation request:", { prompt, suggestedName, description });
     
     try {
       // For now, mock the image generation (will implement actual backend call later)
@@ -582,393 +534,225 @@ export function ChatBox({
       
       // Create generation result message
       const generationMessage: Message = {
-        id: (Date.now() + 2).toString(),
+        id: (Date.now() + 1).toString(),
         content: `✨ Generated: ${generatedFileName}`,
         isUser: false,
         timestamp: new Date(),
-        // Normal AI message styling (not analysis result)
       };
 
-      // Simulate adding to media library (will be done by backend later)
-      // For now, just continue with the conversation
-      
-      // Update conversation messages to include generation
-      const updatedMessages: ConversationMessage[] = [
-        ...conversationMessages,
-        {
-          id: (Date.now() + 1).toString(),
-          content: `🎨 Generating: ${description}`,
-          isUser: false,
-          timestamp: new Date(),
-        },
-        {
-          id: (Date.now() + 2).toString(),
-          content: `✨ Generated: ${generatedFileName}`,
-          isUser: false,
-          timestamp: new Date(),
-        }
-      ];
-
-      const updatedSynthContext: SynthContext = {
-        ...synthContext,
-        messages: updatedMessages
-        // Note: mediaLibrary will be updated with the new image when we implement the real backend call
-      };
-
-      console.log("🧠 Calling synth for post-generation continuation");
-      const followUpResponse = await synth.processMessage(originalMessage, updatedSynthContext);
-      console.log("🧠 Post-generation synth response:", followUpResponse);
-      
-      // Process the follow-up response based on its type (same logic as main handler)
-      let followUpMessages: Message[] = [];
-      
-      if (followUpResponse.type === 'edit') {
-        // Edit instructions - send to backend for implementation (don't display raw code)
-        console.log("🎬 Post-generation edit instructions:", followUpResponse.content);
-        
-        if (onGenerateComposition) {
-          const applyingMessage = {
-            id: (Date.now() + 3).toString(),
-            content: "Applying your requested edits to the timeline...",
-            isUser: false,
-            timestamp: new Date(),
-          };
-          
-          // Add the applying message to the return array
-          followUpMessages.push(applyingMessage);
-          
-          // Execute the edit in the background
-          try {
-            const success = await onGenerateComposition(followUpResponse.content, mediaBinItems);
-            followUpMessages.push({
-              id: (Date.now() + 4).toString(),
-              content: success ? "✨ Timeline updated successfully!" : "❌ Failed to update timeline. Please try again.",
-              isUser: false,
-              timestamp: new Date(),
-            });
-          } catch (error) {
-            followUpMessages.push({
-              id: (Date.now() + 4).toString(),
-              content: "❌ Error updating timeline. Please try again.",
-              isUser: false,
-              timestamp: new Date(),
-            });
-          }
-        } else {
-          followUpMessages.push({
-            id: (Date.now() + 3).toString(),
-            content: "Edit instructions ready, but no implementation handler available.",
-            isUser: false,
-            timestamp: new Date(),
-          });
-        }
-        
-      } else if (followUpResponse.type === 'generate') {
-        // Another generation request - trigger it
-        console.log("🎨 Post-generation requesting another generation:", followUpResponse.prompt);
-        
-        followUpMessages.push({
-          id: (Date.now() + 3).toString(),
-          content: `Generating: ${followUpResponse.content}`,
-          isUser: false,
-          timestamp: new Date(),
-          isAnalyzing: true, // Use analyzing state for UI
-        });
-        
-        // Recursively handle the next generation
-        try {
-          const nextGenerationResults = await handleGenerateRequest(
-            followUpResponse.prompt!,
-            followUpResponse.suggestedName!,
-            followUpResponse.content,
-            originalMessage,
-            updatedMessages,
-            updatedSynthContext
-          );
-          followUpMessages.push(...nextGenerationResults);
-        } catch (error) {
-          followUpMessages.push({
-            id: (Date.now() + 4).toString(),
-            content: `❌ Failed to generate next image: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            isUser: false,
-            timestamp: new Date(),
-          });
-        }
-        
-      } else if (followUpResponse.type === 'probe') {
-        // Probe request after generation (unlikely but handle it)
-        followUpMessages.push({
-          id: (Date.now() + 3).toString(),
-          content: `Analyzing ${followUpResponse.fileName}: ${followUpResponse.question}`,
-          isUser: false,
-          timestamp: new Date(),
-          isAnalyzing: true,
-        });
-        
-      } else if (followUpResponse.type === 'chat') {
-        // Chat response - display and CONTINUE processing (might lead to more actions)
-        followUpMessages.push({
-          id: (Date.now() + 3).toString(),
-          content: followUpResponse.content,
-          isUser: false,
-          timestamp: new Date(),
-        });
-        
-      } else if (followUpResponse.type === 'sleep') {
-        // Sleep response - display and STOP processing (wait for user input)
-        followUpMessages.push({
-          id: (Date.now() + 3).toString(),
-          content: followUpResponse.content,
-          isUser: false,
-          timestamp: new Date(),
-        });
-        // No further processing - workflow stops here
-        
-      } else {
-        // Fallback for unknown types - display and stop
-        followUpMessages.push({
-          id: (Date.now() + 3).toString(),
-          content: followUpResponse.content,
-          isUser: false,
-          timestamp: new Date(),
-        });
-      }
-
-      return [generationMessage, ...followUpMessages];
+      // Note: In real implementation, this would call backend to generate and add to media library
+      // For now, just return the completion message
+      return [generationMessage];
 
     } catch (error) {
       console.error("❌ Generation failed:", error);
       const errorMessage: Message = {
-        id: (Date.now() + 3).toString(),
+        id: (Date.now() + 1).toString(),
         content: `❌ Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`,
         isUser: false,
         timestamp: new Date(),
-        // Normal AI message styling for errors too
       };
       return [errorMessage];
     }
   };
 
-  const handleStreamingChatMessage = async (messageContent: string, synthContext: SynthContext): Promise<Message[]> => {
-    console.log("🌊 Starting streaming chat response");
+  const handleConversationalMessage = async (messageContent: string): Promise<void> => {
+    await logUserMessage(messageContent, mentionedItems.map(item => item.name));
+    console.log("🧠 Processing conversational message with unified workflow:", messageContent);
+
+    // Initialize unified workflow state
+    let currentMessageContent = messageContent;
+    let allResponseMessages: Message[] = [];
+    let continueWorkflow = true;
+    let iterationCount = 0;
+    const MAX_ITERATIONS = 10; // Prevent infinite loops
     
-    // Create the streaming message container
-    const streamingMessageId = (Date.now() + 1).toString();
-    const streamingMessage: Message = {
-      id: streamingMessageId,
-      content: "",
-      isUser: false,
-      timestamp: new Date(),
-    };
-
-    // Add empty message to UI immediately and set loading state
-    onMessagesChange(prevMessages => [...prevMessages, streamingMessage]);
-    setIsWaitingForResponse(true);
-
-    try {
-      let accumulatedContent = "";
-      let isFirstChunk = true;
+    // Unified workflow loop: synth → route → execute → check continuation → repeat until sleep
+    while (continueWorkflow && iterationCount < MAX_ITERATIONS) {
+      iterationCount++;
+      console.log(`🔄 Unified workflow iteration ${iterationCount}`);
       
-      // Stream the response
-      await synth.streamChatResponse(messageContent, synthContext, (chunk: string) => {
-        console.log("📝 Received chunk in ChatBox:", chunk);
+      try {
+        // Build current conversation state (including all new messages from this workflow)
+        const conversationMessages: ConversationMessage[] = [
+          ...messages.map(msg => ({
+            id: msg.id,
+            content: msg.content,
+            isUser: msg.isUser,
+            timestamp: msg.timestamp
+          })),
+          ...allResponseMessages.map(msg => ({
+            id: msg.id,
+            content: msg.content,
+            isUser: msg.isUser,
+            timestamp: msg.timestamp
+          }))
+        ];
+
+        // Build synth context with latest state
+        const synthContext: SynthContext = {
+          messages: conversationMessages,
+          currentComposition: currentComposition ? JSON.parse(currentComposition) : undefined,
+          mediaLibrary: mediaBinItems,
+          compositionDuration: undefined
+        };
+
+        // Call synth for decision
+        await logSynthCall(currentMessageContent, synthContext);
         
-        // Hide loading indicator on first chunk
-        if (isFirstChunk) {
-          setIsWaitingForResponse(false);
-          isFirstChunk = false;
+        const synthResponse = await synth.processMessage(currentMessageContent, synthContext);
+        await logSynthResponse(synthResponse);
+        
+        console.log(`🎯 Synth response type: ${synthResponse.type}`);
+
+        // Route to appropriate handler and execute action
+        const stepMessages = await executeResponseAction(synthResponse, currentMessageContent, conversationMessages, synthContext);
+        
+        // Add step messages to our collection
+        allResponseMessages.push(...stepMessages);
+        
+        // Update UI immediately with new messages
+        onMessagesChange(prevMessages => [...prevMessages, ...stepMessages]);
+
+        // Check if workflow should continue
+        if (synthResponse.type === 'sleep') {
+          console.log("💤 Sleep response - stopping unified workflow");
+          continueWorkflow = false;
+        } else if (synthResponse.type === 'chat') {
+          console.log("💬 Chat response - continuing workflow automatically");
+          // For chat responses, use the chat content as the next input to continue the workflow
+          currentMessageContent = `Continue with: ${synthResponse.content}`;
+        } else {
+          console.log(`� ${synthResponse.type} response - continuing workflow`);
+          // For other response types (edit, probe, generate), continue with original message context
+          currentMessageContent = messageContent;
         }
         
-        accumulatedContent += chunk;
+      } catch (error) {
+        console.error(`❌ Unified workflow iteration ${iterationCount} failed:`, error);
+        await logSynthResponse({ error: error instanceof Error ? error.message : String(error) });
         
-        // Update the streaming message with accumulated content
-        onMessagesChange(prevMessages => 
-          prevMessages.map(msg => 
-            msg.id === streamingMessageId 
-              ? { ...msg, content: accumulatedContent }
-              : msg
-          )
-        );
-      });
-
-      await logChatResponse(accumulatedContent);
-      
-      // Return empty array since message was already added via onMessagesChange
-      return [];
-      
-    } catch (error) {
-      console.error("❌ Streaming chat failed:", error);
-      
-      // Clear loading state on error
-      setIsWaitingForResponse(false);
-      
-      // Update the message with error
-      onMessagesChange(prevMessages => 
-        prevMessages.map(msg => 
-          msg.id === streamingMessageId 
-            ? { ...msg, content: "I'm having trouble processing your message right now. Could you try again?" }
-            : msg
-        )
-      );
-      
-      return [];
+        const errorMessage: Message = {
+          id: (Date.now() + iterationCount).toString(),
+          content: "I'm having trouble processing your request. Let me try a different approach.",
+          isUser: false,
+          timestamp: new Date(),
+        };
+        
+        // Add to both collections for consistency (UI handled here, no double addition)
+        allResponseMessages.push(errorMessage);
+        onMessagesChange(prevMessages => [...prevMessages, errorMessage]);
+        continueWorkflow = false;
+      }
     }
+
+    if (iterationCount >= MAX_ITERATIONS) {
+      console.warn("⚠️ Unified workflow hit max iterations limit");
+      const maxIterationMessage: Message = {
+        id: Date.now().toString(),
+        content: "I've completed several steps but need to pause here. How can I help you next?",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      allResponseMessages.push(maxIterationMessage);
+      onMessagesChange(prevMessages => [...prevMessages, maxIterationMessage]);
+    }
+
+    // Auto-collapse any analysis result messages
+    autoCollapseAnalysisResults(allResponseMessages);
+    
+    // Save log after complete workflow
+    await logWorkflowComplete();
+    
+    // Unified workflow handles all UI updates internally
+    return;
   };
 
-  const handleConversationalMessage = async (messageContent: string) => {
-    await logUserMessage(messageContent, mentionedItems.map(item => item.name));
-    console.log("🧠 Processing conversational message:", messageContent);
-
-    // Convert messages to ConversationMessage format
-    const conversationMessages: ConversationMessage[] = messages.map(msg => ({
-      id: msg.id,
-      content: msg.content,
-      isUser: msg.isUser,
-      timestamp: msg.timestamp
-    }));
-
-    // Build synth context
-    const synthContext: SynthContext = {
-      messages: conversationMessages,
-      currentComposition: currentComposition ? JSON.parse(currentComposition) : undefined,
-      mediaLibrary: mediaBinItems,
-      compositionDuration: undefined // Will be calculated from composition
-    };
-
-    try {
-      // Process ALL messages with synth to maintain proper conversation state and workflow
-      await logSynthCall(messageContent, synthContext);
+  // Execute the appropriate action based on response type (no nested synth calls)
+  const executeResponseAction = async (
+    synthResponse: SynthResponse,
+    originalMessage: string,
+    conversationMessages: ConversationMessage[],
+    synthContext: SynthContext
+  ): Promise<Message[]> => {
+    console.log(`🎬 Executing action for response type: ${synthResponse.type}`);
+    
+    if (synthResponse.type === 'probe') {
+      // Probe request - analyze media file (only show analysis result)
+      console.log("🔍 Executing probe:", synthResponse.fileName, synthResponse.question);
       
-      setIsWaitingForResponse(true);
+      const probeResults = await handleProbeRequestInternal(synthResponse.fileName!, synthResponse.question!);
       
-      const synthResponse = await synth.processMessage(messageContent, synthContext);
-      await logSynthResponse(synthResponse);
+      return probeResults; // Only return analysis result, no "Analyzing..." message
       
-      // Clear loading state
-      setIsWaitingForResponse(false);
+    } else if (synthResponse.type === 'generate') {
+      // Generate request - create image (only show generation result)
+      console.log("🎨 Executing generation:", synthResponse.prompt, synthResponse.suggestedName);
       
-      // Handle different response types
-      if (synthResponse.type === 'probe') {
-        // Probe request - analyze media file and continue conversation
-        console.log("🔍 Probe request:", synthResponse.fileName, synthResponse.question);
+      const generateResults = await handleGenerateRequestInternal(synthResponse.prompt!, synthResponse.suggestedName!, synthResponse.content);
+      
+      return generateResults; // Only return generation result, no "Generating..." message
+      
+    } else if (synthResponse.type === 'edit') {
+      // Edit instructions - send to backend (only show final result)
+      console.log("🎬 Executing edit:", synthResponse.content);
+      await logEditExecution(synthResponse.content);
+      
+      if (onGenerateComposition) {
+        const success = await onGenerateComposition(synthResponse.content, mediaBinItems);
+        await logEditResult(success);
         
-        const analyzingMessage = {
+        const resultMessage = {
           id: (Date.now() + 1).toString(),
-          content: `Analyzing ${synthResponse.fileName}: ${synthResponse.question}`,
+          content: success ? "✨ Edit implemented successfully!" : "❌ Failed to implement the edit. Please try again.",
           isUser: false,
           timestamp: new Date(),
-          isAnalyzing: true,
         };
         
-        // Add analyzing message to UI immediately
-        onMessagesChange(prevMessages => [...prevMessages, analyzingMessage]);
-        
-        // Get probe results 
-        const probeResults = await handleProbeRequest(synthResponse.fileName!, synthResponse.question!, messageContent, conversationMessages, synthContext);
-        
-        // Return the probe results to be added to the UI alongside the analyzing message
-        return probeResults;
-        
-      } else if (synthResponse.type === 'generate') {
-        // Generate request - create image and continue conversation
-        console.log("🎨 Generate request:", synthResponse.prompt, synthResponse.suggestedName);
-        
-        const generatingMessage = {
-          id: (Date.now() + 1).toString(),
-          content: `Generating: ${synthResponse.content}`,
-          isUser: false,
-          timestamp: new Date(),
-          isAnalyzing: true, // Reuse analyzing state for UI
-        };
-        
-        // Add generating message to UI immediately
-        onMessagesChange(prevMessages => [...prevMessages, generatingMessage]);
-        
-        // Get generate results 
-        const generateResults = await handleGenerateRequest(synthResponse.prompt!, synthResponse.suggestedName!, synthResponse.content, messageContent, conversationMessages, synthContext);
-        
-        // Return the generate results to be added to the UI alongside the generating message
-        return generateResults;
-        
-      } else if (synthResponse.type === 'edit') {
-        // Edit instructions ready - send to backend for implementation
-        await logEditExecution(synthResponse.content);
-        console.log("🎬 Edit instructions generated:", synthResponse.content);
-        
-        if (onGenerateComposition) {
-          const applyingMessage = {
-            id: (Date.now() + 1).toString(),
-            content: "Applying your requested edits, this may take a moment...",
-            isUser: false,
-            timestamp: new Date(),
-          };
-          
-          // Add the message immediately
-          onMessagesChange(prevMessages => [...prevMessages, applyingMessage]);
-          
-          const success = await onGenerateComposition(synthResponse.content, mediaBinItems);
-          await logEditResult(success);
-          
-          return [
-            {
-              id: (Date.now() + 2).toString(),
-              content: success ? "✨ Edit implemented successfully!" : "❌ Failed to implement the edit. Please try again.",
-              isUser: false,
-              timestamp: new Date(),
-            }
-          ];
-        } else {
-          return [{
-            id: (Date.now() + 1).toString(),
-            content: "Edit instructions ready, but no implementation handler available.",
-            isUser: false,
-            timestamp: new Date(),
-          }];
-        }
-        
-      } else if (synthResponse.type === 'chat') {
-        // Chat response - use streaming for better UX
-        await logChatResponse(synthResponse.content);
-        
-        return [{
-          id: (Date.now() + 1).toString(),
-          content: synthResponse.content,
-          isUser: false,
-          timestamp: new Date(),
-        }];
-      } else if (synthResponse.type === 'sleep') {
-        // Sleep response - display message and STOP (no further processing)
-        await logChatResponse(synthResponse.content);
-        
-        return [{
-          id: (Date.now() + 1).toString(),
-          content: synthResponse.content,
-          isUser: false,
-          timestamp: new Date(),
-        }];
+        return [resultMessage]; // Only return final result, no "Applying..." message
       } else {
-        // Fallback for unknown types
         return [{
           id: (Date.now() + 1).toString(),
-          content: synthResponse.content,
+          content: "Edit instructions ready, but no implementation handler available.",
           isUser: false,
           timestamp: new Date(),
         }];
       }
       
-    } catch (error) {
-      console.error("❌ Conversational synth failed:", error);
-      await logSynthResponse({ error: error instanceof Error ? error.message : String(error) });
+    } else if (synthResponse.type === 'chat') {
+      // Chat response - just display
+      console.log("💬 Executing chat response");
+      await logChatResponse(synthResponse.content);
       
       return [{
         id: (Date.now() + 1).toString(),
-        content: "I'm having trouble processing your message right now. Could you try again?",
+        content: synthResponse.content,
         isUser: false,
         timestamp: new Date(),
       }];
-    } finally {
-      // Save log after each conversation turn
-      await logWorkflowComplete();
+      
+    } else if (synthResponse.type === 'sleep') {
+      // Sleep response - display and mark end of workflow
+      console.log("💤 Executing sleep response");
+      await logChatResponse(synthResponse.content);
+      
+      return [{
+        id: (Date.now() + 1).toString(),
+        content: synthResponse.content,
+        isUser: false,
+        timestamp: new Date(),
+      }];
+      
+    } else {
+      // Fallback for unknown types
+      console.log("❓ Executing fallback for unknown type:", synthResponse.type);
+      
+      return [{
+        id: (Date.now() + 1).toString(),
+        content: synthResponse.content,
+        isUser: false,
+        timestamp: new Date(),
+      }];
     }
   };
 
@@ -998,7 +782,6 @@ export function ChatBox({
     onMessagesChange(prevMessages => [...prevMessages, userMessage]);
     setInputValue("");
     setMentionedItems([]); // Clear mentioned items after sending
-    setIsTyping(true);
 
     // Reset textarea height
     if (inputRef.current) {
@@ -1011,20 +794,9 @@ export function ChatBox({
       if (isStandalonePreview) {
         console.log("🎬 Standalone preview mode - using conversational synth");
         
-        const aiMessages = await handleConversationalMessage(messageContent);
-        // Use functional update to get the current messages at the time of the update
-        onMessagesChange(prevMessages => {
-          // Update any analyzing messages to remove loading state
-          const updatedMessages = prevMessages.map(msg => 
-            msg.isAnalyzing ? { ...msg, isAnalyzing: false } : msg
-          );
-          return [...updatedMessages, ...aiMessages];
-        });
+        // Unified workflow handles all UI updates internally, no need to add messages again
+        await handleConversationalMessage(messageContent);
         
-        // Auto-collapse any analysis result messages
-        autoCollapseAnalysisResults(aiMessages);
-        
-        setIsTyping(false);
         return;
       }
 
@@ -1100,8 +872,6 @@ export function ChatBox({
       };
       
       onMessagesChange(prevMessages => [...prevMessages, userMessage, errorMessage]);
-    } finally {
-      setIsTyping(false);
     }
   };
 
@@ -1325,19 +1095,6 @@ export function ChatBox({
               )}
               
               {messages.map((message) => (
-                message.isAnalyzing ? (
-                  // Render analyzing messages as plain text without bubble
-                  <div key={message.id} className="px-3 py-1 text-xs text-muted-foreground italic">
-                    <div className="flex items-center gap-2">
-                      <span>{formatMessageText(message.content)}</span>
-                      <div className="flex space-x-1">
-                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
                   <div
                     key={message.id}
                     className={`flex ${
@@ -1357,7 +1114,7 @@ export function ChatBox({
                       onClick={message.isAnalysisResult ? () => toggleMessageCollapsed(message.id) : undefined}
                     >
                     <div className="flex items-start gap-2">
-                      {!message.isUser && !message.isAnalyzing && (
+                      {!message.isUser && (
                         <Bot className={`h-3 w-3 mt-0.5 shrink-0 ${
                           message.isExplanationMode
                             ? "text-green-600 dark:text-green-400"
@@ -1405,27 +1162,13 @@ export function ChatBox({
                     </div>
                   </div>
                 </div>
-                )
               ))}
 
               {/* Invisible element to scroll to */}
               <div ref={messagesEndRef} />
             </div>
 
-            {isWaitingForResponse && (
-              <div className="px-3 py-2 flex items-center gap-2">
-                <div className="flex items-start gap-2">
-                  <Bot className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
-                  <div className="flex items-center gap-1 pt-1">
-                    <div className="flex space-x-1">
-                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Loading indicator removed - clean UI */}
 
             {/* Mentions popup */}
             {showMentions && (
@@ -1525,7 +1268,6 @@ export function ChatBox({
                 placeholder="Ask Screenwrite to create or edit your video..."
                 className="w-full resize-none border-0 bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-0 pr-12 overflow-hidden"
                 style={{ height: `${textareaHeight}px` }}
-                disabled={isWaitingForResponse}
               />
               
               <div className="absolute right-2 bottom-1 flex items-center gap-1">
@@ -1538,7 +1280,6 @@ export function ChatBox({
                       e.stopPropagation();
                       setShowSendOptions(!showSendOptions);
                     }}
-                    disabled={isWaitingForResponse}
                   >
                     <ChevronDown className="h-3 w-3" />
                   </Button>
@@ -1549,7 +1290,7 @@ export function ChatBox({
                   size="sm"
                   className="h-7 w-7 p-0 text-primary hover:text-primary/80 hover:bg-primary/10"
                   onClick={() => handleSendMessage(sendWithMedia)}
-                  disabled={(!inputValue.trim() && mentionedItems.length === 0) || isWaitingForResponse}
+                  disabled={!inputValue.trim() && mentionedItems.length === 0}
                 >
                   <Send className="h-3 w-3" />
                 </Button>
