@@ -234,10 +234,15 @@ class ContentGenerationProvider:
     async def generate_image(self, prompt: str, reference_images: list = None):
         """Generate image using Imagen 4.0 Fast model"""
         try:
-            # For image generation, use the dedicated generate_images method with Imagen 4.0 Fast
+            # Configure image generation with 16:9 aspect ratio and allow all person generation
+            config = types.GenerateImagesConfig(
+                number_of_images=1,  # Generate single image for efficiency  
+                aspect_ratio="16:9"  # Standard screen aspect ratio
+            )            # For image generation, use the dedicated generate_images method with Imagen 4.0 Fast
             response = self.api_client.models.generate_images(
                 model="imagen-4.0-fast-generate-001",
-                prompt=prompt
+                prompt=prompt,
+                config=config
             )
             
             return response
