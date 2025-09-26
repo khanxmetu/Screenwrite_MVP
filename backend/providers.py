@@ -210,14 +210,12 @@ class ContentGenerationProvider:
             # Choose model based on requirements
             model = "veo-3.0-fast-generate-001"  # Use fast model for better performance
             
-            # Build generation config
-            config_params = {}
+            # Build generation config - only negative_prompt goes in config
+            config = None
             if negative_prompt:
-                config_params["negative_prompt"] = negative_prompt
+                config = types.GenerateVideosConfig(negative_prompt=negative_prompt)
             
-            config = types.GenerateVideosConfig(**config_params) if config_params else None
-            
-            # Start video generation (async operation)
+            # Start video generation (async operation) - aspect_ratio and resolution are direct parameters
             operation = self.api_client.models.generate_videos(
                 model=model,
                 prompt=prompt,

@@ -61,8 +61,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files for generated media
-app.mount("/media", StaticFiles(directory="../out"), name="media")
+# Ensure output directory exists before mounting static files
+os.makedirs("out", exist_ok=True)
+
+# Mount static file serving for generated media
+app.mount("/media", StaticFiles(directory="out"), name="media")
 
 
 class Message(BaseModel):
@@ -466,15 +469,62 @@ async def generate_content(request: GenerateContentRequest):
                 reference_image=reference_image
             )
             
-            # Store operation for status checking
-            operation_id = str(uuid.uuid4())
-            active_operations[operation_id] = operation
+            # Poll internally until video generation is complete
+            import time
+            print("Video generation started, polling for completion...")
+            while not operation.done:
+                print("⏳ Video still generating, waiting 5 seconds...")
+                time.sleep(5)
+                operation = await content_generator.check_video_status(operation)
             
-            return GenerateContentResponse(
-                success=True,
-                operation_id=operation_id,
-                status="processing"
-            )
+            print("Video generation completed!")
+            
+            # Process completed video (same logic as check_generation_status)
+            try:
+                # Download the generated video
+                generated_video = operation.response.generated_videos[0]
+                
+                # Create unique filename
+                asset_id = str(uuid.uuid4())
+                file_name = f"generated_video_{asset_id}.mp4"
+                file_path = os.path.join("out", file_name)
+                
+                # Ensure output directory exists
+                os.makedirs("out", exist_ok=True)
+                
+                # Download the generated video.
+                content_generator.api_client.files.download(file=generated_video.video)
+                generated_video.video.save(file_path)
+                
+                # Get file size (video dimensions would need separate analysis)
+                file_size = os.path.getsize(file_path)
+                
+                # Create asset response
+                generated_asset = GeneratedAsset(
+                    asset_id=asset_id,
+                    content_type="video",
+                    file_path=file_path,
+                    file_url=f"/media/{file_name}",
+                    prompt=request.prompt,
+                    duration_seconds=8.0,  # Veo generates 8-second videos
+                    width=1280 if request.resolution == "720p" else 1920,
+                    height=720 if request.resolution == "720p" else 1080,
+                    file_size=file_size
+                )
+                
+                return GenerateContentResponse(
+                    success=True,
+                    generated_asset=generated_asset,
+                    status="completed"
+                )
+                
+            except Exception as e:
+                print(f"❌ Failed to download generated video: {e}")
+                return GenerateContentResponse(
+                    success=False,
+                    status="failed",
+                    error_message=f"Failed to download video: {str(e)}"
+                )
             
         elif request.content_type == "image":
             # Handle reference images if provided
@@ -497,10 +547,10 @@ async def generate_content(request: GenerateContentRequest):
             # Save generated image
             asset_id = str(uuid.uuid4())
             file_name = f"generated_image_{asset_id}.png"
-            file_path = os.path.join("../out", file_name)
+            file_path = os.path.join("out", file_name)
             
             # Ensure output directory exists
-            os.makedirs("../out", exist_ok=True)
+            os.makedirs("out", exist_ok=True)
             
             # Extract and save image from Imagen response
             if response.generated_images and len(response.generated_images) > 0:
@@ -562,7 +612,10 @@ async def check_generation_status(request: CheckGenerationStatusRequest):
         if operation_id not in active_operations:
             raise HTTPException(status_code=404, detail="Operation not found")
         
-        operation = active_operations[operation_id]
+        operation_data = active_operations[operation_id]
+        operation = operation_data['operation']
+        stored_prompt = operation_data['prompt']
+        stored_resolution = operation_data['resolution']
         
         # Check current status
         updated_operation = await content_generator.check_video_status(operation)
@@ -581,7 +634,7 @@ async def check_generation_status(request: CheckGenerationStatusRequest):
                 # Ensure output directory exists
                 os.makedirs("out", exist_ok=True)
                 
-                # Download video file
+                # Download the generated video.
                 content_generator.api_client.files.download(file=generated_video.video)
                 generated_video.video.save(file_path)
                 
@@ -594,10 +647,10 @@ async def check_generation_status(request: CheckGenerationStatusRequest):
                     content_type="video",
                     file_path=file_path,
                     file_url=f"/media/{file_name}",
-                    prompt="Video generation prompt",  # Could store this in operation
+                    prompt=stored_prompt,  # Use stored prompt
                     duration_seconds=8.0,  # Veo generates 8-second videos
-                    width=1280 if "720p" in str(updated_operation) else 1920,  # Estimate based on resolution
-                    height=720 if "720p" in str(updated_operation) else 1080,
+                    width=1280 if stored_resolution == "720p" else 1920,  # Use stored resolution
+                    height=720 if stored_resolution == "720p" else 1080,
                     file_size=file_size
                 )
                 
@@ -676,4 +729,11 @@ async def save_chat_log(request: ChatLogRequest):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8001)
+    # Run with extended timeout to handle long video generation (up to 10 minutes)
+    uvicorn.run(
+        app, 
+        host="127.0.0.1", 
+        port=8001,
+        timeout_keep_alive=600,  # 10 minutes for long video generation
+        timeout_graceful_shutdown=30
+    )
