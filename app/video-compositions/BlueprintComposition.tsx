@@ -339,8 +339,8 @@ function SegmentRenderer({
       // For orphaned transitions, structure the sequence to keep transitions within clip duration
       
       if (segment.hasOrphanedStart && segment.hasOrphanedEnd) {
-        // Both transitions: fade in + content + fade out (all within clip duration)
-        const contentDuration = clipDurationFrames - transitionFromDuration - transitionToDuration;
+        // Both transitions: content plays for full duration, transitions overlay
+        const contentDuration = clipDurationFrames; // Full clip duration for orphaned transitions
         const executionContext = createExecutionContext(clip.startTimeInSeconds);
         
         // Empty sequence for fade in
@@ -360,12 +360,12 @@ function SegmentRenderer({
         
         // Main content (shortened to accommodate transitions)
         sequences.push(
-          <TransitionSeries.Sequence durationInFrames={contentDuration + transitionToDuration}>
+          <TransitionSeries.Sequence durationInFrames={contentDuration}>
             <ClipContentWithFreeze 
               clip={clip} 
               executionContext={executionContext} 
               freezeAfterFrames={contentDuration}
-              totalSequenceDuration={contentDuration + transitionToDuration}
+              totalSequenceDuration={contentDuration}
             />
           </TransitionSeries.Sequence>
         );
@@ -386,8 +386,8 @@ function SegmentRenderer({
         );
         
       } else if (segment.hasOrphanedStart && clip.transitionFromPrevious) {
-        // Only fade in: empty + transition + content
-        const contentDuration = clipDurationFrames - transitionFromDuration;
+        // Only fade in: content plays for full duration, transition overlays at start
+        const contentDuration = clipDurationFrames; // Full clip duration for orphaned transitions
         const executionContext = createExecutionContext(clip.startTimeInSeconds);
         
         // Empty sequence for fade in
@@ -418,18 +418,18 @@ function SegmentRenderer({
         );
         
       } else if (segment.hasOrphanedEnd && clip.transitionToNext) {
-        // Only fade out: content + transition + empty
-        const contentDuration = clipDurationFrames - transitionToDuration;
+        // Only fade out: content plays for full duration, transition overlays at end
+        const contentDuration = clipDurationFrames; // Full clip duration for orphaned transitions
         const executionContext = createExecutionContext(clip.startTimeInSeconds);
         
         // Main content (shortened for transition)
         sequences.push(
-          <TransitionSeries.Sequence durationInFrames={contentDuration + transitionToDuration}>
+          <TransitionSeries.Sequence durationInFrames={contentDuration}>
             <ClipContentWithFreeze 
               clip={clip} 
               executionContext={executionContext} 
               freezeAfterFrames={contentDuration}
-              totalSequenceDuration={contentDuration + transitionToDuration}
+              totalSequenceDuration={contentDuration}
             />
           </TransitionSeries.Sequence>
         );
