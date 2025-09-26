@@ -19,7 +19,8 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
 # Import code generation functionality
-import code_generator
+from code_generator import generate_composition_with_validation
+import code_generator  # Keep for other functions like parse_ai_response
 
 from schema import (
     GenerateContentRequest, GenerateContentResponse, GeneratedAsset,

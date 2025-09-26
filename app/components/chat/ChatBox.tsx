@@ -17,7 +17,7 @@ import { Button } from "~/components/ui/button";
 import { type MediaBinItem, type TimelineState } from "../timeline/types";
 import { cn } from "~/lib/utils";
 import axios from "axios";
-import { apiUrl } from "~/utils/api";
+import { apiUrl, getApiBaseUrl } from "~/utils/api";
 import { generateUUID } from "~/utils/uuid";
 import { 
   logUserMessage, 
@@ -546,15 +546,27 @@ export function ChatBox({
 
       // Extract the generated asset info
       const generatedAsset = result.generated_asset;
+      console.log("🎨 Generated asset:", generatedAsset);
+      
       const generatedFileName = generatedAsset.file_url.split('/').pop() || `${suggestedName}.png`;
+      console.log("🎨 Generated filename:", generatedFileName);
+      console.log("🎨 Generated file URL:", generatedAsset.file_url);
 
       // Create the MediaBinItem for the generated image
+      // Make sure the URL points to the correct FastAPI server
+      const fastApiBaseUrl = getApiBaseUrl(true); // true for FastAPI
+      const imageUrl = generatedAsset.file_url.startsWith('http') 
+        ? generatedAsset.file_url 
+        : `${fastApiBaseUrl}${generatedAsset.file_url}`;
+      
+      console.log("🎨 Final image URL:", imageUrl);
+
       const newMediaItem: MediaBinItem = {
         id: generateUUID(),
         name: suggestedName || generatedFileName.replace('.png', ''),
         mediaType: "image",
         mediaUrlLocal: null, // Not a blob URL
-        mediaUrlRemote: generatedAsset.file_url, // Use the /media/ URL from backend
+        mediaUrlRemote: imageUrl, // Use absolute URL
         media_width: generatedAsset.width,
         media_height: generatedAsset.height,
         durationInSeconds: 0, // Images have no duration
