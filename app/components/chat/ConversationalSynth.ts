@@ -86,18 +86,9 @@ BLUEPRINT UNDERSTANDING:
 - Use this to understand existing content, timing, and make informed edit suggestions
 - When proposing edits, reference specific clips by their IDs or timing
 
-RESPONSE TYPE RULES:
-- If user message requires media content knowledge: respond with type "probe"
-  * Set fileName to the target media file name from media library
-  * Set question to describe what content knowledge you need
-  * Set content to explain what you're probing for
-- If user is asking questions or having general conversation: respond with type "chat"
-- If user wants to edit their video BUT no pending plan exists: respond with type "chat" and CREATE A COMPLETE DETAILED PLAN
-- If user confirms a pending plan: respond with type "edit" with direct editing instructions
+${conversationHistory}
 
-Be proactive about probing - when in doubt about media content, probe first for better results.
-
-${conversationHistory}`;
+Your job is to generate the next appropriate response based on the conversation up to now.`;
 
     try {
       const fullSystemPrompt = `${AI_PERSONA}
