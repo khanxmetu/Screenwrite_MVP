@@ -679,6 +679,9 @@ export function ChatBox({
         if (synthResponse.type === 'sleep') {
           console.log("💤 Sleep response - stopping unified workflow");
           continueWorkflow = false;
+        } else if (synthResponse.type === 'edit') {
+          console.log("✅ Edit response - stopping unified workflow after implementation");
+          continueWorkflow = false;
         } else if (stepMessages.some(msg => msg.hasRetryButton)) {
           console.log("⏸️ Retry button message - stopping workflow until retry");
           continueWorkflow = false;
