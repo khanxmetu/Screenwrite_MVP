@@ -57,16 +57,19 @@ export class ConversationalSynth {
   }
 
   /**
-   * Main entry point - analyze user message and return appropriate response
+   * Main entry point - analyze conversation and return appropriate response
    */
   async processMessage(
-    userMessage: string,
     context: SynthContext
   ): Promise<SynthResponse> {
-    console.log("🧠 ConversationalSynth: Processing message:", userMessage);
+    console.log("🧠 ConversationalSynth: Processing conversation with", context.messages.length, "messages");
+
+    // Get the last user message from conversation context for @filename detection
+    const lastUserMessage = context.messages.filter(msg => msg.isUser).pop();
+    const messageForFileDetection = lastUserMessage ? lastUserMessage.content : "";
 
     // Detect @filename mentions
-    const referencedFiles = this.detectReferencedFiles(userMessage, context.mediaLibrary);
+    const referencedFiles = this.detectReferencedFiles(messageForFileDetection, context.mediaLibrary);
     console.log("📁 Referenced files:", referencedFiles);
 
     // Build context for the AI
@@ -74,9 +77,7 @@ export class ConversationalSynth {
     const conversationHistory = this.buildConversationHistory(context);
 
     // Create comprehensive prompt for structured response
-    let prompt = `USER MESSAGE: "${userMessage}"
-
-CONTEXT:
+    let prompt = `CONTEXT:
 ${contextText}
 
 BLUEPRINT UNDERSTANDING:
@@ -118,6 +119,53 @@ ${GENERATION_GUIDELINES}
 ${PLANNING_GUIDELINES}
 
 ${SLEEP_GUIDELINES}`;
+      
+      // Log the exact context before sending to AI
+      console.log("🚀 SYNTH PROMPT LOG:", {
+        contextText: contextText,
+        conversationHistory: conversationHistory
+      });
+
+      // LOG THE COMPLETE PROMPT TO FILE using existing fileLogger system
+      try {
+        const { apiUrl } = await import('~/utils/api');
+        
+        // Create a dedicated prompt log entry using the same system
+        const promptLogEntry = {
+          timestamp: new Date().toISOString(),
+          step: 'FULL_PROMPT_TO_AI',
+          data: {
+            messagesInContext: context.messages.length,
+            fullSystemPrompt: fullSystemPrompt,
+            fullPrompt: prompt,
+            conversationBreakdown: context.messages.map((msg, idx) => ({
+              index: idx,
+              type: msg.isUser ? 'User' : 'Assistant',
+              content: msg.content
+            }))
+          }
+        };
+
+        const response = await fetch(apiUrl('/chat/log', true), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            session_id: `prompt_${Date.now()}`,
+            log_entry: promptLogEntry
+          })
+        });
+
+        if (!response.ok) {
+          console.error('Failed to save prompt log:', await response.text());
+        } else {
+          console.log('✅ Prompt logged to file successfully');
+        }
+      } catch (logError) {
+        console.error('❌ Failed to log prompt to file:', logError);
+      }
+
       const structuredResponse = await this.callGeminiAPIStructured(fullSystemPrompt, prompt);
       
       // Handle the structured response
@@ -237,18 +285,19 @@ ${SLEEP_GUIDELINES}`;
   }
 
   /**
-   * Build conversation history text - moved to separate method for reuse
+   * Build conversation history text - just read messages in chronological order
    */
   private buildConversationHistory(context: SynthContext): string {
     if (context.messages.length === 0) {
       return "";
     }
     
+    // Take the most recent 8 messages in chronological order
     const recent = context.messages.slice(-8);
     const conversationParts: string[] = [];
     
-    conversationParts.push("=== RECENT CONVERSATION HISTORY (MOST IMPORTANT) ===");
-    conversationParts.push("This is the most critical context - pay close attention to the conversation flow:");
+    conversationParts.push("=== CONVERSATION UP TO NOW (LAST 8 MESSAGES) ===");
+    conversationParts.push("This is the complete conversation history truncated to the most recent messages:");
     conversationParts.push("");
     
     recent.forEach(msg => {
@@ -256,7 +305,7 @@ ${SLEEP_GUIDELINES}`;
     });
     
     conversationParts.push("");
-    conversationParts.push("=== END OF CONVERSATION HISTORY ===");
+    conversationParts.push("=== END OF CONVERSATION ===");
     
     return conversationParts.join("\n");
   }
@@ -391,7 +440,6 @@ ${SLEEP_GUIDELINES}`;
    * Stream chat responses for better UX (only for type: 'chat' responses)
    */
   async streamChatResponse(
-    userMessage: string,
     context: SynthContext,
     onChunk: (text: string) => void
   ): Promise<void> {
@@ -407,8 +455,6 @@ ${SLEEP_GUIDELINES}`;
 Respond naturally in a conversational manner. For streaming responses, only provide chat-type responses - no structured editing instructions or probing requests.
 
 Be helpful, creative, and engaging. If the user wants to make edits, create a detailed plan and ask for confirmation before proceeding.
-
-USER MESSAGE: "${userMessage}"
 
 CONTEXT:
 ${contextText}

@@ -548,11 +548,14 @@ export function ChatBox({
   };
 
   const handleConversationalMessage = async (messageContent: string): Promise<void> => {
+    await handleConversationalMessageWithUpdatedMessages(messageContent, messages);
+  };
+
+  const handleConversationalMessageWithUpdatedMessages = async (messageContent: string, currentMessages: Message[]): Promise<void> => {
     await logUserMessage(messageContent, mentionedItems.map(item => item.name));
     console.log("🧠 Processing conversational message with unified workflow:", messageContent);
 
     // Initialize unified workflow state
-    let currentMessageContent = messageContent;
     let allResponseMessages: Message[] = [];
     let continueWorkflow = true;
     let iterationCount = 0;
@@ -570,7 +573,7 @@ export function ChatBox({
       try {
         // Build current conversation state (including all new messages from this workflow)
         const conversationMessages: ConversationMessage[] = [
-          ...messages.map(msg => ({
+          ...currentMessages.map(msg => ({
             id: msg.id,
             content: msg.content,
             isUser: msg.isUser,
@@ -593,15 +596,15 @@ export function ChatBox({
         };
 
         // Call synth for decision
-        await logSynthCall(currentMessageContent, synthContext);
+        await logSynthCall("conversation_analysis", synthContext);
         
-        const synthResponse = await synth.processMessage(currentMessageContent, synthContext);
+        const synthResponse = await synth.processMessage(synthContext);
         await logSynthResponse(synthResponse);
         
         console.log(`🎯 Synth response type: ${synthResponse.type}`);
 
         // Route to appropriate handler and execute action
-        const stepMessages = await executeResponseAction(synthResponse, currentMessageContent, conversationMessages, synthContext);
+        const stepMessages = await executeResponseAction(synthResponse, conversationMessages, synthContext);
         
         // Add step messages to our collection
         allResponseMessages.push(...stepMessages);
@@ -616,14 +619,9 @@ export function ChatBox({
         } else if (stepMessages.some(msg => msg.hasRetryButton)) {
           console.log("⏸️ Retry button message - stopping workflow until retry");
           continueWorkflow = false;
-        } else if (synthResponse.type === 'chat') {
-          console.log("💬 Chat response - continuing workflow automatically");
-          // For chat responses, use the chat content as the next input to continue the workflow
-          currentMessageContent = `Continue with: ${synthResponse.content}`;
         } else {
-          console.log(`� ${synthResponse.type} response - continuing workflow`);
-          // For other response types (edit, probe, generate), continue with original message context
-          currentMessageContent = messageContent;
+          console.log(`� ${synthResponse.type} response - workflow will continue with updated conversation`);
+          // No need to set currentMessageContent - the AI will see the updated conversation history
         }
         
       } catch (error) {
@@ -683,7 +681,6 @@ export function ChatBox({
   // Execute the appropriate action based on response type (no nested synth calls)
   const executeResponseAction = async (
     synthResponse: SynthResponse,
-    originalMessage: string,
     conversationMessages: ConversationMessage[],
     synthContext: SynthContext
   ): Promise<Message[]> => {
@@ -813,6 +810,8 @@ export function ChatBox({
       timestamp: new Date(),
     };
 
+    // Update messages state
+    const updatedMessages = [...messages, userMessage];
     onMessagesChange(prevMessages => [...prevMessages, userMessage]);
     setInputValue("");
     setMentionedItems([]); // Clear mentioned items after sending
@@ -828,8 +827,8 @@ export function ChatBox({
       if (isStandalonePreview) {
         console.log("🎬 Standalone preview mode - using conversational synth");
         
-        // Unified workflow handles all UI updates internally, no need to add messages again
-        await handleConversationalMessage(messageContent);
+        // Pass the updated messages directly to avoid async state issues
+        await handleConversationalMessageWithUpdatedMessages(messageContent, updatedMessages);
         
         return;
       }
