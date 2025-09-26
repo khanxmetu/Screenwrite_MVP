@@ -49,14 +49,14 @@ export default function TimelineView({
   } | null>(null);
   const timelineRef = React.useRef<HTMLDivElement>(null);
 
-  // Derive total timeline duration
+  // Derive total timeline duration based purely on content
   let maxEnd = 0;
   for (const track of blueprint) {
     for (const clip of track.clips) {
       if (clip.endTimeInSeconds > maxEnd) maxEnd = clip.endTimeInSeconds;
     }
   }
-  const totalDuration = Math.max(maxEnd, 10);
+  const totalDuration = Math.max(maxEnd, 1); // Minimum 1 second instead of arbitrary 10
 
   const pixelsPerSecond = zoomLevel;
   // Extend timeline much further than content for infinite ruler effect
@@ -179,22 +179,13 @@ export default function TimelineView({
                   const rect = e.currentTarget.getBoundingClientRect();
                   const clickX = e.clientX - rect.left;
                   const clickTime = clickX / pixelsPerSecond;
-                  const clickFrame = Math.max(0, Math.round(clickTime * fps));
                   
-                  // Calculate max frame based on blueprint content, not extended timeline
-                  let maxContentFrame = 0;
-                  for (const track of blueprint) {
-                    for (const clip of track.clips) {
-                      const clipEndFrame = Math.round(clip.endTimeInSeconds * fps);
-                      if (clipEndFrame > maxContentFrame) maxContentFrame = clipEndFrame;
-                    }
-                  }
-                  const maxFrame = Math.max(maxContentFrame, 90); // Minimum 3 seconds
+                  // Constrain to actual content duration only
+                  const constrainedTime = Math.min(clickTime, totalDuration);
+                  const constrainedFrame = Math.max(0, Math.round(constrainedTime * fps));
                   
-                  // Clamp player position to content duration, but allow timeline frame to be anywhere
-                  const playerFrame = Math.min(clickFrame, maxFrame);
-                  playerRef.current.seekTo(playerFrame);
-                  onFrameUpdate?.(clickFrame); // Timeline shows the unclamped position
+                  playerRef.current.seekTo(constrainedFrame);
+                  onFrameUpdate?.(constrainedFrame);
                 }
               }}
               onMouseMove={(e) => {
@@ -202,22 +193,13 @@ export default function TimelineView({
                   const rect = e.currentTarget.getBoundingClientRect();
                   const clickX = e.clientX - rect.left;
                   const clickTime = clickX / pixelsPerSecond;
-                  const clickFrame = Math.max(0, Math.round(clickTime * fps));
                   
-                  // Calculate max frame based on blueprint content
-                  let maxContentFrame = 0;
-                  for (const track of blueprint) {
-                    for (const clip of track.clips) {
-                      const clipEndFrame = Math.round(clip.endTimeInSeconds * fps);
-                      if (clipEndFrame > maxContentFrame) maxContentFrame = clipEndFrame;
-                    }
-                  }
-                  const maxFrame = Math.max(maxContentFrame, 90); // Minimum 3 seconds
+                  // Constrain to actual content duration only
+                  const constrainedTime = Math.min(clickTime, totalDuration);
+                  const constrainedFrame = Math.max(0, Math.round(constrainedTime * fps));
                   
-                  // Clamp player position to content duration, but allow timeline frame to be anywhere
-                  const playerFrame = Math.min(clickFrame, maxFrame);
-                  playerRef.current.seekTo(playerFrame);
-                  onFrameUpdate?.(clickFrame); // Timeline shows the unclamped position
+                  playerRef.current.seekTo(constrainedFrame);
+                  onFrameUpdate?.(constrainedFrame);
                 }
               }}
               onMouseUp={() => setIsDragging(false)}
