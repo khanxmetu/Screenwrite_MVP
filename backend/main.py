@@ -12,6 +12,7 @@ from io import BytesIO
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
@@ -58,6 +59,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files for generated media
+app.mount("/media", StaticFiles(directory="../out"), name="media")
 
 
 class Message(BaseModel):

@@ -352,6 +352,7 @@ export default function TimelineEditor() {
     mediaBinItems,
     handleAddMediaToBin,
     handleAddTextToBin,
+    handleAddDirectMediaBinItem,
     contextMenu,
     handleContextMenu,
     handleDeleteFromContext,
@@ -576,6 +577,12 @@ export default function TimelineEditor() {
       setIsAiGenerating(false);
     }
   }, [previewSettings, currentComposition]);
+
+  // Handle adding generated images to media bin
+  const handleAddGeneratedImage = useCallback(async (item: MediaBinItem): Promise<void> => {
+    console.log("🎨 Adding generated image to media bin:", item);
+    handleAddDirectMediaBinItem(item);
+  }, [handleAddDirectMediaBinItem]);
 
   useEffect(() => {
     setMounted(true)
@@ -830,6 +837,7 @@ export default function TimelineEditor() {
                   currentComposition={JSON.stringify(currentComposition)} // Pass current blueprint as JSON string
                   onGenerateComposition={handleGenerateComposition} // AI generation function implemented!
                   isGeneratingComposition={isAiGenerating}
+                  onAddGeneratedImage={handleAddGeneratedImage}
                 />
               </div>
             </ResizablePanel>

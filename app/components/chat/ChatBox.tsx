@@ -18,6 +18,7 @@ import { type MediaBinItem, type TimelineState } from "../timeline/types";
 import { cn } from "~/lib/utils";
 import axios from "axios";
 import { apiUrl } from "~/utils/api";
+import { generateUUID } from "~/utils/uuid";
 import { 
   logUserMessage, 
   logSynthCall, 
@@ -70,6 +71,9 @@ interface ChatBoxProps {
   isGeneratingComposition?: boolean;
   // Props for conversational edit system
   currentComposition?: string; // Current TSX composition code
+  // Props for adding generated images to media bin
+  onAddMediaToBin?: (file: File) => Promise<void>;
+  onAddGeneratedImage?: (item: MediaBinItem) => Promise<void>;
   // Error handling props
   generationError?: {
     hasError: boolean;
@@ -96,6 +100,8 @@ export function ChatBox({
   onGenerateComposition,
   isGeneratingComposition = false,
   currentComposition,
+  onAddMediaToBin,
+  onAddGeneratedImage,
   generationError,
   onRetryFix,
   onClearError,
@@ -512,16 +518,63 @@ export function ChatBox({
     console.log("🎨 Executing generation request:", { prompt, suggestedName, description });
     
     try {
-      // For now, mock the image generation (will implement actual backend call later)
-      console.log("🎨 Mocking image generation for:", prompt);
+      // Call the actual backend image generation API
+      console.log("🎨 Calling backend image generation API for:", prompt);
       
-      // Simulate generation delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Mock generated filename (will be returned from backend later)
-      const generatedFileName = `${suggestedName}.png`;
-      
-      // Create generation result message
+      const response = await fetch(apiUrl('/generate-content', true), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content_type: "image",
+          prompt: prompt,
+          // Optional: Add negative_prompt if needed
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Generation failed: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log("🎨 Generation result:", result);
+
+      if (!result.success) {
+        throw new Error(result.error_message || 'Generation failed');
+      }
+
+      // Extract the generated asset info
+      const generatedAsset = result.generated_asset;
+      const generatedFileName = generatedAsset.file_url.split('/').pop() || `${suggestedName}.png`;
+
+      // Create the MediaBinItem for the generated image
+      const newMediaItem: MediaBinItem = {
+        id: generateUUID(),
+        name: suggestedName || generatedFileName.replace('.png', ''),
+        mediaType: "image",
+        mediaUrlLocal: null, // Not a blob URL
+        mediaUrlRemote: generatedAsset.file_url, // Use the /media/ URL from backend
+        media_width: generatedAsset.width,
+        media_height: generatedAsset.height,
+        durationInSeconds: 0, // Images have no duration
+        text: null,
+        isUploading: false,
+        uploadProgress: null,
+        left_transition_id: null,
+        right_transition_id: null,
+        gemini_file_id: null, // Generated images don't need Gemini analysis initially
+      };
+
+      console.log("🎨 Created MediaBinItem:", newMediaItem);
+
+      // TODO: Add the generated image to the media bin
+      // This will need to be implemented via a callback prop
+      if (onAddGeneratedImage) {
+        await onAddGeneratedImage(newMediaItem);
+      }
+
+      // Create success message
       const generationMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: `Generated: ${generatedFileName}`,
@@ -530,8 +583,6 @@ export function ChatBox({
         isSystemMessage: true,
       };
 
-      // Note: In real implementation, this would call backend to generate and add to media library
-      // For now, just return the completion message
       return [generationMessage];
 
     } catch (error) {
