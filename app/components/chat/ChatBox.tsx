@@ -513,10 +513,28 @@ export function ChatBox({
   const handleGenerateRequestInternal = async (
     prompt: string,
     suggestedName: string,
-    description: string
+    description: string,
+    contentType: 'image' | 'video' = 'image' // Add content type parameter
   ): Promise<Message[]> => {
-    console.log("🎨 Executing generation request:", { prompt, suggestedName, description });
+    console.log("🎨 Executing generation request:", { prompt, suggestedName, description, contentType });
     
+    // PHASE 1: Handle video generation as dummy (skip actual generation)
+    if (contentType === 'video') {
+      console.log("🎬 Video generation detected - Phase 1: Skipping actual generation for testing");
+      
+      // Create a dummy success message that matches image generation format
+      const dummyMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `Generated: ${suggestedName}.mp4`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+
+      return [dummyMessage];
+    }
+    
+    // Keep existing image generation workflow intact
     try {
       // Call the actual backend image generation API
       console.log("🎨 Calling backend image generation API for:", prompt);
@@ -775,16 +793,22 @@ export function ChatBox({
       console.log("🎨 Executing generation:", synthResponse.prompt, synthResponse.suggestedName);
       
       // Add immediate feedback message
+      const contentTypeText = synthResponse.content_type === 'video' ? 'video' : 'image';
       const generatingMessage: Message = {
         id: Date.now().toString(),
-        content: `Generating media: ${synthResponse.prompt}`,
+        content: `Generating ${contentTypeText}: ${synthResponse.prompt}`,
         isUser: false,
         timestamp: new Date(),
         isSystemMessage: true,
       };
       onMessagesChange(prev => [...prev, generatingMessage]);
       
-      const generateResults = await handleGenerateRequestInternal(synthResponse.prompt!, synthResponse.suggestedName!, synthResponse.content);
+      const generateResults = await handleGenerateRequestInternal(
+        synthResponse.prompt!, 
+        synthResponse.suggestedName!, 
+        synthResponse.content,
+        synthResponse.content_type || 'image' // Pass content type from AI response
+      );
       
       return generateResults; // Only return generation result, no "Generating..." message
       

@@ -17,7 +17,8 @@ import {
   PROBE_GUIDELINES,
   CHAT_GUIDELINES,
   EDIT_GUIDELINES,
-  GENERATION_GUIDELINES,
+  IMAGE_GENERATION_GUIDELINES,
+  VIDEO_GENERATION_GUIDELINES,
   PLANNING_GUIDELINES,
   SLEEP_GUIDELINES
 } from "./PromptComponents";
@@ -39,8 +40,9 @@ export interface SynthResponse {
   referencedFiles?: string[]; // @-mentioned files
   fileName?: string; // For probe responses
   question?: string; // For probe responses
-  prompt?: string; // For generate responses - image generation prompt
+  prompt?: string; // For generate responses - content generation prompt
   suggestedName?: string; // For generate responses - AI-chosen filename
+  content_type?: 'image' | 'video'; // For generate responses - type of content to generate
 }
 
 export interface SynthContext {
@@ -105,7 +107,9 @@ ${CHAT_GUIDELINES}
 
 ${EDIT_GUIDELINES}
 
-${GENERATION_GUIDELINES}
+${IMAGE_GENERATION_GUIDELINES}
+
+${VIDEO_GENERATION_GUIDELINES}
 
 ${PLANNING_GUIDELINES}
 
@@ -173,7 +177,8 @@ ${SLEEP_GUIDELINES}`;
         fileName: structuredResponse.fileName,
         question: structuredResponse.question,
         prompt: structuredResponse.prompt,
-        suggestedName: structuredResponse.suggestedName
+        suggestedName: structuredResponse.suggestedName,
+        content_type: structuredResponse.content_type
       };
 
     } catch (error) {
@@ -307,7 +312,7 @@ ${SLEEP_GUIDELINES}`;
   private async callGeminiAPIStructured(
     systemInstruction: string, 
     prompt: string
-  ): Promise<{ type: 'chat' | 'edit' | 'probe' | 'generate'; content: string; fileName?: string; question?: string; prompt?: string; suggestedName?: string }> {
+  ): Promise<{ type: 'chat' | 'edit' | 'probe' | 'generate'; content: string; fileName?: string; question?: string; prompt?: string; suggestedName?: string; content_type?: 'image' | 'video' }> {
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
     }
@@ -330,6 +335,10 @@ ${SLEEP_GUIDELINES}`;
         },
         "suggestedName": {
           "type": "STRING"
+        },
+        "content_type": {
+          "type": "STRING",
+          "enum": ["image", "video"]
         },
         "content": {
           "type": "STRING"
@@ -405,7 +414,8 @@ ${SLEEP_GUIDELINES}`;
           fileName: parsedResponse.fileName,
           question: parsedResponse.question,
           prompt: parsedResponse.prompt,
-          suggestedName: parsedResponse.suggestedName
+          suggestedName: parsedResponse.suggestedName,
+          content_type: parsedResponse.content_type
         };
       } catch (e) {
         // If parsing fails, it might be a plain text response

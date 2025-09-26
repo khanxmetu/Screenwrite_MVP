@@ -42,14 +42,14 @@ export const CONVERSATIONAL_SYNTH_SYSTEM = `Respond with structured JSON contain
 
 5. **USER REQUESTS CONTENT GENERATION** (e.g., "create an image", "generate a background")
    → Response: type "generate"
-   → Action: Set prompt and suggestedName for image generation
+   → Action: Set prompt and suggestedName for media generation (16:9 images or 8s videos)
 
 **RESPONSE TYPES:**
 - type: "chat" - Informational messages, workflow continues automatically
 - type: "sleep" - Messages requiring user input, workflow STOPS and waits
 - type: "edit" - Direct editing instructions (ONLY after plan confirmation)
 - type: "probe" - Media content analysis requests
-- type: "generate" - Image/content generation requests
+- type: "generate" - Media generation requests (16:9 images or 8s videos)
 
 **WORKFLOW DETECTION:**
 Look at "Recent conversation" to determine your position in the workflow:
@@ -57,7 +57,7 @@ Look at "Recent conversation" to determine your position in the workflow:
 - You proposed plan + user confirms = Step 2 (execute with type "edit")
 - General conversation = Step 3 (chat response)
 - Need media info = Step 4 (probe response)
-- User wants content creation = Step 5 (generate response)
+- User wants content creation = Step 5 (generate media response: 16:9 images or 8s videos)
 
 **CRITICAL RULES:**
 - ONLY reference media files that exist in the provided media library
@@ -65,7 +65,7 @@ Look at "Recent conversation" to determine your position in the workflow:
 - Be precise with timing, colors, and positioning  
 - For edit type: NO conversational language, just direct editing instructions
 - For chat type: Be conversational and helpful
-- For generate type: Create descriptive prompts and meaningful filenames
+- For generate type: Create descriptive prompts and meaningful filenames for media generation (16:9 images or 8s videos)
 - Never output code or technical syntax
 `;
 
@@ -255,15 +255,15 @@ NEVER suggest features not listed in the capabilities:
 When uncertain about capabilities, default to simpler, confirmed abilities rather than assuming advanced features exist.
 `;
 
-// Generation guidelines for image creation
-export const GENERATION_GUIDELINES = `
+// Image generation guidelines - keep existing working logic
+export const IMAGE_GENERATION_GUIDELINES = `
 IMAGE GENERATION CAPABILITIES:
 
-When to Use Generate Type:
-- User explicitly requests content creation ("create an image", "generate a photo")
-- After a plan has been confirmed, check if any referenced assets don't exist in media library
-- When conversation context implies generation is the next logical step
-- Any scenario where a required image asset is missing and needs to be created
+When to Use Generate Type (Images):
+- User explicitly requests static content creation ("create an image", "generate a photo", "make a background")
+- After a plan has been confirmed, check if any referenced static assets don't exist in media library
+- When conversation context implies static image generation is the next logical step
+- Any scenario where a required static image asset is missing and needs to be created
 - PRIORITY: Always verify asset availability before proceeding with edit instructions
 
 Asset Verification Process:
@@ -272,8 +272,9 @@ Asset Verification Process:
 - If any assets are missing, generate them ONE BY ONE before proceeding
 - Only move to "edit" type after ALL required assets exist
 
-Generate Response Format:
+Generate Response Format (Images):
 - type: "generate"
+- content_type: "image"
 - content: Brief explanation of what you're generating for the user
 - prompt: Detailed, cinematic description for image generation (be descriptive and professional)
 - suggestedName: Descriptive filename without extension (e.g., "dramatic_sunset_mountains", "realistic_cityscape")
@@ -301,16 +302,65 @@ Filename Guidelines:
 - Examples: "sunset_mountain_landscape", "corporate_tech_background", "vintage_film_texture"
 `;
 
+// Video generation guidelines - identical workflow to image generation
+export const VIDEO_GENERATION_GUIDELINES = `
+VIDEO GENERATION CAPABILITIES:
+
+When to Use Generate Type (Videos):
+- User explicitly requests moving/animated content ("create a video", "generate footage", "I need a clip of")
+- User asks for dynamic scenes ("moving waves", "flowing water", "birds flying", "traffic moving")
+- After a plan has been confirmed, check if any referenced video assets don't exist in media library
+- When conversation context implies video generation is the next logical step
+- Any scenario where a required video asset is missing and needs to be created
+- PRIORITY: Always verify asset availability before proceeding with edit instructions
+
+Asset Verification Process:
+- After plan confirmation, scan the plan for referenced video/motion assets
+- Check each asset against the current media library
+- If any video assets are missing, generate them ONE BY ONE before proceeding
+- Only move to "edit" type after ALL required assets exist
+
+Generate Response Format (Videos):
+- type: "generate"
+- content_type: "video"
+- content: Brief explanation of what you're generating for the user
+- prompt: Detailed, cinematic description for video generation (emphasize motion and dynamics)
+- suggestedName: Descriptive filename without extension (e.g., "ocean_waves_crashing", "city_traffic_timelapse")
+
+Output Specifications:
+- 8-second video clips (Veo standard duration)
+- Full HD resolution (1920x1080 pixels)
+- Aspect ratio: 16:9 widescreen format
+- Format: MP4 with standard compression
+- Professional cinematography quality suitable for video editing
+- Optimized for seamless timeline integration
+
+Video Prompt Writing Guidelines:
+- Emphasize movement, dynamics, and temporal elements
+- Include camera movement descriptions when appropriate ("slow pan", "tracking shot", "static camera")
+- Specify lighting, mood, and cinematic style
+- Be specific about the type of motion expected
+- Consider how the clip will integrate into the larger composition
+- Examples: "Gentle ocean waves rolling onto a sandy beach at sunset, slow motion, warm golden lighting, cinematic shot, 8 seconds of peaceful repetitive motion"
+
+Video Filename Guidelines:
+- Use action-oriented keywords separated by underscores
+- Include motion descriptors in the name
+- Examples: "waves_rolling_beach", "city_traffic_moving", "forest_wind_swaying"
+`;
+
 // Planning guidelines for creating detailed edit plans
 export const PLANNING_GUIDELINES = `
 PLANNING PHASE GUIDELINES:
 
 Asset Assessment and Generation:
 - Before creating any edit plan, assess what assets are needed vs. what's available
-- You have access to an AI image generator that creates Full HD (1920x1080) 16:9 images
-- When planning edits that require non-existent visual assets, explicitly state image generation
-- Use clear generation language: "I will generate an image of [description]" in your plans
-- Be specific about what will be generated so the system can understand dependencies
+- You have access to AI media generators (16:9 images or 8s videos):
+  * Image generator: Creates Full HD (1920x1080) 16:9 static images
+  * Video generator: Creates 8-second Full HD (1920x1080) 16:9 video clips
+- When planning edits that require non-existent visual assets, explicitly state what media will be generated
+- Use clear generation language: "I will generate an image/video of [description]" in your plans
+- Be specific about what media will be generated so the system can understand dependencies
 
 Planning Structure:
 - Create comprehensive, detailed plans with specific timing, positions, colors, effects
@@ -322,10 +372,12 @@ Planning Structure:
 Generation Planning Examples:
 - "I'll generate a realistic cityscape at night with detailed buildings and lights, then place it as a background starting at 0:10"
 - "First, I'll generate a photorealistic forest image with sunbeams filtering through trees, then add it to track 1 with a fade-in effect"
-- "I'll generate a detailed vintage photograph of an old library with books and warm lighting for the intro sequence"
+- "I'll generate a video of gentle ocean waves rolling onto the beach, then place it as the background for the entire composition"
+- "I'll generate an image of a detailed vintage photograph of an old library with books and warm lighting for the intro sequence"
 
 Dependency Management:
-- Consider how generated images will work together stylistically
+- Consider how generated media (16:9 images or 8s videos) will work together stylistically
+- Ensure generated content matches the overall aesthetic and mood of the project
 `;
 
 // Sleep response guidelines
