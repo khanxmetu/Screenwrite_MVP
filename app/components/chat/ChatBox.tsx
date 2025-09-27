@@ -12,6 +12,7 @@ import {
   ChevronRight,
   AlertCircle,
   X,
+  Play,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { type MediaBinItem, type TimelineState } from "../timeline/types";
@@ -125,6 +126,7 @@ export function ChatBox({
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
   const [isInSynthLoop, setIsInSynthLoop] = useState(false); // Track when unified workflow is active
+  const [previewVideo, setPreviewVideo] = useState<any>(null); // Track video being previewed
 
   // Initialize Conversational Synth
   const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
@@ -664,7 +666,7 @@ export function ChatBox({
       // Transform backend response to UI format
       const videoOptions = result.videos.map((video: any, index: number) => ({
         id: video.id,
-        title: `${query} - Option ${index + 1}`,
+        title: `Option ${index + 1}`,
         duration: `${video.duration}s`,
         description: `${video.quality.toUpperCase()} quality - ${video.width}x${video.height} - by ${video.photographer}`,
         thumbnailUrl: video.preview_image,
@@ -675,7 +677,7 @@ export function ChatBox({
       // Create the selection message with real video thumbnails
       const videoOptionsMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `I found ${result.videos.length} stock videos for "${query}". Click on the video you'd like to use:`,
+        content: `I found ${result.videos.length} stock videos for "${query}". Click to preview:`,
         isUser: false,
         timestamp: new Date(),
         isSystemMessage: false,
@@ -1385,9 +1387,8 @@ export function ChatBox({
                                 key={video.id}
                                 className="border border-gray-300 dark:border-gray-600 rounded-lg p-3 cursor-pointer hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                                 onClick={() => {
-                                  // TODO: Implement video preview/play functionality
-                                  console.log("🎥 Preview video:", video.title);
-                                  // For now, just log - could open video in a modal or play inline
+                                  // Open video preview modal
+                                  setPreviewVideo(video);
                                 }}
                               >
                                 <div className="flex gap-3 items-center">
@@ -1608,6 +1609,63 @@ export function ChatBox({
           </div>
         </div>
       </div>
+
+      {/* Video Preview Modal */}
+      {previewVideo && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Video Preview - {previewVideo.title}
+              </h3>
+              <button
+                onClick={() => setPreviewVideo(null)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            {/* Video Player */}
+            <div className="mb-4">
+              <video
+                controls
+                autoPlay
+                className="w-full rounded-lg"
+                src={`http://localhost:8001${previewVideo.downloadUrl}`}
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+            
+            {/* Video Info */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Duration:</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{previewVideo.duration}</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Description:</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{previewVideo.description}</span>
+              </div>
+              {previewVideo.pexelsUrl && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Source:</span>
+                  <a 
+                    href={previewVideo.pexelsUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                  >
+                    View on Pexels
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
