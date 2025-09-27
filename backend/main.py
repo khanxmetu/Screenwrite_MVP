@@ -7,6 +7,8 @@ import re
 import shutil
 import uuid
 import requests
+import asyncio
+import httpx
 from PIL import Image
 from io import BytesIO
 
@@ -116,10 +118,213 @@ def select_best_video_file(video_files: List[Dict]) -> Dict:
     return sd_mp4[0] if sd_mp4 else video_files[0]
 
 
-async def download_video_file(video_url: str, filename: str) -> str:
+async def download_video_file(url: str, filename: str) -> str:
     """Download video file from Pexels/Vimeo URL"""
     try:
-        response = requests.get(video_url, stream=True, timeout=60)
+        filepath = os.path.join(media_dir, filename)
+        
+        timeout = httpx.Timeout(60.0)  # 60 second timeout for large files
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(url, follow_redirects=True)
+            response.raise_for_status()
+            
+            with open(filepath, 'wb') as f:
+                f.write(response.content)
+        
+        return filepath
+    except Exception as e:
+        print(f"❌ Download failed for {url}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to download video: {str(e)}")
+
+
+async def download_and_upload_to_gemini_simultaneously(url: str, filename: str) -> tuple[str, str]:
+    """
+    Download video from URL and upload to Gemini simultaneously for optimal performance.
+    Returns (local_filepath, gemini_file_id)
+    """
+    try:
+        filepath = os.path.join("out", filename)
+        os.makedirs("out", exist_ok=True)
+        
+        print(f"📥 Downloading and uploading to Gemini: {url}")
+        
+        timeout = httpx.Timeout(60.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream('GET', url, follow_redirects=True) as response:
+                response.raise_for_status()
+                
+                # Prepare both destinations
+                local_file = open(filepath, 'wb')
+                gemini_buffer = BytesIO()
+                
+                # Stream to both local disk and memory simultaneously
+                async for chunk in response.aiter_bytes(chunk_size=8192):
+                    local_file.write(chunk)      # → Local disk
+                    gemini_buffer.write(chunk)   # → Memory for Gemini
+                
+                local_file.close()
+                
+                # Upload to Gemini from memory buffer
+                gemini_buffer.seek(0)
+                gemini_file_id = await upload_file_content_to_gemini(gemini_buffer.getvalue(), filename)
+                
+                print(f"✅ Download and Gemini upload completed: {filename} -> {gemini_file_id}")
+                return filepath, gemini_file_id
+                
+    except Exception as e:
+        print(f"❌ Download/upload failed for {url}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to download/upload video: {str(e)}")
+
+
+async def upload_file_content_to_gemini(file_content: bytes, filename: str) -> str:
+    """Upload file content to Gemini Files API and return file ID"""
+    try:
+        if USE_VERTEX_AI:
+            # Vertex AI: Upload to Cloud Storage
+            from google.cloud import storage
+            storage_client = storage.Client(project=os.getenv("VERTEX_PROJECT_ID"))
+            
+            bucket = storage_client.bucket(storage_bucket_name)
+            try:
+                bucket.reload()
+            except Exception:
+                bucket = storage_client.create_bucket(storage_bucket_name, location=os.getenv("VERTEX_LOCATION", "europe-west1"))
+                
+            # Generate unique blob name
+            file_id = str(uuid.uuid4())
+            file_extension = os.path.splitext(filename)[1] if filename else ""
+            blob_name = f"stock_videos/{file_id}{file_extension}"
+            
+            # Upload to Cloud Storage
+            blob = bucket.blob(blob_name)
+            blob.upload_from_string(file_content, content_type="video/mp4")
+            
+            gs_uri = f"gs://{storage_bucket_name}/{blob_name}"
+            return gs_uri
+            
+        else:
+            # Standard Gemini API: Use Files API
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{filename}") as tmp_file:
+                tmp_file.write(file_content)
+                tmp_file.flush()
+                
+                # Upload to Gemini Files API
+                uploaded_file = gemini_api.files.upload(file=tmp_file.name)
+                
+                # Clean up temporary file
+                os.unlink(tmp_file.name)
+                
+                # Wait for file to be ready
+                import time
+                max_wait_time = 30
+                wait_interval = 2
+                elapsed_time = 0
+                
+                while elapsed_time < max_wait_time:
+                    try:
+                        file_status = gemini_api.files.get(name=uploaded_file.name)
+                        if hasattr(file_status, 'state') and file_status.state == 'ACTIVE':
+                            break
+                        else:
+                            time.sleep(wait_interval)
+                            elapsed_time += wait_interval
+                    except Exception as e:
+                        time.sleep(wait_interval)
+                        elapsed_time += wait_interval
+                
+                return uploaded_file.name
+                
+    except Exception as e:
+        print(f"❌ Gemini upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload to Gemini: {str(e)}")
+
+
+async def download_video_file(url: str, filename: str) -> str:
+    """Download video file from Pexels/Vimeo URL"""
+    try:
+        response = requests.get(url, stream=True, timeout=60)
+        response.raise_for_status()
+        
+        filepath = os.path.join("out", filename)
+        os.makedirs("out", exist_ok=True)
+        
+        with open(filepath, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        
+        return filepath
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download video: {str(e)}")
+
+
+async def upload_file_content_to_gemini(file_content: bytes, filename: str) -> str:
+    """Upload file content to Gemini Files API and return file ID"""
+    try:
+        if USE_VERTEX_AI:
+            # Vertex AI: Upload to Cloud Storage
+            from google.cloud import storage
+            storage_client = storage.Client(project=os.getenv("VERTEX_PROJECT_ID"))
+            
+            bucket = storage_client.bucket(storage_bucket_name)
+            try:
+                bucket.reload()
+            except Exception:
+                bucket = storage_client.create_bucket(storage_bucket_name, location=os.getenv("VERTEX_LOCATION", "europe-west1"))
+                
+            # Generate unique blob name
+            file_id = str(uuid.uuid4())
+            file_extension = os.path.splitext(filename)[1] if filename else ""
+            blob_name = f"stock_videos/{file_id}{file_extension}"
+            
+            # Upload to Cloud Storage
+            blob = bucket.blob(blob_name)
+            blob.upload_from_string(file_content, content_type="video/mp4")
+            
+            gs_uri = f"gs://{storage_bucket_name}/{blob_name}"
+            return gs_uri
+            
+        else:
+            # Standard Gemini API: Use Files API
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{filename}") as tmp_file:
+                tmp_file.write(file_content)
+                tmp_file.flush()
+                
+                # Upload to Gemini Files API
+                uploaded_file = gemini_api.files.upload(file=tmp_file.name)
+                
+                # Clean up temporary file
+                os.unlink(tmp_file.name)
+                
+                # Wait for file to be ready
+                import time
+                max_wait_time = 30
+                wait_interval = 2
+                elapsed_time = 0
+                
+                while elapsed_time < max_wait_time:
+                    try:
+                        file_status = gemini_api.files.get(name=uploaded_file.name)
+                        if hasattr(file_status, 'state') and file_status.state == 'ACTIVE':
+                            break
+                        else:
+                            time.sleep(wait_interval)
+                            elapsed_time += wait_interval
+                    except Exception as e:
+                        time.sleep(wait_interval)
+                        elapsed_time += wait_interval
+                
+                return uploaded_file.name
+                
+    except Exception as e:
+        print(f"❌ Gemini upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload to Gemini: {str(e)}")
+
+
+async def download_video_file(url: str, filename: str) -> str:
+    """Download video file from Pexels/Vimeo URL"""
+    try:
+        response = requests.get(url, stream=True, timeout=60)
         response.raise_for_status()
         
         filepath = os.path.join("out", filename)
@@ -757,10 +962,10 @@ async def check_generation_status(request: CheckGenerationStatusRequest):
 @app.post("/fetch-stock-video", response_model=FetchStockVideoResponse)
 async def fetch_stock_video(request: FetchStockVideoRequest):
     """
-    Simplified stock video fetch endpoint:
+    Optimized stock video fetch endpoint with parallel processing:
     1. Search Pexels for top 3 landscape videos
-    2. Download all 3 videos automatically
-    3. Return videos list for AI to decide
+    2. Download and upload to Gemini simultaneously for all videos in parallel
+    3. Return videos with gemini_file_id ready for analysis
     """
     print(f"Fetching stock videos for query: {request.query}")
     
@@ -774,51 +979,68 @@ async def fetch_stock_video(request: FetchStockVideoRequest):
         
         print(f"Found {len(videos_data)} videos from Pexels")
         
-        # Step 2: Download all 3 videos and process them
-        stock_results = []
-        
-        for i, video in enumerate(videos_data[:3]):  # Limit to top 3
+        # Step 2: Process all 3 videos in parallel with simultaneous download + Gemini upload
+        async def process_video(video, index):
+            """Process a single video: download to local + upload to Gemini simultaneously"""
             # Select best quality file
             video_files = video.get("video_files", [])
             best_file = select_best_video_file(video_files)
             
             if not best_file:
-                continue
+                raise Exception("No suitable video file found")
             
-            try:
-                # Generate filename
-                asset_id = str(uuid.uuid4())
-                file_name = f"stock_video_{asset_id}.mp4"
-                
-                print(f"📥 Downloading video {i+1}/3: {best_file['link']}")
-                filepath = await download_video_file(best_file["link"], file_name)
-                
-                # Create stock result with download info
-                stock_result = StockVideoResult(
-                    id=video["id"],
-                    pexels_url=video.get("url", ""),
-                    download_url=f"/media/{file_name}",  # Local URL after download
-                    preview_image=video.get("image", ""),
-                    duration=video.get("duration", 0),
-                    width=best_file.get("width", video.get("width", 0)),
-                    height=best_file.get("height", video.get("height", 0)),
-                    file_type=best_file.get("file_type", "video/mp4"),
-                    quality=best_file.get("quality", "hd"),
-                    photographer=video.get("user", {}).get("name", "Unknown"),
-                    photographer_url=video.get("user", {}).get("url", "")
-                )
-                stock_results.append(stock_result)
-                
-                print(f"✅ Downloaded video {i+1}/3: {file_name}")
-                
-            except Exception as e:
-                print(f"❌ Failed to download video {i+1}/3: {e}")
-                # Continue with next video
+            # Generate filename
+            asset_id = str(uuid.uuid4())
+            file_name = f"stock_video_{asset_id}.mp4"
+            
+            print(f"📥 Processing video {index+1}/3 in parallel: {best_file['link']}")
+            
+            # Download and upload to Gemini simultaneously
+            filepath, gemini_file_id = await download_and_upload_to_gemini_simultaneously(
+                best_file["link"], 
+                file_name
+            )
+            
+            # Create stock result with both local URL and Gemini file ID
+            stock_result = StockVideoResult(
+                id=video["id"],
+                pexels_url=video.get("url", ""),
+                download_url=f"/media/{file_name}",
+                preview_image=video.get("image", ""),
+                duration=video.get("duration", 0),
+                width=best_file.get("width", video.get("width", 0)),
+                height=best_file.get("height", video.get("height", 0)),
+                file_type=best_file.get("file_type", "video/mp4"),
+                quality=best_file.get("quality", "sd"),  # Default to "sd" if None
+                photographer=video.get("user", {}).get("name", "Unknown"),
+                photographer_url=video.get("user", {}).get("url", ""),
+                gemini_file_id=gemini_file_id  # ✅ Ready for analysis!
+            )
+            
+            print(f"✅ Completed video {index+1}/3: {file_name} -> Gemini: {gemini_file_id}")
+            return stock_result
+        
+        # Process all 3 videos in parallel
+        tasks = [
+            asyncio.create_task(process_video(video, i)) 
+            for i, video in enumerate(videos_data[:3])
+        ]
+        
+        # Wait for all videos to complete (with error handling)
+        stock_results = []
+        completed_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for i, result in enumerate(completed_results):
+            if isinstance(result, Exception):
+                print(f"❌ Failed to process video {i+1}/3: {result}")
+                continue  # Skip failed videos, don't add to results
+            else:
+                stock_results.append(result)
         
         if not stock_results:
-            raise HTTPException(status_code=500, detail="Failed to download any videos")
+            raise HTTPException(status_code=500, detail="Failed to process any videos")
         
-        print(f"🎉 Successfully downloaded {len(stock_results)}/3 videos")
+        print(f"🎉 Successfully processed {len(stock_results)}/{len(videos_data[:3])} videos with Gemini upload")
         
         return FetchStockVideoResponse(
             success=True,
@@ -832,15 +1054,6 @@ async def fetch_stock_video(request: FetchStockVideoRequest):
     except Exception as e:
         print(f"❌ Stock video fetch error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch stock videos: {str(e)}")
-        return FetchStockVideoResponse(
-            success=False,
-            query=request.query,
-            results=[],
-            total_results=0,
-            auto_evaluation={"score": 0, "reasons": ["Error occurred"], "recommendation": "fallback"},
-            recommendation="fallback",
-            error_message=str(e)
-        )
 
 
 class ChatLogRequest(BaseModel):

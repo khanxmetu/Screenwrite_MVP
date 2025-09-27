@@ -401,11 +401,11 @@ export function ChatBox({
     }
 
     const fileExtension = mediaFile.name.split('.').pop()?.toLowerCase();
-    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
-    const isVideo = ['mp4', 'mov', 'avi', 'webm'].includes(fileExtension || '');
+    const isImage = mediaFile.mediaType === 'image' || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
+    const isVideo = mediaFile.mediaType === 'video' || ['mp4', 'mov', 'avi', 'webm'].includes(fileExtension || '');
     
     if (!isImage && !isVideo) {
-      throw new Error(`Unsupported file type: ${fileExtension}. Only images and videos can be analyzed.`);
+      throw new Error(`Unsupported file type: ${mediaFile.mediaType || fileExtension}. Only images and videos can be analyzed.`);
     }
 
     try {
@@ -722,7 +722,7 @@ export function ChatBox({
             uploadProgress: null,
             left_transition_id: null,
             right_transition_id: null,
-            gemini_file_id: null,
+            gemini_file_id: video.gemini_file_id, // ✅ Now set from backend!
           };
 
           console.log("🎬 Adding stock video to media library:", mediaItem);

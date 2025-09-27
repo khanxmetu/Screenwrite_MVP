@@ -148,9 +148,10 @@ class StockVideoResult(BaseModel):
     width: int = Field(description="Video width in pixels")
     height: int = Field(description="Video height in pixels")
     file_type: str = Field(description="Video file type (e.g., video/mp4)")
-    quality: str = Field(description="Video quality (hd, sd)")
+    quality: str = Field(description="Video quality (hd, sd)", default="sd")
     photographer: str = Field(description="Photographer/videographer name")
     photographer_url: str = Field(description="Photographer's Pexels profile URL")
+    gemini_file_id: str = Field(description="Gemini Files API file ID for analysis")
 
 
 class FetchStockVideoResponse(BaseModel):
