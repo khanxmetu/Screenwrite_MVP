@@ -821,8 +821,10 @@ async def fetch_stock_video(request: FetchStockVideoRequest):
         print(f"🎉 Successfully downloaded {len(stock_results)}/3 videos")
         
         return FetchStockVideoResponse(
+            success=True,
             query=request.query,
-            videos=stock_results
+            videos=stock_results,
+            total_results=len(videos_data)
         )
         
     except HTTPException:

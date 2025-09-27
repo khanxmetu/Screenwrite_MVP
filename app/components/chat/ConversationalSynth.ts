@@ -179,7 +179,8 @@ ${SLEEP_GUIDELINES}`;
         question: structuredResponse.question,
         prompt: structuredResponse.prompt,
         suggestedName: structuredResponse.suggestedName,
-        content_type: structuredResponse.content_type
+        content_type: structuredResponse.content_type,
+        query: structuredResponse.query
       };
 
     } catch (error) {
@@ -419,7 +420,8 @@ ${SLEEP_GUIDELINES}`;
           question: parsedResponse.question,
           prompt: parsedResponse.prompt,
           suggestedName: parsedResponse.suggestedName,
-          content_type: parsedResponse.content_type
+          content_type: parsedResponse.content_type,
+          query: parsedResponse.query
         };
       } catch (e) {
         // If parsing fails, it might be a plain text response

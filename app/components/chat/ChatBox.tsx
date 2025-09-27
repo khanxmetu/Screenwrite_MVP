@@ -635,41 +635,52 @@ export function ChatBox({
     console.log("🎬 Executing stock video fetch request:", { query, suggestedName, description });
     
     try {
-      // TODO: Replace with actual API call to /fetch-stock-video
-      // For now, create dummy video options
-      const dummyVideos = [
-        {
-          id: 1,
-          title: `${query} - Option 1`,
-          duration: "15s",
-          description: "High-quality aerial view with dramatic lighting",
-          thumbnailUrl: "https://via.placeholder.com/320x180/4f46e5/ffffff?text=Video+1"
+      // Debug: log what we're about to send
+      console.log("🔍 About to call backend with query:", query);
+      console.log("🔍 Request body will be:", { query: query });
+      
+      // Call the actual backend API to fetch stock videos
+      const response = await fetch(apiUrl("/fetch-stock-video", true), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-        {
-          id: 2,
-          title: `${query} - Option 2`, 
-          duration: "8s",
-          description: "Close-up perspective with natural movement",
-          thumbnailUrl: "https://via.placeholder.com/320x180/7c3aed/ffffff?text=Video+2"
-        },
-        {
-          id: 3,
-          title: `${query} - Option 3`,
-          duration: "22s", 
-          description: "Wide landscape shot with perfect framing",
-          thumbnailUrl: "https://via.placeholder.com/320x180/dc2626/ffffff?text=Video+3"
-        }
-      ];
+        body: JSON.stringify({
+          query: query
+        }),
+      });
 
-      // Create the selection message with video thumbnails
+      if (!response.ok) {
+        throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log("🎬 Backend fetch result:", result);
+
+      if (!result.success || !result.videos || result.videos.length === 0) {
+        throw new Error(result.error_message || "No videos found");
+      }
+
+      // Transform backend response to UI format
+      const videoOptions = result.videos.map((video: any, index: number) => ({
+        id: video.id,
+        title: `${query} - Option ${index + 1}`,
+        duration: `${video.duration}s`,
+        description: `${video.quality.toUpperCase()} quality - ${video.width}x${video.height} - by ${video.photographer}`,
+        thumbnailUrl: video.preview_image,
+        downloadUrl: video.download_url,
+        pexelsUrl: video.pexels_url
+      }));
+
+      // Create the selection message with real video thumbnails
       const videoOptionsMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `I found 3 stock videos for "${query}". Click on the video you'd like to use:`,
+        content: `I found ${result.videos.length} stock videos for "${query}". Click on the video you'd like to use:`,
         isUser: false,
         timestamp: new Date(),
         isSystemMessage: false,
         isVideoSelection: true,
-        videoOptions: dummyVideos,
+        videoOptions: videoOptions,
       };
 
       return [videoOptionsMessage];
