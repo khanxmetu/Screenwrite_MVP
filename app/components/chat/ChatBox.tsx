@@ -518,37 +518,27 @@ export function ChatBox({
   ): Promise<Message[]> => {
     console.log("🎨 Executing generation request:", { prompt, suggestedName, description, contentType });
     
-    // PHASE 1: Handle video generation as dummy (skip actual generation)
-    if (contentType === 'video') {
-      console.log("🎬 Video generation detected - Phase 1: Skipping actual generation for testing");
+    try {
+      // Call the backend generation API for both image and video
+      console.log(`� Calling backend ${contentType} generation API for:`, prompt);
       
-      // Create a dummy success message that matches image generation format
-      const dummyMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: `Generated: ${suggestedName}.mp4`,
-        isUser: false,
-        timestamp: new Date(),
-        isSystemMessage: true,
+      const requestBody: any = {
+        content_type: contentType,
+        prompt: prompt,
       };
 
-      return [dummyMessage];
-    }
-    
-    // Keep existing image generation workflow intact
-    try {
-      // Call the actual backend image generation API
-      console.log("🎨 Calling backend image generation API for:", prompt);
-      
+      // Add video-specific parameters
+      if (contentType === 'video') {
+        requestBody.aspect_ratio = "16:9";
+        requestBody.resolution = "720p";
+      }
+
       const response = await fetch(apiUrl('/generate-content', true), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          content_type: "image",
-          prompt: prompt,
-          // Optional: Add negative_prompt if needed
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
@@ -556,7 +546,7 @@ export function ChatBox({
       }
 
       const result = await response.json();
-      console.log("🎨 Generation result:", result);
+      console.log(`🎨 ${contentType} generation result:`, result);
 
       if (!result.success) {
         throw new Error(result.error_message || 'Generation failed');
@@ -564,42 +554,42 @@ export function ChatBox({
 
       // Extract the generated asset info
       const generatedAsset = result.generated_asset;
-      console.log("🎨 Generated asset:", generatedAsset);
+      console.log(`🎨 Generated ${contentType} asset:`, generatedAsset);
       
-      const generatedFileName = generatedAsset.file_url.split('/').pop() || `${suggestedName}.png`;
-      console.log("🎨 Generated filename:", generatedFileName);
-      console.log("🎨 Generated file URL:", generatedAsset.file_url);
+      const fileExtension = contentType === 'video' ? 'mp4' : 'png';
+      const generatedFileName = generatedAsset.file_url.split('/').pop() || `${suggestedName}.${fileExtension}`;
+      console.log(`🎨 Generated filename:`, generatedFileName);
+      console.log(`🎨 Generated file URL:`, generatedAsset.file_url);
 
-      // Create the MediaBinItem for the generated image
+      // Create the MediaBinItem for the generated content
       // Make sure the URL points to the correct FastAPI server
       const fastApiBaseUrl = getApiBaseUrl(true); // true for FastAPI
-      const imageUrl = generatedAsset.file_url.startsWith('http') 
+      const mediaUrl = generatedAsset.file_url.startsWith('http') 
         ? generatedAsset.file_url 
         : `${fastApiBaseUrl}${generatedAsset.file_url}`;
       
-      console.log("🎨 Final image URL:", imageUrl);
+      console.log(`🎨 Final ${contentType} URL:`, mediaUrl);
 
       const newMediaItem: MediaBinItem = {
         id: generateUUID(),
-        name: suggestedName || generatedFileName.replace('.png', ''),
-        mediaType: "image",
+        name: suggestedName || generatedFileName.replace(`.${fileExtension}`, ''),
+        mediaType: contentType === 'video' ? "video" : "image",
         mediaUrlLocal: null, // Not a blob URL
-        mediaUrlRemote: imageUrl, // Use absolute URL
+        mediaUrlRemote: mediaUrl, // Use absolute URL
         media_width: generatedAsset.width,
         media_height: generatedAsset.height,
-        durationInSeconds: 0, // Images have no duration
+        durationInSeconds: contentType === 'video' ? (generatedAsset.duration_seconds || 8.0) : 0,
         text: null,
         isUploading: false,
         uploadProgress: null,
         left_transition_id: null,
         right_transition_id: null,
-        gemini_file_id: null, // Generated images don't need Gemini analysis initially
+        gemini_file_id: null, // Generated content doesn't need Gemini analysis initially
       };
 
-      console.log("🎨 Created MediaBinItem:", newMediaItem);
+      console.log(`🎨 Created ${contentType} MediaBinItem:`, newMediaItem);
 
-      // TODO: Add the generated image to the media bin
-      // This will need to be implemented via a callback prop
+      // Add the generated content to the media bin
       if (onAddGeneratedImage) {
         await onAddGeneratedImage(newMediaItem);
       }
@@ -616,10 +606,10 @@ export function ChatBox({
       return [generationMessage];
 
     } catch (error) {
-      console.error("Generation failed:", error);
+      console.error(`${contentType} generation failed:`, error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        content: `Failed to generate ${contentType}: ${error instanceof Error ? error.message : 'Unknown error'}`,
         isUser: false,
         timestamp: new Date(),
         isSystemMessage: true,
