@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal, Optional, List, Dict, Any
 
 from pydantic import BaseModel, Field
 
@@ -131,4 +131,31 @@ class CheckGenerationStatusResponse(BaseModel):
     success: bool = Field(description="Whether status check was successful")
     status: Literal["completed", "processing", "failed"] = Field(description="Current generation status")
     generated_asset: Optional[GeneratedAsset] = Field(description="Generated asset if completed", default=None)
+    error_message: Optional[str] = Field(description="Error message if failed", default=None)
+
+
+# Pexels Stock Video Schemas
+class FetchStockVideoRequest(BaseModel):
+    query: str = Field(description="Search query for stock video")
+
+
+class StockVideoResult(BaseModel):
+    id: int = Field(description="Pexels video ID")
+    pexels_url: str = Field(description="Pexels video page URL")
+    download_url: str = Field(description="Local URL to downloaded video file")
+    preview_image: str = Field(description="Preview image URL")
+    duration: int = Field(description="Video duration in seconds")
+    width: int = Field(description="Video width in pixels")
+    height: int = Field(description="Video height in pixels")
+    file_type: str = Field(description="Video file type (e.g., video/mp4)")
+    quality: str = Field(description="Video quality (hd, sd)")
+    photographer: str = Field(description="Photographer/videographer name")
+    photographer_url: str = Field(description="Photographer's Pexels profile URL")
+
+
+class FetchStockVideoResponse(BaseModel):
+    success: bool = Field(description="Whether search was successful")
+    query: str = Field(description="Original search query")
+    videos: List[StockVideoResult] = Field(description="Top 3 downloaded stock videos")
+    total_results: int = Field(description="Total number of results available from Pexels")
     error_message: Optional[str] = Field(description="Error message if failed", default=None)

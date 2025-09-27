@@ -6,6 +6,7 @@ import time
 import re
 import shutil
 import uuid
+import requests
 from PIL import Image
 from io import BytesIO
 
@@ -23,8 +24,10 @@ from code_generator import generate_composition_with_validation
 import code_generator  # Keep for other functions like parse_ai_response
 
 from schema import (
+    TextProperties, BaseScrubber, 
     GenerateContentRequest, GenerateContentResponse, GeneratedAsset,
-    CheckGenerationStatusRequest, CheckGenerationStatusResponse
+    CheckGenerationStatusRequest, CheckGenerationStatusResponse,
+    FetchStockVideoRequest, FetchStockVideoResponse, StockVideoResult
 )
 from providers import ContentGenerationProvider
 
@@ -66,6 +69,70 @@ os.makedirs("out", exist_ok=True)
 
 # Mount static file serving for generated media
 app.mount("/media", StaticFiles(directory="out"), name="media")
+
+
+# Pexels API Helper Functions
+async def search_pexels_videos(query: str):
+    """Search Pexels for landscape videos using their API"""
+    api_key = os.getenv("PEXELS_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Pexels API key not configured")
+    
+    # Remove quotes if present (from .env file)
+    api_key = api_key.strip('"\'')
+    
+    headers = {"Authorization": api_key}  # Pexels expects just the API key, not "Bearer"
+    params = {
+        "query": query,
+        "per_page": 3,  # Get top 3 results
+        "orientation": "landscape"  # Enforce landscape only
+    }
+    
+    try:
+        print(f"🔍 Pexels API call: {query} (key: {api_key[:8]}...)")
+        response = requests.get("https://api.pexels.com/videos/search", headers=headers, params=params, timeout=30)
+        print(f"📡 Response status: {response.status_code}")
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        print(f"❌ Pexels API error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Pexels API request failed: {str(e)}")
+
+
+def select_best_video_file(video_files: List[Dict]) -> Dict:
+    """Select the best quality video file from available options"""
+    if not video_files:
+        return None
+    
+    # Priority: HD mp4 > SD mp4 > others
+    hd_mp4 = [f for f in video_files if f.get("quality") == "hd" and f.get("file_type") == "video/mp4"]
+    if hd_mp4:
+        # Prefer standard resolutions (1920x1080, 1280x720)
+        preferred = [f for f in hd_mp4 if f.get("width") in [1920, 1280]]
+        return preferred[0] if preferred else hd_mp4[0]
+    
+    # Fallback to SD mp4
+    sd_mp4 = [f for f in video_files if f.get("quality") == "sd" and f.get("file_type") == "video/mp4"]
+    return sd_mp4[0] if sd_mp4 else video_files[0]
+
+
+async def download_video_file(video_url: str, filename: str) -> str:
+    """Download video file from Pexels/Vimeo URL"""
+    try:
+        response = requests.get(video_url, stream=True, timeout=60)
+        response.raise_for_status()
+        
+        filepath = os.path.join("out", filename)
+        os.makedirs("out", exist_ok=True)
+        
+        with open(filepath, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        
+        return filepath
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download video: {str(e)}")
 
 
 class Message(BaseModel):
@@ -683,6 +750,93 @@ async def check_generation_status(request: CheckGenerationStatusRequest):
         return CheckGenerationStatusResponse(
             success=False,
             status="failed", 
+            error_message=str(e)
+        )
+
+
+@app.post("/fetch-stock-video", response_model=FetchStockVideoResponse)
+async def fetch_stock_video(request: FetchStockVideoRequest):
+    """
+    Simplified stock video fetch endpoint:
+    1. Search Pexels for top 3 landscape videos
+    2. Download all 3 videos automatically
+    3. Return videos list for AI to decide
+    """
+    print(f"Fetching stock videos for query: {request.query}")
+    
+    try:
+        # Step 1: Search Pexels for landscape videos
+        search_results = await search_pexels_videos(request.query)
+        videos_data = search_results.get("videos", [])
+        
+        if not videos_data:
+            raise HTTPException(status_code=404, detail="No videos found for query")
+        
+        print(f"Found {len(videos_data)} videos from Pexels")
+        
+        # Step 2: Download all 3 videos and process them
+        stock_results = []
+        
+        for i, video in enumerate(videos_data[:3]):  # Limit to top 3
+            # Select best quality file
+            video_files = video.get("video_files", [])
+            best_file = select_best_video_file(video_files)
+            
+            if not best_file:
+                continue
+            
+            try:
+                # Generate filename
+                asset_id = str(uuid.uuid4())
+                file_name = f"stock_video_{asset_id}.mp4"
+                
+                print(f"📥 Downloading video {i+1}/3: {best_file['link']}")
+                filepath = await download_video_file(best_file["link"], file_name)
+                
+                # Create stock result with download info
+                stock_result = StockVideoResult(
+                    id=video["id"],
+                    pexels_url=video.get("url", ""),
+                    download_url=f"/media/{file_name}",  # Local URL after download
+                    preview_image=video.get("image", ""),
+                    duration=video.get("duration", 0),
+                    width=best_file.get("width", video.get("width", 0)),
+                    height=best_file.get("height", video.get("height", 0)),
+                    file_type=best_file.get("file_type", "video/mp4"),
+                    quality=best_file.get("quality", "hd"),
+                    photographer=video.get("user", {}).get("name", "Unknown"),
+                    photographer_url=video.get("user", {}).get("url", "")
+                )
+                stock_results.append(stock_result)
+                
+                print(f"✅ Downloaded video {i+1}/3: {file_name}")
+                
+            except Exception as e:
+                print(f"❌ Failed to download video {i+1}/3: {e}")
+                # Continue with next video
+        
+        if not stock_results:
+            raise HTTPException(status_code=500, detail="Failed to download any videos")
+        
+        print(f"🎉 Successfully downloaded {len(stock_results)}/3 videos")
+        
+        return FetchStockVideoResponse(
+            query=request.query,
+            videos=stock_results
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Stock video fetch error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch stock videos: {str(e)}")
+        return FetchStockVideoResponse(
+            success=False,
+            query=request.query,
+            results=[],
+            total_results=0,
+            auto_evaluation={"score": 0, "reasons": ["Error occurred"], "recommendation": "fallback"},
+            recommendation="fallback",
             error_message=str(e)
         )
 
