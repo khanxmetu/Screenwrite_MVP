@@ -227,9 +227,25 @@ ${SLEEP_GUIDELINES}`;
       }
     }
     
-    // Validate against media library
+    // Validate against media library - check both name and title
     const availableFiles = mediaLibrary.map(item => item.name);
-    return referencedFiles.filter(file => availableFiles.includes(file));
+    const validatedFiles = referencedFiles.filter(file => {
+      // Direct name match
+      const nameMatch = availableFiles.includes(file);
+      if (nameMatch) return true;
+      
+      // Title match - check if any media item's title contains the referenced file
+      const titleMatch = mediaLibrary.some(item => 
+        item.title && (
+          item.title.toLowerCase().includes(file.toLowerCase()) ||
+          file.toLowerCase().includes(item.title.toLowerCase())
+        )
+      );
+      
+      return titleMatch;
+    });
+    
+    return validatedFiles;
   }
 
 
@@ -266,13 +282,20 @@ ${SLEEP_GUIDELINES}`;
     // Media library
     if (context.mediaLibrary.length > 0) {
       parts.push("\nAvailable media files:");
+      parts.push("(Note: Use the file NAME for all operations. Titles are only for user-friendly reference and matching user requests)");
       context.mediaLibrary.forEach(item => {
-        let fileInfo = `- ${item.name} (${item.mediaType}`;
+        let fileInfo = `- NAME: ${item.name} (${item.mediaType}`;
         if (item.durationInSeconds) fileInfo += `, ${item.durationInSeconds}s`;
         if (item.media_width && item.media_height) {
           fileInfo += `, ${item.media_width}x${item.media_height}`;
         }
         fileInfo += ")";
+        
+        // Add title if available for user-friendly reference
+        if (item.title) {
+          fileInfo += ` - USER-FRIENDLY TITLE: "${item.title}"`;
+        }
+        
         parts.push(fileInfo);
       });
     } else {

@@ -270,31 +270,45 @@ export function ChatBox({
     let mediaFile = mediaBinItems.find(item => item.name === fileName);
     
     if (!mediaFile) {
-      console.log(`🔍 Exact match not found for "${fileName}". Trying fuzzy matching...`);
+      console.log(`🔍 Exact name match not found for "${fileName}". Trying fuzzy matching...`);
       
-      // If no filename provided or not found, and only one media file exists, use it
-      if (mediaBinItems.length === 1) {
-        mediaFile = mediaBinItems[0];
-        console.log(`🔍 Using only available media file: ${mediaFile.name}`);
+      // Try title matching first
+      mediaFile = mediaBinItems.find(item => 
+        item.title && (
+          item.title.toLowerCase().includes(fileName.toLowerCase()) ||
+          fileName.toLowerCase().includes(item.title.toLowerCase())
+        )
+      );
+      
+      if (mediaFile) {
+        console.log(`🔍 Found title match: "${mediaFile.title}" (${mediaFile.name}) for "${fileName}"`);
       } else {
-        // Try partial name matching
-        mediaFile = mediaBinItems.find(item => 
-          item.name.toLowerCase().includes(fileName.toLowerCase()) ||
-          fileName.toLowerCase().includes(item.name.toLowerCase())
-        );
-        
-        if (mediaFile) {
-          console.log(`🔍 Found fuzzy match: "${mediaFile.name}" for "${fileName}"`);
+        // If no filename provided or not found, and only one media file exists, use it
+        if (mediaBinItems.length === 1) {
+          mediaFile = mediaBinItems[0];
+          console.log(`🔍 Using only available media file: ${mediaFile.title || mediaFile.name}`);
         } else {
-          console.log(`🔍 No fuzzy matches found for "${fileName}"`);
+          // Try partial name matching
+          mediaFile = mediaBinItems.find(item => 
+            item.name.toLowerCase().includes(fileName.toLowerCase()) ||
+            fileName.toLowerCase().includes(item.name.toLowerCase())
+          );
+          
+          if (mediaFile) {
+            console.log(`🔍 Found fuzzy name match: "${mediaFile.name}" for "${fileName}"`);
+          } else {
+            console.log(`🔍 No fuzzy matches found for "${fileName}"`);
+          }
         }
       }
     } else {
-      console.log(`🔍 Found exact match: "${mediaFile.name}"`);
+      console.log(`🔍 Found exact name match: "${mediaFile.name}"`);
     }
     
     if (!mediaFile) {
-      const availableFiles = mediaBinItems.map(f => f.name).join(', ');
+      const availableFiles = mediaBinItems.map(item => 
+        item.title ? `${item.title} (${item.name})` : item.name
+      ).join(', ');
       await logProbeError(fileName, `Media file not found. Available files: ${availableFiles}`);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -679,7 +693,8 @@ export function ChatBox({
         // Get FastAPI base URL for media files
         const fastApiBaseUrl = getApiBaseUrl(true); // true for FastAPI
         
-        for (const video of result.videos) {
+        for (let index = 0; index < result.videos.length; index++) {
+          const video = result.videos[index];
           // Create the full URL for the video
           const videoUrl = video.download_url.startsWith('http') 
             ? video.download_url 
@@ -687,10 +702,14 @@ export function ChatBox({
             
           console.log(`🎬 Video URL: ${video.download_url} -> ${videoUrl}`);
 
+          // Create descriptive title: "Query by Photographer - Option N"
+          const videoTitle = `${query.charAt(0).toUpperCase() + query.slice(1)} by ${video.photographer} - Option ${index + 1}`;
+
           // Create MediaBinItem for each video
           const mediaItem: MediaBinItem = {
             id: generateUUID(),
             name: `pexels_${video.id}`,
+            title: videoTitle,
             mediaType: "video",
             mediaUrlLocal: null,
             mediaUrlRemote: videoUrl, // Use the full URL

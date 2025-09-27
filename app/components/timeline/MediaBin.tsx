@@ -223,7 +223,7 @@ export default function MediaBin() {
                       ? "text-muted-foreground" 
                       : "text-foreground group-hover:text-accent-foreground"
                   }`}>
-                    {item.name}
+                    {item.title || item.name}
                   </p>
                   
                   {item.isUploading && typeof item.uploadProgress === "number" && (
