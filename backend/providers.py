@@ -1,6 +1,8 @@
 import os
 import time
 import uuid
+import base64
+import io
 from typing import Any
 from google import genai
 from google.genai import types
@@ -207,6 +209,8 @@ class ContentGenerationProvider:
     ):
         """Generate video using Veo 3 model"""
         try:
+            import io
+            
             # Choose model based on requirements
             model = "veo-3.0-fast-generate-001"  # Use fast model for better performance
             
@@ -215,11 +219,30 @@ class ContentGenerationProvider:
             if negative_prompt:
                 config = types.GenerateVideosConfig(negative_prompt=negative_prompt)
             
+            # Format reference image for Google API if provided
+            formatted_image = None
+            if reference_image:
+                try:
+                    # Convert PIL Image to bytes
+                    img_buffer = io.BytesIO()
+                    reference_image.save(img_buffer, format='PNG')
+                    img_bytes = img_buffer.getvalue()
+                    
+                    # Create image object with the bytes directly (based on debug output attributes)
+                    formatted_image = types.Image(
+                        image_bytes=img_bytes,
+                        mime_type="image/png"
+                    )
+                    print(f"✅ Successfully formatted reference image for Veo")
+                except Exception as img_error:
+                    print(f"⚠️ Could not format reference image: {img_error}")
+                    formatted_image = None
+            
             # Start video generation (async operation) - aspect_ratio and resolution are direct parameters
             operation = self.api_client.models.generate_videos(
                 model=model,
                 prompt=prompt,
-                image=reference_image,  # Optional image for image-to-video
+                image=formatted_image,  # Properly formatted image for image-to-video
                 config=config
             )
             
