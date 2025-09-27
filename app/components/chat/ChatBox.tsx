@@ -674,10 +674,46 @@ export function ChatBox({
         pexelsUrl: video.pexels_url
       }));
 
+      // Add all fetched videos to the media library automatically
+      if (onAddGeneratedImage) {
+        // Get FastAPI base URL for media files
+        const fastApiBaseUrl = getApiBaseUrl(true); // true for FastAPI
+        
+        for (const video of result.videos) {
+          // Create the full URL for the video
+          const videoUrl = video.download_url.startsWith('http') 
+            ? video.download_url 
+            : `${fastApiBaseUrl}${video.download_url}`;
+            
+          console.log(`🎬 Video URL: ${video.download_url} -> ${videoUrl}`);
+
+          // Create MediaBinItem for each video
+          const mediaItem: MediaBinItem = {
+            id: generateUUID(),
+            name: `pexels_${video.id}`,
+            mediaType: "video",
+            mediaUrlLocal: null,
+            mediaUrlRemote: videoUrl, // Use the full URL
+            media_width: video.width,
+            media_height: video.height,
+            durationInSeconds: video.duration,
+            text: null,
+            isUploading: false,
+            uploadProgress: null,
+            left_transition_id: null,
+            right_transition_id: null,
+            gemini_file_id: null,
+          };
+
+          console.log("🎬 Adding stock video to media library:", mediaItem);
+          await onAddGeneratedImage(mediaItem);
+        }
+      }
+
       // Create the selection message with real video thumbnails
       const videoOptionsMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `I found ${result.videos.length} stock videos for "${query}". Click to preview:`,
+        content: `I found ${result.videos.length} stock videos for "${query}". All videos have been added to your media library. Click to preview:`,
         isUser: false,
         timestamp: new Date(),
         isSystemMessage: false,
