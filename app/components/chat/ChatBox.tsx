@@ -1379,7 +1379,7 @@ export function ChatBox({
 
                         {/* Video Selection UI */}
                         {message.isVideoSelection && message.videoOptions && (
-                          <div className="mt-3 grid grid-cols-1 gap-3">
+                          <div className="mt-3 grid grid-cols-1 gap-2">
                             {message.videoOptions.map((video) => (
                               <div
                                 key={video.id}
@@ -1390,24 +1390,24 @@ export function ChatBox({
                                   // For now, just log - could open video in a modal or play inline
                                 }}
                               >
-                                <div className="flex gap-3">
-                                  {/* Video Thumbnail */}
+                                <div className="flex gap-3 items-center">
+                                  {/* Video Thumbnail - Fixed size */}
                                   <div className="flex-shrink-0">
                                     <img
                                       src={video.thumbnailUrl}
                                       alt={video.title}
-                                      className="w-20 h-12 object-cover rounded border"
+                                      className="w-16 h-9 object-cover rounded border bg-gray-100 dark:bg-gray-800 block"
                                     />
                                   </div>
-                                  {/* Video Info */}
-                                  <div className="flex-1 min-w-0">
+                                  {/* Video Info - Constrained */}
+                                  <div className="flex-1 min-w-0 overflow-hidden">
                                     <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                                       {video.title}
                                     </div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                                       Duration: {video.duration}
                                     </div>
-                                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-0.5 line-clamp-2">
                                       {video.description}
                                     </div>
                                   </div>
