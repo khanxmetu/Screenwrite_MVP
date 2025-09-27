@@ -597,6 +597,7 @@ export function ChatBox({
       const newMediaItem: MediaBinItem = {
         id: generateUUID(),
         name: suggestedName || generatedFileName.replace(`.${fileExtension}`, ''),
+        title: `Generated ${contentType} - ${suggestedName || generatedFileName.replace(`.${fileExtension}`, '')}`,
         mediaType: contentType === 'video' ? "video" : "image",
         mediaUrlLocal: null, // Not a blob URL
         mediaUrlRemote: mediaUrl, // Use absolute URL
