@@ -35,7 +35,7 @@ export interface ConversationMessage {
 }
 
 export interface SynthResponse {
-  type: 'chat' | 'edit' | 'probe' | 'generate' | 'sleep';
+  type: 'chat' | 'edit' | 'probe' | 'generate' | 'fetch' | 'sleep';
   content: string;
   referencedFiles?: string[]; // @-mentioned files
   fileName?: string; // For probe responses
@@ -43,6 +43,7 @@ export interface SynthResponse {
   prompt?: string; // For generate responses - content generation prompt
   suggestedName?: string; // For generate responses - AI-chosen filename
   content_type?: 'image' | 'video'; // For generate responses - type of content to generate
+  query?: string; // For fetch responses - search query for stock videos
 }
 
 export interface SynthContext {
@@ -312,7 +313,7 @@ ${SLEEP_GUIDELINES}`;
   private async callGeminiAPIStructured(
     systemInstruction: string, 
     prompt: string
-  ): Promise<{ type: 'chat' | 'edit' | 'probe' | 'generate'; content: string; fileName?: string; question?: string; prompt?: string; suggestedName?: string; content_type?: 'image' | 'video' }> {
+  ): Promise<{ type: 'chat' | 'edit' | 'probe' | 'generate' | 'fetch'; content: string; fileName?: string; question?: string; prompt?: string; suggestedName?: string; content_type?: 'image' | 'video'; query?: string }> {
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
     }
@@ -322,7 +323,7 @@ ${SLEEP_GUIDELINES}`;
       properties: {
         "type": {
           "type": "STRING",
-          "enum": ["chat", "edit", "probe", "generate", "sleep"]
+          "enum": ["chat", "edit", "probe", "generate", "fetch", "sleep"]
         },
         "fileName": {
           "type": "STRING"
@@ -339,6 +340,9 @@ ${SLEEP_GUIDELINES}`;
         "content_type": {
           "type": "STRING",
           "enum": ["image", "video"]
+        },
+        "query": {
+          "type": "STRING"
         },
         "content": {
           "type": "STRING"
@@ -404,7 +408,7 @@ ${SLEEP_GUIDELINES}`;
       try {
         const parsedResponse = JSON.parse(responseText);
         
-        if (!parsedResponse.type || !parsedResponse.content || !["chat", "edit", "probe", "generate", "sleep"].includes(parsedResponse.type)) {
+        if (!parsedResponse.type || !parsedResponse.content || !["chat", "edit", "probe", "generate", "fetch", "sleep"].includes(parsedResponse.type)) {
           throw new Error('Invalid structured response from Gemini API');
         }
 

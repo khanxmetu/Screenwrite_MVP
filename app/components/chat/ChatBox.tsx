@@ -50,6 +50,14 @@ interface Message {
   retryData?: {
     originalMessage: string;
   }; // Data needed for retry
+  isVideoSelection?: boolean; // For video selection messages
+  videoOptions?: {
+    id: number;
+    title: string;
+    duration: string;
+    description: string;
+    thumbnailUrl: string;
+  }[]; // Video options for selection
 }
 
 interface ChatBoxProps {
@@ -618,6 +626,67 @@ export function ChatBox({
     }
   };
 
+  // Simple internal handler for fetching stock videos (dummy implementation)
+  const handleFetchRequestInternal = async (
+    query: string,
+    suggestedName: string,
+    description: string
+  ): Promise<Message[]> => {
+    console.log("🎬 Executing stock video fetch request:", { query, suggestedName, description });
+    
+    try {
+      // TODO: Replace with actual API call to /fetch-stock-video
+      // For now, create dummy video options
+      const dummyVideos = [
+        {
+          id: 1,
+          title: `${query} - Option 1`,
+          duration: "15s",
+          description: "High-quality aerial view with dramatic lighting",
+          thumbnailUrl: "https://via.placeholder.com/320x180/4f46e5/ffffff?text=Video+1"
+        },
+        {
+          id: 2,
+          title: `${query} - Option 2`, 
+          duration: "8s",
+          description: "Close-up perspective with natural movement",
+          thumbnailUrl: "https://via.placeholder.com/320x180/7c3aed/ffffff?text=Video+2"
+        },
+        {
+          id: 3,
+          title: `${query} - Option 3`,
+          duration: "22s", 
+          description: "Wide landscape shot with perfect framing",
+          thumbnailUrl: "https://via.placeholder.com/320x180/dc2626/ffffff?text=Video+3"
+        }
+      ];
+
+      // Create the selection message with video thumbnails
+      const videoOptionsMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `I found 3 stock videos for "${query}". Click on the video you'd like to use:`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: false,
+        isVideoSelection: true,
+        videoOptions: dummyVideos,
+      };
+
+      return [videoOptionsMessage];
+
+    } catch (error) {
+      console.error("Stock video fetch failed:", error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `Failed to fetch stock videos: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+      return [errorMessage];
+    }
+  };
+
   const handleConversationalMessage = async (messageContent: string): Promise<void> => {
     await handleConversationalMessageWithUpdatedMessages(messageContent, messages);
   };
@@ -690,11 +759,14 @@ export function ChatBox({
         } else if (synthResponse.type === 'edit') {
           console.log("✅ Edit response - stopping unified workflow after implementation");
           continueWorkflow = false;
+        } else if (synthResponse.type === 'fetch') {
+          console.log("🎬 Fetch response - stopping workflow after presenting video options");
+          continueWorkflow = false;
         } else if (stepMessages.some(msg => msg.hasRetryButton)) {
           console.log("⏸️ Retry button message - stopping workflow until retry");
           continueWorkflow = false;
         } else {
-          console.log(`� ${synthResponse.type} response - workflow will continue with updated conversation`);
+          console.log(`🔄 ${synthResponse.type} response - workflow will continue with updated conversation`);
           // No need to set currentMessageContent - the AI will see the updated conversation history
         }
         
@@ -801,6 +873,18 @@ export function ChatBox({
       );
       
       return generateResults; // Only return generation result, no "Generating..." message
+      
+    } else if (synthResponse.type === 'fetch') {
+      // Fetch request - search stock videos (only show selection options)
+      console.log("🎬 Executing stock video fetch:", synthResponse.query, synthResponse.suggestedName);
+      
+      const fetchResults = await handleFetchRequestInternal(
+        synthResponse.query!, 
+        synthResponse.suggestedName!, 
+        synthResponse.content
+      );
+      
+      return fetchResults; // Only return fetch results, no "Searching..." message
       
     } else if (synthResponse.type === 'edit') {
       // Edit instructions - send to backend (only show final result)
@@ -1280,6 +1364,46 @@ export function ChatBox({
                           }`}>
                             {formatMessageText(message.content)}
                           </p>
+                        )}
+
+                        {/* Video Selection UI */}
+                        {message.isVideoSelection && message.videoOptions && (
+                          <div className="mt-3 grid grid-cols-1 gap-3">
+                            {message.videoOptions.map((video) => (
+                              <div
+                                key={video.id}
+                                className="border border-gray-300 dark:border-gray-600 rounded-lg p-3 cursor-pointer hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                onClick={() => {
+                                  // TODO: Implement video preview/play functionality
+                                  console.log("🎥 Preview video:", video.title);
+                                  // For now, just log - could open video in a modal or play inline
+                                }}
+                              >
+                                <div className="flex gap-3">
+                                  {/* Video Thumbnail */}
+                                  <div className="flex-shrink-0">
+                                    <img
+                                      src={video.thumbnailUrl}
+                                      alt={video.title}
+                                      className="w-20 h-12 object-cover rounded border"
+                                    />
+                                  </div>
+                                  {/* Video Info */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                      {video.title}
+                                    </div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                      Duration: {video.duration}
+                                    </div>
+                                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-1">
+                                      {video.description}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         )}
                         <span className="text-xs opacity-70 mt-1 block">
                           {formatTime(message.timestamp)}

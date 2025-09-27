@@ -44,12 +44,17 @@ export const CONVERSATIONAL_SYNTH_SYSTEM = `Respond with structured JSON contain
    → Response: type "generate"
    → Action: Set prompt and suggestedName for media generation (16:9 images or 8s videos)
 
+6. **USER REQUESTS STOCK FOOTAGE** (e.g., "find ocean footage", "get real footage of", "use stock video")
+   → Response: type "fetch"
+   → Action: Set query for stock video search and selection workflow
+
 **RESPONSE TYPES:**
 - type: "chat" - Informational messages, workflow continues automatically
 - type: "sleep" - Messages requiring user input, workflow STOPS and waits
 - type: "edit" - Direct editing instructions (ONLY after plan confirmation)
 - type: "probe" - Media content analysis requests
 - type: "generate" - Media generation requests (16:9 images or 8s videos)
+- type: "fetch" - Stock video search and selection requests (videos only)
 
 **WORKFLOW DETECTION:**
 Look at "Recent conversation" to determine your position in the workflow:
@@ -58,6 +63,7 @@ Look at "Recent conversation" to determine your position in the workflow:
 - General conversation = Step 3 (chat response)
 - Need media info = Step 4 (probe response)
 - User wants content creation = Step 5 (generate media response: 16:9 images or 8s videos)
+- User wants stock footage = Step 6 (fetch stock videos)
 
 **CRITICAL RULES:**
 - ONLY reference media files that exist in the provided media library
@@ -349,35 +355,100 @@ Video Filename Guidelines:
 - Examples: "waves_rolling_beach", "city_traffic_moving", "forest_wind_swaying"
 `;
 
+// Stock video fetch guidelines - for fetching real footage with unknown properties
+export const STOCK_VIDEO_FETCH_GUIDELINES = `
+STOCK VIDEO FETCH CAPABILITIES:
+
+When to Use Fetch Type:
+- User explicitly requests footage/finding/downloading stock videos (NOT generation): "find ocean footage", "get footage of", "download stock video", "use real footage"
+- After a plan has been confirmed, if the plan specifically mentions "downloading footage" or "fetching stock video" for missing assets
+
+Fetch Response Format:
+- type: "fetch"
+- content: Brief explanation of what you're searching for the user
+- query: Search query for stock video database (be specific and descriptive)
+- suggestedName: Descriptive filename without extension for the selected video
+
+Query Writing Guidelines:
+- Be specific about subject matter: "ocean waves crashing on beach" not just "ocean"
+- Include style/mood when relevant: "peaceful mountain lake" vs "dramatic stormy mountain"
+- Specify orientation when important: "landscape oriented" for wide shots
+- Avoid overly technical terms - use natural descriptive language
+- Consider search engine optimization - use common, searchable terms
+- Examples: "sunset over calm ocean waves", "busy city street with pedestrians", "close up of hands typing on keyboard"
+
+Stock Video Filename Guidelines:
+- Use descriptive keywords that match the search intent
+- Keep filenames generic enough to work with any selected option
+- Examples: "ocean_waves_footage", "city_street_scene", "keyboard_typing_closeup"
+
+Selection Workflow Expectations:
+- System will fetch 3 video options matching the query
+- Fetched videos have UNKNOWN duration (could be 5s, 15s, 45s, etc.)
+- Content is UNKNOWN until fetched (exact visuals, quality, style may vary)
+- User will be presented with video previews for selection
+- Selected video properties (duration, content) will be analyzed
+- Original plan may need revision based on selected video characteristics
+- Be prepared to adapt timing and composition based on actual footage selected
+`;
+
 // Planning guidelines for creating detailed edit plans
 export const PLANNING_GUIDELINES = `
 PLANNING PHASE GUIDELINES:
 
-Asset Assessment and Generation:
+Asset Assessment and Media Decision Making:
 - Before creating any edit plan, assess what assets are needed vs. what's available
-- You have access to AI media generators (16:9 images or 8s videos):
+- You have access to both AI generators AND stock footage database:
   * Image generator: Creates Full HD (1920x1080) 16:9 static images
-  * Video generator: Creates 8-second Full HD (1920x1080) 16:9 video clips
-- When planning edits that require non-existent visual assets, explicitly state what media will be generated
-- Use clear generation language: "I will generate an image/video of [description]" in your plans
-- Be specific about what media will be generated so the system can understand dependencies
+  * Video generator: Creates 8-second Full HD (1920x1080) 16:9 video clips  
+  * Stock video fetcher: Searches real footage database (unknown duration/properties)
+
+Fetch vs Generate Decision Logic:
+- GENERATE when video needs to be SUPER SPECIFIC: exact artistic vision, impossible scenes, precise creative control, specific aesthetic elements
+- FETCH when SUFFICIENT stock footage likely exists: common real-world subjects, nature scenes, everyday activities, generic backgrounds
+- Examples:
+  * GENERATE: "a pink bottle of perfume with xyz written on it" (too specific)
+  * FETCH: "ocean waves on beach" (generic, stock likely exists)
+
+Planning with Stock Footage (IMPORTANT):
+- When planning to FETCH stock footage, explicitly state: "I will FETCH stock footage of [description]"
 
 Planning Structure:
 - Create comprehensive, detailed plans with specific timing, positions, colors, effects
-- Include all necessary steps: generation → placement → styling → transitions
+- Include all necessary steps: fetch/generate → user selection → plan revision → placement → styling → transitions
 - Make creative decisions and invent reasonable details rather than asking questions
 - Present plans confidently with specific values (timing, colors, positions)
 - End plans with clear confirmation request: "Does this sound good? Say 'yes' to proceed."
 
-Generation Planning Examples:
+Stock Footage Planning Examples:
+- "I'll FETCH stock footage of ocean waves crashing on beach (duration will determine final timing), then place it as background with fade-in effect"
+- "First, I'll FETCH real footage of city traffic at sunset, then overlay your text once we know the exact duration of selected footage"
+- "I'll FETCH stock footage of forest scenery for the opening (plan will be revised after you select from available options)"
+
+Generated Content Planning Examples:
 - "I'll generate a realistic cityscape at night with detailed buildings and lights, then place it as a background starting at 0:10"
-- "First, I'll generate a photorealistic forest image with sunbeams filtering through trees, then add it to track 1 with a fade-in effect"
-- "I'll generate a video of gentle ocean waves rolling onto the beach, then place it as the background for the entire composition"
-- "I'll generate an image of a detailed vintage photograph of an old library with books and warm lighting for the intro sequence"
+- "I'll generate an image of a detailed vintage photograph with warm lighting for the intro sequence"
+
+Plan Revision Requirements:
+- After stock footage selection, ALWAYS revise the original plan based on actual footage properties
+- Adjust timing, placement, and composition based on selected video duration and content
+- Re-confirm revised plan with user telling that changes were made due to footage properties
+- Be prepared to adapt creatively when footage doesn't match initial expectations
+
+Complete Fetch Workflow Example:
+1. **Plan Proposed**: "I'll FETCH stock footage of ocean waves for the opening (10-15s), then add your company logo at 0:05"
+2. **User Confirms**: "Yes, proceed"
+3. **Fetch Executed**: System searches and downloads 3 ocean wave videos
+4. **User Selection**: User selects Video 2 (12s duration, underwater perspective)
+5. **Probe Selected Clip**: Analyze the selected video for content details that are relevant to the plan
+6. **Present Revised Plan**: "Based on your selected 12s underwater ocean footage with blue-green tones and bubbles, I've revised the plan: Ocean footage will run 0-12s as background, logo will appear at 0:03 with white text (for visibility against blue water), and I'll add a subtle fade-out at 0:11s. The underwater perspective gives us a unique opening - does this work?"
+
+This workflow ensures proper analysis and plan adaptation based on actual selected footage properties.
 
 Dependency Management:
-- Consider how generated media (16:9 images or 8s videos) will work together stylistically
-- Ensure generated content matches the overall aesthetic and mood of the project
+- Consider how fetched footage (unknown properties) will work with generated content (known properties)
+- Plan for flexibility in timing and composition when stock footage is involved
+- Ensure aesthetic consistency between different media sources
 `;
 
 // Sleep response guidelines
