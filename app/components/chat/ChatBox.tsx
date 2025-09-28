@@ -985,13 +985,23 @@ export function ChatBox({
       // Fetch request - search stock videos (only show selection options)
       console.log("🎬 Executing stock video fetch:", synthResponse.query, synthResponse.suggestedName);
       
+      // Add immediate feedback message
+      const fetchingMessage: Message = {
+        id: Date.now().toString(),
+        content: `Fetching stock videos: ${synthResponse.query}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+      onMessagesChange(prev => [...prev, fetchingMessage]);
+      
       const fetchResults = await handleFetchRequestInternal(
         synthResponse.query!, 
         synthResponse.suggestedName!, 
         synthResponse.content
       );
       
-      return fetchResults; // Only return fetch results, no "Searching..." message
+      return fetchResults; // Only return fetch results, no "Fetching..." message
       
     } else if (synthResponse.type === 'edit') {
       // Edit instructions - send to backend (only show final result)
