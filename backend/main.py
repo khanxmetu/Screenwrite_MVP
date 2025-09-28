@@ -118,6 +118,63 @@ def select_best_video_file(video_files: List[Dict]) -> Dict:
     return sd_mp4[0] if sd_mp4 else video_files[0]
 
 
+def select_lowest_quality_video_file(video_files: List[Dict]) -> Dict:
+    """Select the lowest quality video file for fast Gemini uploads"""
+    if not video_files:
+        return None
+    
+    # Priority for Gemini: Smallest file size (lowest quality, smallest resolution)
+    mp4_files = [f for f in video_files if f.get("file_type") == "video/mp4"]
+    if not mp4_files:
+        return video_files[0] if video_files else None
+    
+    # Sort by quality (sd before hd) and resolution (smaller first)
+    def quality_score(file):
+        # Lower score = prefer for Gemini upload
+        quality = file.get("quality", "sd")
+        width = file.get("width", 0)
+        
+        quality_score = 0 if quality == "sd" else 1  # Prefer SD over HD
+        resolution_score = width / 1000  # Lower resolution preferred
+        
+        return quality_score + resolution_score
+    
+    # Return the file with the lowest quality score
+    return min(mp4_files, key=quality_score)
+
+
+async def upload_url_to_gemini_directly(url: str, filename: str) -> str:
+    """
+    Stream video directly from Pexels URL to Gemini without local storage.
+    Optimized for fast Gemini uploads using lowest quality files.
+    Returns gemini_file_id
+    """
+    try:
+        print(f"📤 Direct streaming to Gemini: {url}")
+        
+        timeout = httpx.Timeout(60.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream('GET', url, follow_redirects=True) as response:
+                response.raise_for_status()
+                
+                # Stream directly to memory for Gemini upload
+                gemini_buffer = BytesIO()
+                
+                async for chunk in response.aiter_bytes(chunk_size=8192):
+                    gemini_buffer.write(chunk)
+                
+                # Upload to Gemini from memory buffer
+                gemini_buffer.seek(0)
+                gemini_file_id = await upload_file_content_to_gemini(gemini_buffer.getvalue(), filename)
+                
+                print(f"✅ Direct Gemini upload completed: {filename} -> {gemini_file_id}")
+                return gemini_file_id
+                
+    except Exception as e:
+        print(f"❌ Direct Gemini upload failed for {url}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload directly to Gemini: {str(e)}")
+
+
 async def download_video_file(url: str, filename: str) -> str:
     """Download video file from Pexels/Vimeo URL"""
     try:
@@ -962,10 +1019,11 @@ async def check_generation_status(request: CheckGenerationStatusRequest):
 @app.post("/fetch-stock-video", response_model=FetchStockVideoResponse)
 async def fetch_stock_video(request: FetchStockVideoRequest):
     """
-    Optimized stock video fetch endpoint with parallel processing:
+    Optimized dual-quality stock video fetch endpoint with parallel processing:
     1. Search Pexels for top 3 landscape videos
-    2. Download and upload to Gemini simultaneously for all videos in parallel
-    3. Return videos with gemini_file_id ready for analysis
+    2. Download HIGH quality for frontend timeline use
+    3. Stream LOW quality directly to Gemini for fast AI analysis
+    4. Return videos with both local URLs and gemini_file_id ready for analysis
     """
     print(f"Fetching stock videos for query: {request.query}")
     
@@ -981,25 +1039,36 @@ async def fetch_stock_video(request: FetchStockVideoRequest):
         
         # Step 2: Process all 3 videos in parallel with simultaneous download + Gemini upload
         async def process_video(video, index):
-            """Process a single video: download to local + upload to Gemini simultaneously"""
-            # Select best quality file
+            """Process a single video with dual quality: HD for frontend, low quality for Gemini"""
             video_files = video.get("video_files", [])
-            best_file = select_best_video_file(video_files)
             
-            if not best_file:
-                raise Exception("No suitable video file found")
+            # Select HIGH quality for frontend/local download
+            best_file = select_best_video_file(video_files)
+            # Select LOW quality for fast Gemini upload
+            gemini_file = select_lowest_quality_video_file(video_files)
+            
+            if not best_file or not gemini_file:
+                raise Exception("No suitable video files found")
             
             # Generate filename
             asset_id = str(uuid.uuid4())
             file_name = f"stock_video_{asset_id}.mp4"
+            gemini_file_name = f"gemini_{file_name}"
             
-            print(f"📥 Processing video {index+1}/3 in parallel: {best_file['link']}")
+            print(f"📥 Processing video {index+1}/3:")
+            print(f"  Frontend: {best_file['quality']} {best_file.get('width')}x{best_file.get('height')} - {best_file['link']}")
+            print(f"  Gemini: {gemini_file['quality']} {gemini_file.get('width')}x{gemini_file.get('height')} - {gemini_file['link']}")
             
-            # Download and upload to Gemini simultaneously
-            filepath, gemini_file_id = await download_and_upload_to_gemini_simultaneously(
-                best_file["link"], 
-                file_name
+            # Run both downloads in parallel
+            download_task = asyncio.create_task(
+                download_video_file(best_file["link"], file_name)
             )
+            gemini_task = asyncio.create_task(
+                upload_url_to_gemini_directly(gemini_file["link"], gemini_file_name)
+            )
+            
+            # Wait for both to complete
+            filepath, gemini_file_id = await asyncio.gather(download_task, gemini_task)
             
             # Create stock result with both local URL and Gemini file ID
             stock_result = StockVideoResult(
@@ -1008,16 +1077,16 @@ async def fetch_stock_video(request: FetchStockVideoRequest):
                 download_url=f"/media/{file_name}",
                 preview_image=video.get("image", ""),
                 duration=video.get("duration", 0),
-                width=best_file.get("width", video.get("width", 0)),
+                width=best_file.get("width", video.get("width", 0)),  # Use best file dimensions
                 height=best_file.get("height", video.get("height", 0)),
                 file_type=best_file.get("file_type", "video/mp4"),
-                quality=best_file.get("quality", "sd"),  # Default to "sd" if None
+                quality=best_file.get("quality", "sd"),  # Use best file quality
                 photographer=video.get("user", {}).get("name", "Unknown"),
                 photographer_url=video.get("user", {}).get("url", ""),
-                gemini_file_id=gemini_file_id  # ✅ Ready for analysis!
+                gemini_file_id=gemini_file_id  # ✅ Fast low-quality upload!
             )
             
-            print(f"✅ Completed video {index+1}/3: {file_name} -> Gemini: {gemini_file_id}")
+            print(f"✅ Completed video {index+1}/3: {file_name} (Frontend: {best_file['quality']}) + Gemini: {gemini_file_id}")
             return stock_result
         
         # Process all 3 videos in parallel
