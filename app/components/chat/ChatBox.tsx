@@ -538,9 +538,10 @@ export function ChatBox({
     prompt: string,
     suggestedName: string,
     description: string,
-    contentType: 'image' | 'video' = 'image' // Add content type parameter
+    contentType: 'image' | 'video' = 'image', // Add content type parameter
+    seedImageFileName?: string // Add seed image parameter for video generation
   ): Promise<Message[]> => {
-    console.log("🎨 Executing generation request:", { prompt, suggestedName, description, contentType });
+    console.log("🎨 Executing generation request:", { prompt, suggestedName, description, contentType, seedImageFileName });
     
     try {
       // Call the backend generation API for both image and video
@@ -555,6 +556,42 @@ export function ChatBox({
       if (contentType === 'video') {
         requestBody.aspect_ratio = "16:9";
         requestBody.resolution = "720p";
+        
+        // Handle seed image for video generation
+        if (seedImageFileName) {
+          try {
+            // Find the seed image in media library
+            const seedImage = mediaBinItems.find((item: MediaBinItem) => item.name === seedImageFileName);
+            if (seedImage) {
+              // Use the best available URL for the image
+              const imageUrl = seedImage.mediaUrlLocal || seedImage.mediaUrlRemote;
+              if (imageUrl) {
+                // Convert image to base64
+                const response = await fetch(imageUrl);
+                const blob = await response.blob();
+                const base64 = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const base64String = reader.result as string;
+                    // Remove the data:image/...;base64, prefix
+                    const base64Data = base64String.split(',')[1];
+                    resolve(base64Data);
+                  };
+                  reader.readAsDataURL(blob);
+                });
+                
+                requestBody.reference_image = base64;
+                console.log(`🖼️ Added seed image: ${seedImageFileName}`);
+              } else {
+                console.warn(`⚠️ Seed image ${seedImageFileName} has no valid URL`);
+              }
+            } else {
+              console.warn(`⚠️ Seed image ${seedImageFileName} not found in media library`);
+            }
+          } catch (error) {
+            console.error(`❌ Failed to process seed image ${seedImageFileName}:`, error);
+          }
+        }
       }
 
       const response = await fetch(apiUrl('/generate-content', true), {
@@ -938,7 +975,8 @@ export function ChatBox({
         synthResponse.prompt!, 
         synthResponse.suggestedName!, 
         synthResponse.content,
-        synthResponse.content_type || 'image' // Pass content type from AI response
+        synthResponse.content_type || 'image', // Pass content type from AI response
+        synthResponse.seedImageFileName // Pass seed image filename for video generation
       );
       
       return generateResults; // Only return generation result, no "Generating..." message

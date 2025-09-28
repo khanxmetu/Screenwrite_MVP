@@ -315,10 +315,16 @@ VIDEO GENERATION CAPABILITIES:
 When to Use Generate Type (Videos):
 - User explicitly requests moving/animated content ("create a video", "generate footage", "I need a clip of")
 - User asks for dynamic scenes ("moving waves", "flowing water", "birds flying", "traffic moving")
+- User requests animation of existing images ("animate this image", "make this picture move", "turn this photo into video")
 - After a plan has been confirmed, check if any referenced video assets don't exist in media library
 - When conversation context implies video generation is the next logical step
 - Any scenario where a required video asset is missing and needs to be created
 - PRIORITY: Always verify asset availability before proceeding with edit instructions
+
+Seed Image Support:
+- Videos can be generated FROM existing images for image-to-video conversion
+- When user wants to use an image as a seed/reference
+- Seed images guide the video generation to match the style, composition, and content of the source image
 
 Asset Verification Process:
 - After plan confirmation, scan the plan for referenced video/motion assets
@@ -332,6 +338,7 @@ Generate Response Format (Videos):
 - content: Brief explanation of what you're generating for the user
 - prompt: Detailed, cinematic description for video generation (emphasize motion and dynamics)
 - suggestedName: Descriptive filename without extension (e.g., "ocean_waves_crashing", "city_traffic_timelapse")
+- seedImageFileName: (OPTIONAL) Exact filename of image from media library to use as reference for generation
 
 Output Specifications:
 - 8-second video clips (Veo standard duration)

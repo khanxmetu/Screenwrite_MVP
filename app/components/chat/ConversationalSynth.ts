@@ -43,6 +43,7 @@ export interface SynthResponse {
   prompt?: string; // For generate responses - content generation prompt
   suggestedName?: string; // For generate responses - AI-chosen filename
   content_type?: 'image' | 'video'; // For generate responses - type of content to generate
+  seedImageFileName?: string; // For generate video responses - filename of image to use as seed/reference
   query?: string; // For fetch responses - search query for stock videos
 }
 
@@ -180,6 +181,7 @@ ${SLEEP_GUIDELINES}`;
         prompt: structuredResponse.prompt,
         suggestedName: structuredResponse.suggestedName,
         content_type: structuredResponse.content_type,
+        seedImageFileName: structuredResponse.seedImageFileName,
         query: structuredResponse.query
       };
 
@@ -337,7 +339,7 @@ ${SLEEP_GUIDELINES}`;
   private async callGeminiAPIStructured(
     systemInstruction: string, 
     prompt: string
-  ): Promise<{ type: 'chat' | 'edit' | 'probe' | 'generate' | 'fetch'; content: string; fileName?: string; question?: string; prompt?: string; suggestedName?: string; content_type?: 'image' | 'video'; query?: string }> {
+  ): Promise<{ type: 'chat' | 'edit' | 'probe' | 'generate' | 'fetch'; content: string; fileName?: string; question?: string; prompt?: string; suggestedName?: string; content_type?: 'image' | 'video'; seedImageFileName?: string; query?: string }> {
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
     }
@@ -364,6 +366,9 @@ ${SLEEP_GUIDELINES}`;
         "content_type": {
           "type": "STRING",
           "enum": ["image", "video"]
+        },
+        "seedImageFileName": {
+          "type": "STRING"
         },
         "query": {
           "type": "STRING"
@@ -444,6 +449,7 @@ ${SLEEP_GUIDELINES}`;
           prompt: parsedResponse.prompt,
           suggestedName: parsedResponse.suggestedName,
           content_type: parsedResponse.content_type,
+          seedImageFileName: parsedResponse.seedImageFileName,
           query: parsedResponse.query
         };
       } catch (e) {
