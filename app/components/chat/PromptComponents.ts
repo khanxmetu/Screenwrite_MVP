@@ -327,6 +327,7 @@ Seed Image Support:
 - Videos can be generated FROM existing images for image-to-video conversion
 - When user wants to use an image as a seed/reference
 - Seed images guide the video generation to match the style, composition, and content of the source image
+- use this if there is a refference image in the media library that needs to be used
 
 Asset Verification Process:
 - After plan confirmation, scan the plan for referenced video/motion assets
@@ -396,7 +397,8 @@ Selection Workflow Expectations:
 - Fetched videos have UNKNOWN duration (could be 5s, 15s, 45s, etc.)
 - Content is UNKNOWN until fetched (exact visuals, quality, style may vary)
 - User will be presented with video previews for selection
-- Selected video properties (duration, content) will be analyzed
+- Selected video (or videos) properties (duration, content) will be analyzed
+- Content analysis will require probing the selected video(s)
 - Original plan may need revision based on selected video characteristics
 - Be prepared to adapt timing and composition based on actual footage selected
 `;
@@ -413,7 +415,7 @@ Asset Assessment and Media Decision Making:
   * Stock video fetcher: Searches real footage database (unknown duration/properties)
 
 Fetch vs Generate Decision Logic:
-- GENERATE when video needs to be SUPER SPECIFIC: exact artistic vision, impossible scenes, precise creative control, specific aesthetic elements
+- GENERATE when video needs to be SPECIFIC: exact artistic vision, precise creative control, specific aesthetic elements or requirements stated explicitly or implied by context
 - FETCH when SUFFICIENT stock footage likely exists: common real-world subjects, nature scenes, everyday activities, generic backgrounds
 - Examples:
   * GENERATE: "a pink bottle of perfume with xyz written on it" (too specific)
@@ -432,7 +434,7 @@ Planning Structure:
 Stock Footage Planning Examples:
 - "I'll FETCH stock footage of ocean waves crashing on beach (duration will determine final timing), then place it as background with fade-in effect"
 - "First, I'll FETCH real footage of city traffic at sunset, then overlay your text once we know the exact duration of selected footage"
-- "I'll FETCH stock footage of forest scenery for the opening (plan will be revised after you select from available options)"
+- "I'll FETCH stock footage of forest scenery for the opening (plan will be revised after you choose from available options)"
 
 Generated Content Planning Examples:
 - "I'll generate a realistic cityscape at night with detailed buildings and lights, then place it as a background starting at 0:10"
