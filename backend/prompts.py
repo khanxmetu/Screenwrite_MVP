@@ -313,7 +313,7 @@ The Blueprint system uses **absolute positioning as the foundation**. Understand
 For positioning elements within SW.AbsoluteFill, ALWAYS use absolute CSS properties:
 
 ```javascript
-// ✅ CORRECT: Direct absolute positioning
+// ✅ CORRECT: Direct absolute positioning with proper separation
 return React.createElement(SW.AbsoluteFill, {}, 
   React.createElement('div', {
     style: {
@@ -321,9 +321,14 @@ return React.createElement(SW.AbsoluteFill, {},
       bottom: '10%',        // Distance from bottom
       left: '50%',          // 50% from left edge
       transform: 'translateX(-50%)', // Center horizontally
-      fontSize: '48px'
     }
-  }, 'Text Content')
+  }, 
+    React.createElement('span', {
+      style: {
+        fontSize: '48px'    // Content styling in separate container
+      }
+    }, 'Text Content')
+  )
 );
 
 // ❌ WRONG: Using flexbox for primary positioning
@@ -568,7 +573,161 @@ return React.createElement(SW.AbsoluteFill, {}, [
 """
 
 # ============================================================================
-# PART 3: LLM ROLE INSTRUCTIONS (Behavioral Guidelines)  
+# PART 3: REACT.CREATEELEMENT STRUCTURE VALIDATION (Critical Requirements)
+# ============================================================================
+
+REACT_STRUCTURE_VALIDATION = """
+**REACT.CREATEELEMENT STRUCTURE VALIDATION & MANDATORY CHECKS**
+
+**CRITICAL PRINCIPLE: SEPARATION OF CONCERNS**
+
+Every React element MUST follow proper responsibility separation:
+1. **Structural Container** - Handles layout, positioning, and architectural concerns
+2. **Content Container** - Handles styling, appearance, and content-specific properties
+
+**MANDATORY STRUCTURE PATTERN:**
+
+```javascript
+// ✅ REQUIRED PATTERN: Structural Container + Content Container
+React.createElement('div', {
+  style: {
+    // ONLY structural properties here:
+    position: 'absolute',
+    display: 'flex',
+    justifyContent: 'center',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: '100%',
+    height: '60px',
+    // NO content-specific styling: fontSize, color, background, border, etc.
+  }
+}, 
+  React.createElement('span', {  // Content can be ANY element: div, h1, img, etc.
+    style: {
+      // ONLY content styling properties here:
+      fontSize: '48px',
+      color: '#FFD700',
+      fontFamily: 'Arial, sans-serif',
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      border: '2px solid white',
+      padding: '10px',
+      // NO structural properties: position, display, top, bottom, left, right, transform
+    }
+  }, 'Content') // Can be text, other React elements, arrays, etc.
+)
+
+// ❌ FORBIDDEN PATTERN: Mixed structural and styling concerns
+React.createElement('div', {
+  style: {
+    display: 'flex',           // Structural property
+    justifyContent: 'center',  // Structural property
+    alignItems: 'center',      // Structural property
+    fontSize: '48px',          // ❌ CONTENT STYLING MIXED WITH STRUCTURE
+    color: '#FFD700',          // ❌ CONTENT STYLING MIXED WITH STRUCTURE
+    backgroundColor: 'blue',   // ❌ CONTENT STYLING MIXED WITH STRUCTURE
+    border: '2px solid red'    // ❌ CONTENT STYLING MIXED WITH STRUCTURE
+  }
+}, 'Content')  // ❌ CONTENT DIRECTLY IN STRUCTURAL CONTAINER
+```
+
+**PROPERTY CLASSIFICATION REFERENCE:**
+
+**Structural Properties (Outer Container Only):**
+- position: 'absolute', 'relative', 'fixed', 'static'
+- top, bottom, left, right (positioning)
+- transform, transformOrigin (positioning transforms)
+- display: 'flex', 'grid', 'block', 'inline' (layout method)
+- justifyContent, alignItems, flexDirection (flex layout)
+- gridTemplateColumns, gridArea (grid layout)
+- width, height (container sizing for layout)
+- margin, padding (spacing for layout)
+- zIndex (layering)
+- overflow (content handling)
+
+**Content Styling Properties (Inner Container Only):**
+- fontSize, fontFamily, fontWeight, fontStyle (typography)
+- color, backgroundColor (colors)
+- textAlign, textDecoration, textTransform (text formatting)
+- textShadow, boxShadow (visual effects)
+- letterSpacing, lineHeight (text spacing)
+- border, borderRadius (visual borders)
+- opacity (visual transparency)
+- background (gradients, images, colors for appearance)
+- filter, backdropFilter (visual effects)
+- padding (when used for visual spacing, not layout)
+- margin (when used for visual spacing, not layout)
+
+**MANDATORY PRE-GENERATION VALIDATION CHECKS:**
+
+Before generating ANY React.createElement code, you MUST verify:
+
+**CHECK 1: Structure Validation**
+□ Does every element with content use the two-container pattern?
+□ Is the outer container used ONLY for structural concerns?
+□ Is the inner container used ONLY for content styling?
+□ Are there NO mixed structural+styling properties in a single element?
+
+**CHECK 2: Property Classification Audit**
+□ Scan every style object for structural properties (position, display, justifyContent, etc.)
+□ Scan every style object for styling properties (fontSize, color, backgroundColor, border, etc.)
+□ Verify NO style object contains BOTH categories
+□ Confirm content is in the innermost styled container
+
+**CHECK 3: Nesting Structure Verification**
+□ Outer container: React.createElement('div', {style: {/* structural properties */}}, ...)
+□ Inner container: React.createElement('any-element', {style: {/* styling properties */}}, content)
+□ Content is a direct child of the styled inner container
+□ No content is a direct child of structural containers
+
+**CHECK 4: Anti-Pattern Detection**
+□ Search for React.createElement with content AND structural styles - FORBIDDEN
+□ Search for style objects mixing structural properties with content styling - FORBIDDEN
+□ Search for single-container styled elements - FORBIDDEN
+□ Search for unnecessary deep nesting beyond 2 levels for simple content - REVIEW NEEDED
+
+**CHECK 5: Complete Element Audit**
+For each React.createElement in your generated code:
+□ If it contains content, verify two-container pattern
+□ If it has structural styles, verify it doesn't have content
+□ If it has content styling, verify it doesn't have structural styles
+□ If it's a container element, verify proper separation of concerns
+
+**VALIDATION EXAMPLES:**
+
+✅ CORRECT Structure Analysis:
+```javascript
+React.createElement('div', {
+  style: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }
+}, 
+  React.createElement('div', {
+    style: { fontSize: '48px', color: 'white', backgroundColor: 'blue', border: '2px solid red' }
+  }, 'Any Content')
+)
+```
+- ✅ Outer div: ONLY structural properties (flex layout)
+- ✅ Inner div: ONLY content styling properties  
+- ✅ Content in styled container
+- ✅ Structural-content separation maintained
+
+❌ INCORRECT Structure Analysis:
+```javascript
+React.createElement('div', {
+  style: {
+    display: 'flex', justifyContent: 'center',  // Structural properties
+    fontSize: '48px', backgroundColor: 'blue'  // ❌ MIXED WITH CONTENT STYLING
+  }
+}, 'Any Content')  // ❌ CONTENT IN STRUCTURAL CONTAINER
+```
+- ❌ Single container mixing structural and content styling
+- ❌ Content directly in structural container
+- ❌ Violates structural-content separation principle
+
+**ENFORCEMENT RULE:**
+If you detect ANY violations during your validation checks, you MUST restructure the code to follow the two-container pattern before proceeding. This applies to ALL React.createElement patterns: any content type, any layout method, any styling approach.
+"""
+
+# ============================================================================
+# PART 4: LLM ROLE INSTRUCTIONS (Behavioral Guidelines)  
 # ============================================================================
 
 LLM_ROLE_INSTRUCTIONS = """
@@ -593,7 +752,7 @@ Example:
 - User Request: "add a title"  
 - Result: [
     {"clips": [{"id": "bg", "startTimeInSeconds": 0, "endTimeInSeconds": 5, "element": "return React.createElement(SW.AbsoluteFill, {style: {background: 'blue'}});"}]},
-    {"clips": [{"id": "title", "startTimeInSeconds": 1, "endTimeInSeconds": 4, "element": "return React.createElement('div', {style: {color: 'white', textAlign: 'center', fontSize: '3rem', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%'}}, 'Hello World');"}]}
+    {"clips": [{"id": "title", "startTimeInSeconds": 1, "endTimeInSeconds": 4, "element": "return React.createElement(SW.AbsoluteFill, {}, React.createElement('div', {style: {display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%'}}, React.createElement('span', {style: {color: 'white', textAlign: 'center', fontSize: '3rem'}}, 'Hello World')));"}]}
   ]
 
 **REQUEST HANDLING PATTERNS**
@@ -644,8 +803,8 @@ def build_system_instruction() -> str:
 RESPONSE FORMAT - You must respond with valid CompositionBlueprint JSON:
 [valid CompositionBlueprint JSON array - structured output will enforce proper format]"""
 
-    # Combine all three structured sections
-    return BLUEPRINT_DOCUMENTATION + "\n\n" + CSS_TECHNIQUES_DOCUMENTATION + "\n\n" + LLM_ROLE_INSTRUCTIONS + response_format
+    # Combine all four structured sections
+    return BLUEPRINT_DOCUMENTATION + "\n\n" + CSS_TECHNIQUES_DOCUMENTATION + "\n\n" + REACT_STRUCTURE_VALIDATION + "\n\n" + LLM_ROLE_INSTRUCTIONS + response_format
 
 
 def build_media_section(media_library: list) -> str:

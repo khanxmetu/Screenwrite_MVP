@@ -80,7 +80,7 @@ class GeminiProvider(AIProvider):
             contents=user_prompt,
             config={
                 "system_instruction": system_instruction,
-                "temperature": 0.3,
+                "temperature": 0.1,
                 "response_mime_type": "application/json",
                 "response_schema": schema
             }

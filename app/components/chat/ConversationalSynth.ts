@@ -90,7 +90,7 @@ BLUEPRINT UNDERSTANDING:
 - The "Current Timeline Blueprint JSON" shows the exact structure of what's currently on the timeline
 - Each track contains clips with startTime, endTime, and element (React code)
 - Use this to understand existing content, timing, and make informed edit suggestions
-- When proposing edits, reference specific clips by their IDs or timing
+- When proposing edits, reference specific clips by their IDs
 
 ${conversationHistory}
 
