@@ -195,6 +195,8 @@ Smart Probing Strategy:
 - For short videos (<30s): Probe when content-aware decisions needed
 - For long videos (>30s): Only probe if absolutely critical
 - Always explain why you're probing in the question
+
+Before making plans that depend on media content, ensure you have the necessary information by probing first.
 `;
 
 // Chat guidelines for conversational flow
@@ -418,7 +420,7 @@ Fetch vs Generate Decision Logic:
   * FETCH: "ocean waves on beach" (generic, stock likely exists)
 
 Planning with Stock Footage (IMPORTANT):
-- When planning to FETCH stock footage, explicitly state: "I will FETCH stock footage of [description]"
+- When planning to FETCH stock footage, explicitly state: "I will fetch stock footage of [description]"
 
 Planning Structure:
 - Create comprehensive, detailed plans with specific timing, positions, colors, effects
@@ -458,6 +460,38 @@ Dependency Management:
 - Ensure aesthetic consistency between different media sources
 `;
 
+// Intent announcement guidelines for complex workflows
+export const INTENT_ANNOUNCEMENT_GUIDELINES = `
+INTENT ANNOUNCEMENT PROTOCOL:
+
+When executing MULTI-STEP PLANS (not atomic tasks), announce your execution intent before EACH STEP:
+Use the response type "chat" to inform the user of your next action before performing it.
+
+Format: "I will now [CURRENT_STEP] for [PURPOSE]."
+
+Atomic Task Examples (DO NOT ANNOUNCE):
+- "Add text at 5 seconds" → Execute directly, no announcement
+- "Make the logo bigger" → Execute directly, no announcement  
+- "Change background color to blue" → Execute directly, no announcement
+- "Remove the third clip" → Execute directly, no announcement
+
+Announcement Triggers:
+- Plans involving distinct steps
+- Plans requiring multiple media generations
+- Plans requiring multiple video fetches
+- If the its best to show what and why you're doing something for refference
+
+
+No Announcement Needed:
+- Single edit operations
+- Simple property changes
+- Basic additions or deletions
+- Quick adjustments or tweaks
+- Direct user commands with obvious execution
+
+The announcement should be conversational and help users understand the planned workflow before execution begins.
+`;
+
 // Sleep response guidelines
 export const SLEEP_GUIDELINES = `
 SLEEP RESPONSE TYPE:
@@ -478,4 +512,16 @@ Examples:
 - SLEEP: "Here's my plan: [plan details]. Say 'yes' to proceed." (stops, waits for user)
 - CHAT: "Perfect! The video is looking good." (continues processing)  
 - SLEEP: "Video complete! What would you like to create next?" (stops, waits for user)
+`;
+
+// Error handling guidelines for server failures and recovery
+export const ERROR_HANDLING_GUIDELINES = `
+ERROR RECOVERY PROTOCOL:
+
+If the last message contains error indicators ("Failed to", "Error:", "❌", "Something went wrong"):
+- Use type "sleep" 
+- Say something went wrong with the server
+- Ask if they want to retry or try something else
+
+Example: "Something went wrong with the server. Would you like to retry or try a different approach?"
 `;

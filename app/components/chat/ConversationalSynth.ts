@@ -20,7 +20,9 @@ import {
   IMAGE_GENERATION_GUIDELINES,
   VIDEO_GENERATION_GUIDELINES,
   PLANNING_GUIDELINES,
-  SLEEP_GUIDELINES
+  INTENT_ANNOUNCEMENT_GUIDELINES,
+  SLEEP_GUIDELINES,
+  ERROR_HANDLING_GUIDELINES
 } from "./PromptComponents";
 
 // Gemini API configuration
@@ -115,7 +117,11 @@ ${VIDEO_GENERATION_GUIDELINES}
 
 ${PLANNING_GUIDELINES}
 
-${SLEEP_GUIDELINES}`;
+${SLEEP_GUIDELINES}
+
+${INTENT_ANNOUNCEMENT_GUIDELINES}
+
+${ERROR_HANDLING_GUIDELINES}`;
       
       // Log the exact context before sending to AI
       console.log("🚀 SYNTH PROMPT LOG:", {
@@ -186,10 +192,12 @@ ${SLEEP_GUIDELINES}`;
       };
 
     } catch (error) {
-      console.error("❌ Structured response failed:", error);
+      console.error("❌ API call failed:", error);
+      
+      // Always return API error and exit the loop - no retrying
       return {
-        type: 'chat',
-        content: "I'm having trouble processing your message right now. Could you try again?",
+        type: 'sleep',
+        content: "There was an API error. Please try again later.",
         referencedFiles
       };
     }
