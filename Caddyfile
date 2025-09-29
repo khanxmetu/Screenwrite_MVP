@@ -17,6 +17,8 @@ pengwin.live {
 		}
 	}
 
+	reverse_proxy /media/* http://fastapi:3000
+
 	handle_path /ai/api/* {
 		reverse_proxy fastapi:3000
 	}

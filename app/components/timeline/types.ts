@@ -36,6 +36,7 @@ export interface TextProperties {
 // state of the scrubber in the media bin
 export interface MediaBinItem extends BaseScrubber {
   name: string;
+  title?: string; // User-friendly title for display and AI reference
   durationInSeconds: number; // For media, to calculate initial width
 
   // Upload tracking properties

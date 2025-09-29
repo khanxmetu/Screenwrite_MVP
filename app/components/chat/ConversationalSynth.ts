@@ -16,7 +16,13 @@ import {
   VIDEO_EDITOR_CAPABILITIES,
   PROBE_GUIDELINES,
   CHAT_GUIDELINES,
-  EDIT_GUIDELINES
+  EDIT_GUIDELINES,
+  IMAGE_GENERATION_GUIDELINES,
+  VIDEO_GENERATION_GUIDELINES,
+  PLANNING_GUIDELINES,
+  INTENT_ANNOUNCEMENT_GUIDELINES,
+  SLEEP_GUIDELINES,
+  ERROR_HANDLING_GUIDELINES
 } from "./PromptComponents";
 
 // Gemini API configuration
@@ -31,11 +37,16 @@ export interface ConversationMessage {
 }
 
 export interface SynthResponse {
-  type: 'chat' | 'edit' | 'probe';
+  type: 'chat' | 'edit' | 'probe' | 'generate' | 'fetch' | 'sleep';
   content: string;
   referencedFiles?: string[]; // @-mentioned files
   fileName?: string; // For probe responses
   question?: string; // For probe responses
+  prompt?: string; // For generate responses - content generation prompt
+  suggestedName?: string; // For generate responses - AI-chosen filename
+  content_type?: 'image' | 'video'; // For generate responses - type of content to generate
+  seedImageFileName?: string; // For generate video responses - filename of image to use as seed/reference
+  query?: string; // For fetch responses - search query for stock videos
 }
 
 export interface SynthContext {
@@ -46,75 +57,125 @@ export interface SynthContext {
 }
 
 export class ConversationalSynth {
-  private pendingPlan: string | null = null;
-  private pendingPlanContext: string | null = null;
-
   constructor(apiKey?: string) {
     // API key is now handled globally in the file
     // This constructor is kept for compatibility
   }
 
   /**
-   * Main entry point - analyze user message and return appropriate response
+   * Main entry point - analyze conversation and return appropriate response
    */
   async processMessage(
-    userMessage: string,
     context: SynthContext
   ): Promise<SynthResponse> {
-    console.log("🧠 ConversationalSynth: Processing message:", userMessage);
+    console.log("🧠 ConversationalSynth: Processing conversation with", context.messages.length, "messages");
+
+    // Get the last user message from conversation context for @filename detection
+    const lastUserMessage = context.messages.filter(msg => msg.isUser).pop();
+    const messageForFileDetection = lastUserMessage ? lastUserMessage.content : "";
 
     // Detect @filename mentions
-    const referencedFiles = this.detectReferencedFiles(userMessage, context.mediaLibrary);
+    const referencedFiles = this.detectReferencedFiles(messageForFileDetection, context.mediaLibrary);
     console.log("📁 Referenced files:", referencedFiles);
 
     // Build context for the AI
     const contextText = this.buildContextText(context, true);
+    const conversationHistory = this.buildConversationHistory(context);
 
     // Create comprehensive prompt for structured response
-    let prompt = `USER MESSAGE: "${userMessage}"
-
-CONTEXT:
+    let prompt = `CONTEXT:
 ${contextText}
-
-PENDING PLAN STATUS: ${this.pendingPlan ? 'User has a pending edit plan awaiting confirmation' : 'No pending plan'}
 
 BLUEPRINT UNDERSTANDING:
 - The "Current Timeline Blueprint JSON" shows the exact structure of what's currently on the timeline
 - Each track contains clips with startTime, endTime, and element (React code)
 - Use this to understand existing content, timing, and make informed edit suggestions
-- When proposing edits, reference specific clips by their IDs or timing
+- When proposing edits, reference specific clips by their IDs
 
-RESPONSE TYPE RULES:
-- If user message requires media content knowledge: respond with type "probe"
-  * Set fileName to the target media file name from media library
-  * Set question to describe what content knowledge you need
-  * Set content to explain what you're probing for
-- If user is asking questions or having general conversation: respond with type "chat"
-- If user wants to edit their video BUT no pending plan exists: respond with type "chat" and CREATE A COMPLETE DETAILED PLAN
-- If user confirms a pending plan: respond with type "edit" with direct editing instructions
+${conversationHistory}
 
-Be proactive about probing - when in doubt about media content, probe first for better results.`;
+Your job is to generate the next appropriate response based on the conversation up to now.`;
 
     try {
-      const fullSystemPrompt = `${AI_PERSONA}\n\n${CONVERSATIONAL_SYNTH_SYSTEM}`;
+      const fullSystemPrompt = `${AI_PERSONA}
+
+${CONVERSATIONAL_SYNTH_SYSTEM}
+
+${VIDEO_EDITOR_CAPABILITIES}
+
+${STYLING_GUIDELINES}
+
+${PROBE_GUIDELINES}
+
+${CHAT_GUIDELINES}
+
+${EDIT_GUIDELINES}
+
+${IMAGE_GENERATION_GUIDELINES}
+
+${VIDEO_GENERATION_GUIDELINES}
+
+${PLANNING_GUIDELINES}
+
+${SLEEP_GUIDELINES}
+
+${INTENT_ANNOUNCEMENT_GUIDELINES}
+
+${ERROR_HANDLING_GUIDELINES}`;
+      
+      // Log the exact context before sending to AI
+      console.log("🚀 SYNTH PROMPT LOG:", {
+        contextText: contextText,
+        conversationHistory: conversationHistory
+      });
+
+      // LOG THE COMPLETE PROMPT TO FILE using existing fileLogger system
+      try {
+        const { apiUrl } = await import('~/utils/api');
+        
+        // Create a dedicated prompt log entry using the same system
+        const promptLogEntry = {
+          timestamp: new Date().toISOString(),
+          step: 'FULL_PROMPT_TO_AI',
+          data: {
+            messagesInContext: context.messages.length,
+            fullSystemPrompt: fullSystemPrompt,
+            fullPrompt: prompt,
+            conversationBreakdown: context.messages.map((msg, idx) => ({
+              index: idx,
+              type: msg.isUser ? 'User' : 'Assistant',
+              content: msg.content
+            }))
+          }
+        };
+
+        const response = await fetch(apiUrl('/chat/log', true), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            session_id: `prompt_${Date.now()}`,
+            log_entry: promptLogEntry
+          })
+        });
+
+        if (!response.ok) {
+          console.error('Failed to save prompt log:', await response.text());
+        } else {
+          console.log('✅ Prompt logged to file successfully');
+        }
+      } catch (logError) {
+        console.error('❌ Failed to log prompt to file:', logError);
+      }
+
       const structuredResponse = await this.callGeminiAPIStructured(fullSystemPrompt, prompt);
       
       // Handle the structured response
       if (structuredResponse.type === 'edit') {
-        // Clear any pending plan since we're executing
-        this.pendingPlan = null;
-        this.pendingPlanContext = null;
         console.log("🎬 Generated edit instructions:", structuredResponse.content);
       } else if (structuredResponse.type === 'chat') {
-        // Check if this is setting up a new plan
-        if (structuredResponse.content.toLowerCase().includes('does this') || 
-            structuredResponse.content.toLowerCase().includes('sound good') ||
-            structuredResponse.content.toLowerCase().includes('say \'yes\'')) {
-          // Store pending plan
-          this.pendingPlan = userMessage;
-          this.pendingPlanContext = userMessage;
-          console.log("📋 Created pending plan for approval");
-        }
+        console.log("💬 Generated chat response:", structuredResponse.content);
       }
       
       return {
@@ -122,14 +183,21 @@ Be proactive about probing - when in doubt about media content, probe first for 
         content: structuredResponse.content,
         referencedFiles,
         fileName: structuredResponse.fileName,
-        question: structuredResponse.question
+        question: structuredResponse.question,
+        prompt: structuredResponse.prompt,
+        suggestedName: structuredResponse.suggestedName,
+        content_type: structuredResponse.content_type,
+        seedImageFileName: structuredResponse.seedImageFileName,
+        query: structuredResponse.query
       };
 
     } catch (error) {
-      console.error("❌ Structured response failed:", error);
+      console.error("❌ API call failed:", error);
+      
+      // Always return API error and exit the loop - no retrying
       return {
-        type: 'chat',
-        content: "I'm having trouble processing your message right now. Could you try again?",
+        type: 'sleep',
+        content: "There was an API error. Please try again later.",
         referencedFiles
       };
     }
@@ -169,9 +237,25 @@ Be proactive about probing - when in doubt about media content, probe first for 
       }
     }
     
-    // Validate against media library
+    // Validate against media library - check both name and title
     const availableFiles = mediaLibrary.map(item => item.name);
-    return referencedFiles.filter(file => availableFiles.includes(file));
+    const validatedFiles = referencedFiles.filter(file => {
+      // Direct name match
+      const nameMatch = availableFiles.includes(file);
+      if (nameMatch) return true;
+      
+      // Title match - check if any media item's title contains the referenced file
+      const titleMatch = mediaLibrary.some(item => 
+        item.title && (
+          item.title.toLowerCase().includes(file.toLowerCase()) ||
+          file.toLowerCase().includes(item.title.toLowerCase())
+        )
+      );
+      
+      return titleMatch;
+    });
+    
+    return validatedFiles;
   }
 
 
@@ -181,15 +265,6 @@ Be proactive about probing - when in doubt about media content, probe first for 
    */
   private buildContextText(context: SynthContext, isEdit: boolean): string {
     const parts: string[] = [];
-    
-    // Recent conversation (last 4 messages)
-    if (context.messages.length > 0) {
-      const recent = context.messages.slice(-4);
-      parts.push("Recent conversation:");
-      recent.forEach(msg => {
-        parts.push(`${msg.isUser ? 'User' : 'Assistant'}: ${msg.content}`);
-      });
-    }
     
     // Current composition info - full blueprint JSON
     console.log("🔍 ConversationalSynth: currentComposition =", context.currentComposition);
@@ -217,13 +292,20 @@ Be proactive about probing - when in doubt about media content, probe first for 
     // Media library
     if (context.mediaLibrary.length > 0) {
       parts.push("\nAvailable media files:");
+      parts.push("(Note: Use the file NAME for all operations. Titles are only for user-friendly reference and matching user requests)");
       context.mediaLibrary.forEach(item => {
-        let fileInfo = `- ${item.name} (${item.mediaType}`;
+        let fileInfo = `- NAME: ${item.name} (${item.mediaType}`;
         if (item.durationInSeconds) fileInfo += `, ${item.durationInSeconds}s`;
         if (item.media_width && item.media_height) {
           fileInfo += `, ${item.media_width}x${item.media_height}`;
         }
         fileInfo += ")";
+        
+        // Add title if available for user-friendly reference
+        if (item.title) {
+          fileInfo += ` - USER-FRIENDLY TITLE: "${item.title}"`;
+        }
+        
         parts.push(fileInfo);
       });
     } else {
@@ -234,12 +316,38 @@ Be proactive about probing - when in doubt about media content, probe first for 
   }
 
   /**
+   * Build conversation history text - just read messages in chronological order
+   */
+  private buildConversationHistory(context: SynthContext): string {
+    if (context.messages.length === 0) {
+      return "";
+    }
+    
+    // Take the most recent 25 messages in chronological order
+    const recent = context.messages.slice(-25);
+    const conversationParts: string[] = [];
+    
+    conversationParts.push("=== CONVERSATION UP TO NOW (LAST 25 MESSAGES) ===");
+    conversationParts.push("This is the complete conversation history truncated to the most recent messages:");
+    conversationParts.push("");
+    
+    recent.forEach(msg => {
+      conversationParts.push(`${msg.isUser ? 'User' : 'Assistant'}: ${msg.content}`);
+    });
+    
+    conversationParts.push("");
+    conversationParts.push("=== END OF CONVERSATION ===");
+    
+    return conversationParts.join("\n");
+  }
+
+  /**
    * Call Gemini API with structured response
    */
   private async callGeminiAPIStructured(
     systemInstruction: string, 
     prompt: string
-  ): Promise<{ type: 'chat' | 'edit' | 'probe'; content: string; fileName?: string; question?: string }> {
+  ): Promise<{ type: 'chat' | 'edit' | 'probe' | 'generate' | 'fetch'; content: string; fileName?: string; question?: string; prompt?: string; suggestedName?: string; content_type?: 'image' | 'video'; seedImageFileName?: string; query?: string }> {
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
     }
@@ -249,12 +357,28 @@ Be proactive about probing - when in doubt about media content, probe first for 
       properties: {
         "type": {
           "type": "STRING",
-          "enum": ["chat", "edit", "probe"]
+          "enum": ["chat", "edit", "probe", "generate", "fetch", "sleep"]
         },
         "fileName": {
           "type": "STRING"
         },
         "question": {
+          "type": "STRING"
+        },
+        "prompt": {
+          "type": "STRING"
+        },
+        "suggestedName": {
+          "type": "STRING"
+        },
+        "content_type": {
+          "type": "STRING",
+          "enum": ["image", "video"]
+        },
+        "seedImageFileName": {
+          "type": "STRING"
+        },
+        "query": {
           "type": "STRING"
         },
         "content": {
@@ -275,7 +399,7 @@ Be proactive about probing - when in doubt about media content, probe first for 
             {
               parts: [
                 {
-                  text: `${systemInstruction}\n\n${prompt}\n\n${VIDEO_EDITOR_CAPABILITIES}\n\n${STYLING_GUIDELINES}\n\n${PROBE_GUIDELINES}\n\n${CHAT_GUIDELINES}\n\n${EDIT_GUIDELINES}`
+                  text: `${systemInstruction}\n\n${prompt}`
                 }
               ]
             }
@@ -321,7 +445,7 @@ Be proactive about probing - when in doubt about media content, probe first for 
       try {
         const parsedResponse = JSON.parse(responseText);
         
-        if (!parsedResponse.type || !parsedResponse.content || !["chat", "edit", "probe"].includes(parsedResponse.type)) {
+        if (!parsedResponse.type || !parsedResponse.content || !["chat", "edit", "probe", "generate", "fetch", "sleep"].includes(parsedResponse.type)) {
           throw new Error('Invalid structured response from Gemini API');
         }
 
@@ -329,7 +453,12 @@ Be proactive about probing - when in doubt about media content, probe first for 
           type: parsedResponse.type,
           content: parsedResponse.content,
           fileName: parsedResponse.fileName,
-          question: parsedResponse.question
+          question: parsedResponse.question,
+          prompt: parsedResponse.prompt,
+          suggestedName: parsedResponse.suggestedName,
+          content_type: parsedResponse.content_type,
+          seedImageFileName: parsedResponse.seedImageFileName,
+          query: parsedResponse.query
         };
       } catch (e) {
         // If parsing fails, it might be a plain text response
@@ -355,7 +484,6 @@ Be proactive about probing - when in doubt about media content, probe first for 
    * Stream chat responses for better UX (only for type: 'chat' responses)
    */
   async streamChatResponse(
-    userMessage: string,
     context: SynthContext,
     onChunk: (text: string) => void
   ): Promise<void> {
@@ -363,6 +491,7 @@ Be proactive about probing - when in doubt about media content, probe first for 
     
     // Build context for the AI
     const contextText = this.buildContextText(context, false);
+    const conversationHistory = this.buildConversationHistory(context);
     
     // Create chat-only prompt (no structured JSON needed for streaming)
     const prompt = `${AI_PERSONA}
@@ -371,10 +500,10 @@ Respond naturally in a conversational manner. For streaming responses, only prov
 
 Be helpful, creative, and engaging. If the user wants to make edits, create a detailed plan and ask for confirmation before proceeding.
 
-USER MESSAGE: "${userMessage}"
-
 CONTEXT:
-${contextText}`;
+${contextText}
+
+${conversationHistory}`;
 
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY not found. Please set VITE_GEMINI_API_KEY in your environment.");
@@ -482,20 +611,5 @@ ${contextText}`;
       console.error("💥 Gemini streaming API error:", error);
       throw error;
     }
-  }
-
-  /**
-   * Clear any pending plans
-   */
-  clearPendingPlan(): void {
-    this.pendingPlan = null;
-    this.pendingPlanContext = null;
-  }
-
-  /**
-   * Check if there's a pending plan awaiting approval
-   */
-  hasPendingPlan(): boolean {
-    return this.pendingPlan !== null;
   }
 }

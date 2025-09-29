@@ -319,6 +319,12 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
     setMediaBinItems(prev => [...prev, newItem]);
   }, []);
 
+  // Function to directly add a pre-created MediaBinItem (for generated content)
+  const handleAddDirectMediaBinItem = useCallback((item: MediaBinItem) => {
+    console.log("📦 Adding direct MediaBinItem to bin:", item);
+    setMediaBinItems(prev => [...prev, item]);
+  }, []);
+
   const handleDeleteMedia = useCallback(async (item: MediaBinItem) => {
     try {
       if (item.mediaType === "text") {
@@ -455,6 +461,7 @@ export const useMediaBin = (handleDeleteScrubbersByMediaBinId: (mediaBinId: stri
     mediaBinItems,
     handleAddMediaToBin,
     handleAddTextToBin,
+    handleAddDirectMediaBinItem,
     handleDeleteMedia,
     handleSplitAudio,
     contextMenu,

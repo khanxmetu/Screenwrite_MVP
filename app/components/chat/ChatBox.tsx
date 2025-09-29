@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Send,
   Bot,
@@ -12,12 +12,14 @@ import {
   ChevronRight,
   AlertCircle,
   X,
+  Play,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { type MediaBinItem, type TimelineState } from "../timeline/types";
 import { cn } from "~/lib/utils";
 import axios from "axios";
-import { apiUrl } from "~/utils/api";
+import { apiUrl, getApiBaseUrl } from "~/utils/api";
+import { generateUUID } from "~/utils/uuid";
 import { 
   logUserMessage, 
   logSynthCall, 
@@ -35,7 +37,7 @@ import {
 import { llmAddScrubberToTimeline } from "~/utils/llm-handler";
 
 // Conversational Synth
-import { ConversationalSynth, type SynthContext, type ConversationMessage } from "./ConversationalSynth";
+import { ConversationalSynth, type SynthContext, type ConversationMessage, type SynthResponse } from "./ConversationalSynth";
 
 interface Message {
   id: string;
@@ -43,8 +45,20 @@ interface Message {
   isUser: boolean;
   timestamp: Date;
   isExplanationMode?: boolean; // For post-edit explanations
-  isAnalyzing?: boolean; // For analyzing messages that appear as plain text
   isAnalysisResult?: boolean; // For analysis results that appear in darker bubbles
+  isSystemMessage?: boolean; // For system messages (analyzing, generating, etc.) that appear as raw text
+  hasRetryButton?: boolean; // For messages that allow retry
+  retryData?: {
+    originalMessage: string;
+  }; // Data needed for retry
+  isVideoSelection?: boolean; // For video selection messages
+  videoOptions?: {
+    id: number;
+    title: string;
+    duration: string;
+    description: string;
+    thumbnailUrl: string;
+  }[]; // Video options for selection
 }
 
 interface ChatBoxProps {
@@ -66,6 +80,9 @@ interface ChatBoxProps {
   isGeneratingComposition?: boolean;
   // Props for conversational edit system
   currentComposition?: string; // Current TSX composition code
+  // Props for adding generated images to media bin
+  onAddMediaToBin?: (file: File) => Promise<void>;
+  onAddGeneratedImage?: (item: MediaBinItem) => Promise<void>;
   // Error handling props
   generationError?: {
     hasError: boolean;
@@ -92,12 +109,13 @@ export function ChatBox({
   onGenerateComposition,
   isGeneratingComposition = false,
   currentComposition,
+  onAddMediaToBin,
+  onAddGeneratedImage,
   generationError,
   onRetryFix,
   onClearError,
 }: ChatBoxProps) {
   const [inputValue, setInputValue] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
   const [showMentions, setShowMentions] = useState(false);
   const [showSendOptions, setShowSendOptions] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -107,14 +125,8 @@ export function ChatBox({
   const [sendWithMedia, setSendWithMedia] = useState(false); // Track send mode
   const [mentionedItems, setMentionedItems] = useState<MediaBinItem[]>([]); // Store actual mentioned items
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set()); // Track collapsed analysis results
-  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
-  const [pendingProbe, setPendingProbe] = useState<{
-    fileName: string, 
-    question: string, 
-    originalMessage: string, 
-    conversationMessages: ConversationMessage[], 
-    synthContext: SynthContext
-  } | null>(null);
+  const [isInSynthLoop, setIsInSynthLoop] = useState(false); // Track when unified workflow is active
+  const [previewVideo, setPreviewVideo] = useState<any>(null); // Track video being previewed
 
   // Initialize Conversational Synth
   const [synth] = useState(() => new ConversationalSynth("dummy-api-key")); // Will use actual API key later
@@ -150,55 +162,18 @@ export function ChatBox({
     }
   }, [showSendOptions]);
 
-  // Monitor for video uploads completing and retry pending probes
-  useEffect(() => {
-    if (pendingProbe) {
-      const mediaFile = mediaBinItems.find(item => item.name === pendingProbe.fileName);
-      if (mediaFile?.gemini_file_id) {
-        console.log("🔄 Retrying pending probe for:", pendingProbe.fileName);
-        // Clear pending probe and retry
-        const { fileName, question, originalMessage, conversationMessages, synthContext } = pendingProbe;
-        setPendingProbe(null);
-        
-        // Add "now analyzing" message to show the retry is happening
-        const analyzingMessage: Message = {
-          id: Date.now().toString(),
-          content: `Video ready! Now analyzing ${fileName}...`,
-          isUser: false,
-          timestamp: new Date(),
-          isAnalyzing: true,
-        };
-        onMessagesChange(prevMessages => [...prevMessages, analyzingMessage]);
-        
-        // Retry the probe using the main flow with all context
-        handleProbeRequest(fileName, question, originalMessage, conversationMessages, synthContext).then(newMessages => {
-          onMessagesChange(prevMessages => [...prevMessages, ...newMessages]);
-          autoCollapseAnalysisResults(newMessages);
-        }).catch(error => {
-          console.error("❌ Retry failed:", error);
-          const errorMessage: Message = {
-            id: Date.now().toString(),
-            content: `❌ Analysis retry failed: ${error.message}`,
-            isUser: false,
-            timestamp: new Date(),
-          };
-          onMessagesChange(prevMessages => [...prevMessages, errorMessage]);
-        });
-      }
+  // Handle retry button click
+  const handleRetry = useCallback((message: Message) => {
+    if (message.retryData?.originalMessage) {
+      console.log("🔄 Retrying with message:", message.retryData.originalMessage);
+      console.log("🔄 Current media bin items:", mediaBinItems.map(item => ({
+        name: item.name,
+        gemini_file_id: item.gemini_file_id,
+        isUploading: item.isUploading
+      })));
+      handleConversationalMessage(message.retryData.originalMessage);
     }
-  }, [mediaBinItems, pendingProbe]);
-
-  // Helper function to auto-collapse analysis result messages
-  const autoCollapseAnalysisResults = (messages: Message[]) => {
-    const analysisMessages = messages.filter((msg: Message) => msg.isAnalysisResult);
-    if (analysisMessages.length > 0) {
-      setCollapsedMessages(prev => {
-        const newSet = new Set(prev);
-        analysisMessages.forEach((msg: Message) => newSet.add(msg.id));
-        return newSet;
-      });
-    }
-  };
+  }, [mediaBinItems]);
 
   // Filter media bin items based on mention query
   const filteredMentions = mediaBinItems.filter((item) =>
@@ -278,44 +253,69 @@ export function ChatBox({
     }, 0);
   };
 
-  // New conversational message handler using ConversationalSynth
+  // Simple internal probe handler that just does media analysis (no nested synth calls)
   const handleProbeRequestInternal = async (
     fileName: string, 
-    question: string, 
-    originalMessage?: string, 
-    conversationMessages?: ConversationMessage[],
-    synthContext?: SynthContext
+    question: string
   ): Promise<Message[]> => {
     await logProbeStart(fileName, question);
-    console.log("🔍 Handling probe request for:", fileName);
-    console.log("🔍 Available media files:", mediaBinItems.map(item => item.name));
+    console.log("🔍 Executing probe request for:", fileName);
+    console.log("🔍 Available media files:", mediaBinItems.map(item => ({
+      name: item.name,
+      gemini_file_id: item.gemini_file_id,
+      isUploading: item.isUploading
+    })));
     
     // Smart file matching logic
     let mediaFile = mediaBinItems.find(item => item.name === fileName);
     
-    // If exact match not found, try fuzzy matching or default selection
     if (!mediaFile) {
-      // If no filename provided or not found, and only one media file exists, use it
-      if (mediaBinItems.length === 1) {
-        mediaFile = mediaBinItems[0];
-        console.log(`🔍 Using only available media file: ${mediaFile.name}`);
+      console.log(`🔍 Exact name match not found for "${fileName}". Trying fuzzy matching...`);
+      
+      // Try title matching first
+      mediaFile = mediaBinItems.find(item => 
+        item.title && (
+          item.title.toLowerCase().includes(fileName.toLowerCase()) ||
+          fileName.toLowerCase().includes(item.title.toLowerCase())
+        )
+      );
+      
+      if (mediaFile) {
+        console.log(`🔍 Found title match: "${mediaFile.title}" (${mediaFile.name}) for "${fileName}"`);
       } else {
-        // Try partial name matching
-        mediaFile = mediaBinItems.find(item => 
-          item.name.toLowerCase().includes(fileName.toLowerCase()) ||
-          fileName.toLowerCase().includes(item.name.toLowerCase())
-        );
+        // If no filename provided or not found, and only one media file exists, use it
+        if (mediaBinItems.length === 1) {
+          mediaFile = mediaBinItems[0];
+          console.log(`🔍 Using only available media file: ${mediaFile.title || mediaFile.name}`);
+        } else {
+          // Try partial name matching
+          mediaFile = mediaBinItems.find(item => 
+            item.name.toLowerCase().includes(fileName.toLowerCase()) ||
+            fileName.toLowerCase().includes(item.name.toLowerCase())
+          );
+          
+          if (mediaFile) {
+            console.log(`🔍 Found fuzzy name match: "${mediaFile.name}" for "${fileName}"`);
+          } else {
+            console.log(`🔍 No fuzzy matches found for "${fileName}"`);
+          }
+        }
       }
+    } else {
+      console.log(`🔍 Found exact name match: "${mediaFile.name}"`);
     }
     
     if (!mediaFile) {
-      const availableFiles = mediaBinItems.map(f => f.name).join(', ');
+      const availableFiles = mediaBinItems.map(item => 
+        item.title ? `${item.title} (${item.name})` : item.name
+      ).join(', ');
       await logProbeError(fileName, `Media file not found. Available files: ${availableFiles}`);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: `❌ Could not find media file: ${fileName}. Available files: ${availableFiles}`,
+        content: `Could not find media file: ${fileName}. Available files: ${availableFiles}`,
         isUser: false,
         timestamp: new Date(),
+        isSystemMessage: true,
       };
       return [errorMessage];
     }
@@ -325,64 +325,52 @@ export function ChatBox({
       const analysisResult = await analyzeMediaWithGemini(mediaFile, question);
       await logProbeAnalysis(fileName, analysisResult);
       
-      // Create analysis result message
+      // Create analysis result message (just return the analysis, don't call synth)
       const analysisMessage: Message = {
-        id: (Date.now() + 2).toString(),
+        id: (Date.now() + 1).toString(),
         content: analysisResult,
         isUser: false,
         timestamp: new Date(),
         isAnalysisResult: true,
       };
 
-      // If this is a standalone probe (from retry), just return the analysis
-      if (!originalMessage || !conversationMessages || !synthContext) {
-        return [analysisMessage];
-      }
+      // Immediately add to collapsed state so it appears collapsed from the start
+      setCollapsedMessages(prev => {
+        const newSet = new Set(prev);
+        newSet.add(analysisMessage.id);
+        return newSet;
+      });
 
-      // Otherwise, continue with full conversational flow
-      const updatedMessages: ConversationMessage[] = [
-        ...conversationMessages,
-        {
-          id: (Date.now() + 1).toString(),
-          content: `🔍 Probing ${fileName}: ${question}`,
-          isUser: false,
-          timestamp: new Date(),
-        },
-        {
-          id: (Date.now() + 2).toString(),
-          content: `📄 Analysis: ${analysisResult}`,
-          isUser: false,
-          timestamp: new Date(),
-        }
-      ];
-
-      const updatedSynthContext: SynthContext = {
-        ...synthContext,
-        messages: updatedMessages
-      };
-
-      await logSynthCall(`[POST-PROBE] ${originalMessage}`, updatedSynthContext);
-      const followUpResponse = await synth.processMessage(originalMessage, updatedSynthContext);
-      await logSynthResponse(followUpResponse);
-      
-      const followUpMessage: Message = {
-        id: (Date.now() + 3).toString(),
-        content: followUpResponse.content,
-        isUser: false,
-        timestamp: new Date(),
-      };
-
-      return [analysisMessage, followUpMessage];
+      return [analysisMessage];
 
     } catch (error) {
-      console.error("❌ Probe analysis failed:", error);
+      console.error("Probe analysis failed:", error);
+      
+      // Handle video still uploading case
+      if (error instanceof Error && error.message === "VIDEO_STILL_UPLOADING") {
+        await logProbeError(fileName, "Video still uploading to analysis service");
+        const waitingMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: `Video is still being uploaded to the analysis service. Please wait and try again.`,
+          isUser: false,
+          timestamp: new Date(),
+          isSystemMessage: true,
+          hasRetryButton: true,
+          retryData: {
+            originalMessage: `whats in the ${fileName}?` // Simple retry message that will work with current state
+          }
+        };
+        return [waitingMessage];
+      }
+      
+      // Handle other errors
       await logProbeError(fileName, error instanceof Error ? error.message : String(error));
       const errorMessage: Message = {
-        id: (Date.now() + 3).toString(),
-        content: `❌ Failed to analyze ${fileName}. ${error instanceof Error ? error.message : 'Unknown error'}`,
+        id: (Date.now() + 1).toString(),
+        content: `Failed to analyze ${fileName}. ${error instanceof Error ? error.message : 'Unknown error'}`,
         isUser: false,
         timestamp: new Date(),
-        isAnalysisResult: true,
+        isSystemMessage: true,
       };
       return [errorMessage];
     }
@@ -400,22 +388,8 @@ export function ChatBox({
     const fileExtension = mediaFile?.name.split('.').pop()?.toLowerCase();
     const isVideo = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'].includes(fileExtension || '');
     
-    if (mediaFile && isVideo && !mediaFile.gemini_file_id) {
-      console.log("⏳ Video still uploading, storing pending probe:", fileName);
-      setPendingProbe({ fileName, question, originalMessage, conversationMessages, synthContext });
-      
-      // Return a pending message
-      const pendingMessage: Message = {
-        id: Date.now().toString(),
-        content: `Video is still being uploaded for analysis. Your request will continue automatically once ready...`,
-        isUser: false,
-        timestamp: new Date(),
-      };
-      return [pendingMessage];
-    }
-
-    // Otherwise, proceed with normal probe
-    return handleProbeRequestInternal(fileName, question, originalMessage, conversationMessages, synthContext);
+    // Simply proceed with internal handler - it will handle the "still uploading" case with retry button
+    return handleProbeRequestInternal(fileName, question);
   };
 
   const analyzeMediaWithGemini = async (mediaFile: MediaBinItem, question: string): Promise<string> => {
@@ -427,11 +401,11 @@ export function ChatBox({
     }
 
     const fileExtension = mediaFile.name.split('.').pop()?.toLowerCase();
-    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
-    const isVideo = ['mp4', 'mov', 'avi', 'webm'].includes(fileExtension || '');
+    const isImage = mediaFile.mediaType === 'image' || ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '');
+    const isVideo = mediaFile.mediaType === 'video' || ['mp4', 'mov', 'avi', 'webm'].includes(fileExtension || '');
     
     if (!isImage && !isVideo) {
-      throw new Error(`Unsupported file type: ${fileExtension}. Only images and videos can be analyzed.`);
+      throw new Error(`Unsupported file type: ${mediaFile.mediaType || fileExtension}. Only images and videos can be analyzed.`);
     }
 
     try {
@@ -464,8 +438,8 @@ export function ChatBox({
 
         return result.analysis;
       } else if (isVideo && !mediaFile.gemini_file_id) {
-        // Video without Gemini file ID - should not happen as videos are uploaded on add
-        throw new Error("Video file is still being processed for analysis. Please wait a moment and try again.");
+        // Video without Gemini file ID - video is still uploading
+        throw new Error("VIDEO_STILL_UPLOADING");
       } else {
         // For images, use base64 inline data
         const fileUrl = mediaFile.mediaUrlRemote || mediaFile.mediaUrlLocal;
@@ -559,195 +533,538 @@ export function ChatBox({
     }
   };
 
-  const handleStreamingChatMessage = async (messageContent: string, synthContext: SynthContext): Promise<Message[]> => {
-    console.log("🌊 Starting streaming chat response");
+  // Simple internal handlers that just execute actions (no nested synth calls)
+  const handleGenerateRequestInternal = async (
+    prompt: string,
+    suggestedName: string,
+    description: string,
+    contentType: 'image' | 'video' = 'image', // Add content type parameter
+    seedImageFileName?: string // Add seed image parameter for video generation
+  ): Promise<Message[]> => {
+    console.log("🎨 Executing generation request:", { prompt, suggestedName, description, contentType, seedImageFileName });
     
-    // Create the streaming message container
-    const streamingMessageId = (Date.now() + 1).toString();
-    const streamingMessage: Message = {
-      id: streamingMessageId,
-      content: "",
-      isUser: false,
-      timestamp: new Date(),
-    };
-
-    // Add empty message to UI immediately and set loading state
-    onMessagesChange(prevMessages => [...prevMessages, streamingMessage]);
-    setIsWaitingForResponse(true);
-
     try {
-      let accumulatedContent = "";
-      let isFirstChunk = true;
+      // Call the backend generation API for both image and video
+      console.log(`� Calling backend ${contentType} generation API for:`, prompt);
       
-      // Stream the response
-      await synth.streamChatResponse(messageContent, synthContext, (chunk: string) => {
-        console.log("📝 Received chunk in ChatBox:", chunk);
+      const requestBody: any = {
+        content_type: contentType,
+        prompt: prompt,
+      };
+
+      // Add video-specific parameters
+      if (contentType === 'video') {
+        requestBody.aspect_ratio = "16:9";
+        requestBody.resolution = "720p";
         
-        // Hide loading indicator on first chunk
-        if (isFirstChunk) {
-          setIsWaitingForResponse(false);
-          isFirstChunk = false;
+        // Handle seed image for video generation
+        if (seedImageFileName) {
+          try {
+            // Find the seed image in media library
+            const seedImage = mediaBinItems.find((item: MediaBinItem) => item.name === seedImageFileName);
+            if (seedImage) {
+              // Use the best available URL for the image
+              const imageUrl = seedImage.mediaUrlLocal || seedImage.mediaUrlRemote;
+              if (imageUrl) {
+                // Convert image to base64
+                const response = await fetch(imageUrl);
+                const blob = await response.blob();
+                const base64 = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const base64String = reader.result as string;
+                    // Remove the data:image/...;base64, prefix
+                    const base64Data = base64String.split(',')[1];
+                    resolve(base64Data);
+                  };
+                  reader.readAsDataURL(blob);
+                });
+                
+                requestBody.reference_image = base64;
+                console.log(`🖼️ Added seed image: ${seedImageFileName}`);
+              } else {
+                console.warn(`⚠️ Seed image ${seedImageFileName} has no valid URL`);
+              }
+            } else {
+              console.warn(`⚠️ Seed image ${seedImageFileName} not found in media library`);
+            }
+          } catch (error) {
+            console.error(`❌ Failed to process seed image ${seedImageFileName}:`, error);
+          }
         }
-        
-        accumulatedContent += chunk;
-        
-        // Update the streaming message with accumulated content
-        onMessagesChange(prevMessages => 
-          prevMessages.map(msg => 
-            msg.id === streamingMessageId 
-              ? { ...msg, content: accumulatedContent }
-              : msg
-          )
-        );
+      }
+
+      const response = await fetch(apiUrl('/generate-content', true), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
       });
 
-      await logChatResponse(accumulatedContent);
+      if (!response.ok) {
+        throw new Error(`Generation failed: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log(`🎨 ${contentType} generation result:`, result);
+
+      if (!result.success) {
+        throw new Error(result.error_message || 'Generation failed');
+      }
+
+      // Extract the generated asset info
+      const generatedAsset = result.generated_asset;
+      console.log(`🎨 Generated ${contentType} asset:`, generatedAsset);
       
-      // Return empty array since message was already added via onMessagesChange
-      return [];
+      const fileExtension = contentType === 'video' ? 'mp4' : 'png';
+      const generatedFileName = generatedAsset.file_url.split('/').pop() || `${suggestedName}.${fileExtension}`;
+      console.log(`🎨 Generated filename:`, generatedFileName);
+      console.log(`🎨 Generated file URL:`, generatedAsset.file_url);
+
+      // Create the MediaBinItem for the generated content
+      // Make sure the URL points to the correct FastAPI server
+      const fastApiBaseUrl = getApiBaseUrl(true); // true for FastAPI
+      const mediaUrl = generatedAsset.file_url.startsWith('http') 
+        ? generatedAsset.file_url 
+        : `${fastApiBaseUrl}${generatedAsset.file_url}`;
       
+      console.log(`🎨 Final ${contentType} URL:`, mediaUrl);
+
+      const newMediaItem: MediaBinItem = {
+        id: generateUUID(),
+        name: suggestedName || generatedFileName.replace(`.${fileExtension}`, ''),
+        title: `Generated ${contentType} - ${suggestedName || generatedFileName.replace(`.${fileExtension}`, '')}`,
+        mediaType: contentType === 'video' ? "video" : "image",
+        mediaUrlLocal: null, // Not a blob URL
+        mediaUrlRemote: mediaUrl, // Use absolute URL
+        media_width: generatedAsset.width,
+        media_height: generatedAsset.height,
+        durationInSeconds: contentType === 'video' ? (generatedAsset.duration_seconds || 8.0) : 0,
+        text: null,
+        isUploading: false,
+        uploadProgress: null,
+        left_transition_id: null,
+        right_transition_id: null,
+        gemini_file_id: null, // Generated content doesn't need Gemini analysis initially
+      };
+
+      console.log(`🎨 Created ${contentType} MediaBinItem:`, newMediaItem);
+
+      // Add the generated content to the media bin
+      if (onAddGeneratedImage) {
+        await onAddGeneratedImage(newMediaItem);
+      }
+
+      // Create success message
+      const generationMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `Generated: ${generatedFileName}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+
+      return [generationMessage];
+
     } catch (error) {
-      console.error("❌ Streaming chat failed:", error);
-      
-      // Clear loading state on error
-      setIsWaitingForResponse(false);
-      
-      // Update the message with error
-      onMessagesChange(prevMessages => 
-        prevMessages.map(msg => 
-          msg.id === streamingMessageId 
-            ? { ...msg, content: "I'm having trouble processing your message right now. Could you try again?" }
-            : msg
-        )
-      );
-      
-      return [];
+      console.error(`${contentType} generation failed:`, error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `Failed to generate ${contentType}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+      return [errorMessage];
     }
   };
 
-  const handleConversationalMessage = async (messageContent: string) => {
-    await logUserMessage(messageContent, mentionedItems.map(item => item.name));
-    console.log("🧠 Processing conversational message:", messageContent);
-
-    // Convert messages to ConversationMessage format
-    const conversationMessages: ConversationMessage[] = messages.map(msg => ({
-      id: msg.id,
-      content: msg.content,
-      isUser: msg.isUser,
-      timestamp: msg.timestamp
-    }));
-
-    // Build synth context
-    const synthContext: SynthContext = {
-      messages: conversationMessages,
-      currentComposition: currentComposition ? JSON.parse(currentComposition) : undefined,
-      mediaLibrary: mediaBinItems,
-      compositionDuration: undefined // Will be calculated from composition
-    };
-
+  // Simple internal handler for fetching stock videos (dummy implementation)
+  const handleFetchRequestInternal = async (
+    query: string,
+    suggestedName: string,
+    description: string
+  ): Promise<Message[]> => {
+    console.log("🎬 Executing stock video fetch request:", { query, suggestedName, description });
+    
     try {
-      // Process ALL messages with synth to maintain proper conversation state and workflow
-      await logSynthCall(messageContent, synthContext);
+      // Debug: log what we're about to send
+      console.log("🔍 About to call backend with query:", query);
+      console.log("🔍 Request body will be:", { query: query });
       
-      setIsWaitingForResponse(true);
-      
-      const synthResponse = await synth.processMessage(messageContent, synthContext);
-      await logSynthResponse(synthResponse);
-      
-      // Clear loading state
-      setIsWaitingForResponse(false);
-      
-      // Handle different response types
-      if (synthResponse.type === 'probe') {
-        // Probe request - analyze media file and continue conversation
-        console.log("🔍 Probe request:", synthResponse.fileName, synthResponse.question);
+      // Call the actual backend API to fetch stock videos
+      const response = await fetch(apiUrl("/fetch-stock-video", true), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: query
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log("🎬 Backend fetch result:", result);
+
+      if (!result.success || !result.videos || result.videos.length === 0) {
+        throw new Error(result.error_message || "No videos found");
+      }
+
+      // Transform backend response to UI format
+      const videoOptions = result.videos.map((video: any, index: number) => ({
+        id: video.id,
+        title: `Option ${index + 1}`,
+        duration: `${video.duration}s`,
+        description: `${video.quality.toUpperCase()} quality - ${video.width}x${video.height} - by ${video.photographer}`,
+        thumbnailUrl: video.preview_image,
+        downloadUrl: video.download_url,
+        pexelsUrl: video.pexels_url
+      }));
+
+      // Add all fetched videos to the media library automatically
+      if (onAddGeneratedImage) {
+        // Get FastAPI base URL for media files
+        const fastApiBaseUrl = getApiBaseUrl(true); // true for FastAPI
         
-        const analyzingMessage = {
-          id: (Date.now() + 1).toString(),
-          content: `Analyzing ${synthResponse.fileName}: ${synthResponse.question}`,
-          isUser: false,
-          timestamp: new Date(),
-          isAnalyzing: true,
-        };
-        
-        // Add analyzing message to UI immediately
-        onMessagesChange(prevMessages => [...prevMessages, analyzingMessage]);
-        
-        // Get probe results 
-        const probeResults = await handleProbeRequest(synthResponse.fileName!, synthResponse.question!, messageContent, conversationMessages, synthContext);
-        
-        // Return the probe results to be added to the UI alongside the analyzing message
-        return probeResults;
-        
-      } else if (synthResponse.type === 'edit') {
-        // Edit instructions ready - send to backend for implementation
-        await logEditExecution(synthResponse.content);
-        console.log("🎬 Edit instructions generated:", synthResponse.content);
-        
-        if (onGenerateComposition) {
-          const applyingMessage = {
-            id: (Date.now() + 1).toString(),
-            content: "Applying your requested edits, this may take a moment...",
-            isUser: false,
-            timestamp: new Date(),
+        for (let index = 0; index < result.videos.length; index++) {
+          const video = result.videos[index];
+          // Create the full URL for the video
+          const videoUrl = video.download_url.startsWith('http') 
+            ? video.download_url 
+            : `${fastApiBaseUrl}${video.download_url}`;
+            
+          console.log(`🎬 Video URL: ${video.download_url} -> ${videoUrl}`);
+
+          // Create descriptive title: "Query by Photographer - Option N"
+          const videoTitle = `${query.charAt(0).toUpperCase() + query.slice(1)} by ${video.photographer} - Option ${index + 1}`;
+
+          // Create MediaBinItem for each video
+          const mediaItem: MediaBinItem = {
+            id: generateUUID(),
+            name: `pexels_${video.id}`,
+            title: videoTitle,
+            mediaType: "video",
+            mediaUrlLocal: null,
+            mediaUrlRemote: videoUrl, // Use the full URL
+            media_width: video.width,
+            media_height: video.height,
+            durationInSeconds: video.duration,
+            text: null,
+            isUploading: false,
+            uploadProgress: null,
+            left_transition_id: null,
+            right_transition_id: null,
+            gemini_file_id: video.gemini_file_id, // ✅ Now set from backend!
           };
-          
-          // Add the message immediately
-          onMessagesChange(prevMessages => [...prevMessages, applyingMessage]);
-          
-          const success = await onGenerateComposition(synthResponse.content, mediaBinItems);
-          await logEditResult(success);
-          
-          return [
-            {
-              id: (Date.now() + 2).toString(),
-              content: success ? "✨ Edit implemented successfully!" : "❌ Failed to implement the edit. Please try again.",
-              isUser: false,
-              timestamp: new Date(),
-            }
-          ];
+
+          console.log("🎬 Adding stock video to media library:", mediaItem);
+          await onAddGeneratedImage(mediaItem);
+        }
+      }
+
+      // Create the selection message with real video thumbnails
+      const videoOptionsMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `I found ${result.videos.length} stock videos for "${query}". All videos have been added to your media library. Click to preview:`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: false,
+        isVideoSelection: true,
+        videoOptions: videoOptions,
+      };
+
+      return [videoOptionsMessage];
+
+    } catch (error) {
+      console.error("Stock video fetch failed:", error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `Failed to fetch stock videos: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+      return [errorMessage];
+    }
+  };
+
+  const handleConversationalMessage = async (messageContent: string): Promise<void> => {
+    await handleConversationalMessageWithUpdatedMessages(messageContent, messages);
+  };
+
+  const handleConversationalMessageWithUpdatedMessages = async (messageContent: string, currentMessages: Message[]): Promise<void> => {
+    await logUserMessage(messageContent, mentionedItems.map(item => item.name));
+    console.log("🧠 Processing conversational message with unified workflow:", messageContent);
+
+    // Initialize unified workflow state
+    let allResponseMessages: Message[] = [];
+    let continueWorkflow = true;
+    let iterationCount = 0;
+    const MAX_ITERATIONS = 10; // Prevent infinite loops
+    
+    // Start the loading indicator for the entire workflow
+    setIsInSynthLoop(true);
+    
+    try {
+      // Unified workflow loop: synth → route → execute → check continuation → repeat until sleep
+      while (continueWorkflow && iterationCount < MAX_ITERATIONS) {
+        iterationCount++;
+        console.log(`🔄 Unified workflow iteration ${iterationCount}`);
+      
+      try {
+        // Build current conversation state (including all new messages from this workflow)
+        const conversationMessages: ConversationMessage[] = [
+          ...currentMessages.map(msg => ({
+            id: msg.id,
+            content: msg.content,
+            isUser: msg.isUser,
+            timestamp: msg.timestamp
+          })),
+          ...allResponseMessages.map(msg => ({
+            id: msg.id,
+            content: msg.content,
+            isUser: msg.isUser,
+            timestamp: msg.timestamp
+          }))
+        ];
+
+        // Build synth context with latest state
+        const synthContext: SynthContext = {
+          messages: conversationMessages,
+          currentComposition: currentComposition ? JSON.parse(currentComposition) : undefined,
+          mediaLibrary: mediaBinItems,
+          compositionDuration: undefined
+        };
+
+        // Call synth for decision
+        await logSynthCall("conversation_analysis", synthContext);
+        
+        const synthResponse = await synth.processMessage(synthContext);
+        await logSynthResponse(synthResponse);
+        
+        console.log(`🎯 Synth response type: ${synthResponse.type}`);
+
+        // Route to appropriate handler and execute action
+        const stepMessages = await executeResponseAction(synthResponse, conversationMessages, synthContext);
+        
+        // Add step messages to our collection
+        allResponseMessages.push(...stepMessages);
+        
+        // Update UI immediately with new messages
+        onMessagesChange(prevMessages => [...prevMessages, ...stepMessages]);
+
+        // Check if workflow should continue
+        if (synthResponse.type === 'sleep') {
+          console.log("💤 Sleep response - stopping unified workflow");
+          continueWorkflow = false;
+        } else if (synthResponse.type === 'edit') {
+          console.log("✅ Edit response - stopping unified workflow after implementation");
+          continueWorkflow = false;
+        } else if (synthResponse.type === 'fetch') {
+          console.log("🎬 Fetch response - stopping workflow after presenting video options");
+          continueWorkflow = false;
+        } else if (stepMessages.some(msg => msg.hasRetryButton)) {
+          console.log("⏸️ Retry button message - stopping workflow until retry");
+          continueWorkflow = false;
         } else {
-          return [{
-            id: (Date.now() + 1).toString(),
-            content: "Edit instructions ready, but no implementation handler available.",
-            isUser: false,
-            timestamp: new Date(),
-          }];
+          console.log(`🔄 ${synthResponse.type} response - workflow will continue with updated conversation`);
+          // No need to set currentMessageContent - the AI will see the updated conversation history
         }
         
-      } else if (synthResponse.type === 'chat') {
-        // Chat response - use streaming for better UX
-        await logChatResponse(synthResponse.content);
+      } catch (error) {
+        console.error(`❌ Unified workflow iteration ${iterationCount} failed:`, error);
+        await logSynthResponse({ error: error instanceof Error ? error.message : String(error) });
         
-        return [{
-          id: (Date.now() + 1).toString(),
-          content: synthResponse.content,
+        const errorMessage: Message = {
+          id: (Date.now() + iterationCount).toString(),
+          content: "I'm having trouble processing your request. Let me try a different approach.",
           isUser: false,
           timestamp: new Date(),
-        }];
+        };
+        
+        // Add to both collections for consistency (UI handled here, no double addition)
+        allResponseMessages.push(errorMessage);
+        onMessagesChange(prevMessages => [...prevMessages, errorMessage]);
+        continueWorkflow = false;
+      }
+    }
+
+    if (iterationCount >= MAX_ITERATIONS) {
+      console.warn("⚠️ Unified workflow hit max iterations limit");
+      const maxIterationMessage: Message = {
+        id: Date.now().toString(),
+        content: "I've completed several steps but need to pause here. How can I help you next?",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      allResponseMessages.push(maxIterationMessage);
+      onMessagesChange(prevMessages => [...prevMessages, maxIterationMessage]);
+    }
+
+    // Auto-collapse any analysis result messages (removed - now handled immediately when creating messages)
+    
+    // Save log after complete workflow
+    await logWorkflowComplete();
+    
+    } catch (error) {
+      console.error("❌ Unified workflow failed:", error);
+      // Add error message to UI
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        content: "I'm having trouble processing your request. Please try again.",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      onMessagesChange(prevMessages => [...prevMessages, errorMessage]);
+    } finally {
+      // Always clear the loading indicator when workflow ends
+      setIsInSynthLoop(false);
+    }
+    
+    // Unified workflow handles all UI updates internally
+    return;
+  };
+
+  // Execute the appropriate action based on response type (no nested synth calls)
+  const executeResponseAction = async (
+    synthResponse: SynthResponse,
+    conversationMessages: ConversationMessage[],
+    synthContext: SynthContext
+  ): Promise<Message[]> => {
+    console.log(`🎬 Executing action for response type: ${synthResponse.type}`);
+    
+    if (synthResponse.type === 'probe') {
+      // Probe request - analyze media file (only show analysis result)
+      console.log("🔍 Executing probe:", synthResponse.fileName, synthResponse.question);
+      
+      // Add immediate feedback message
+      const analyzingMessage: Message = {
+        id: Date.now().toString(),
+        content: `Analysing ${synthResponse.fileName}: ${synthResponse.question}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+      onMessagesChange(prev => [...prev, analyzingMessage]);
+      
+      const probeResults = await handleProbeRequestInternal(synthResponse.fileName!, synthResponse.question!);
+      
+      return probeResults; // Only return analysis result, no "Analyzing..." message
+      
+    } else if (synthResponse.type === 'generate') {
+      // Generate request - create image (only show generation result)
+      console.log("🎨 Executing generation:", synthResponse.prompt, synthResponse.suggestedName);
+      
+      // Add immediate feedback message
+      const contentTypeText = synthResponse.content_type === 'video' ? 'video' : 'image';
+      const generatingMessage: Message = {
+        id: Date.now().toString(),
+        content: `Generating ${contentTypeText}: ${synthResponse.prompt}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+      onMessagesChange(prev => [...prev, generatingMessage]);
+      
+      const generateResults = await handleGenerateRequestInternal(
+        synthResponse.prompt!, 
+        synthResponse.suggestedName!, 
+        synthResponse.content,
+        synthResponse.content_type || 'image', // Pass content type from AI response
+        synthResponse.seedImageFileName // Pass seed image filename for video generation
+      );
+      
+      return generateResults; // Only return generation result, no "Generating..." message
+      
+    } else if (synthResponse.type === 'fetch') {
+      // Fetch request - search stock videos (only show selection options)
+      console.log("🎬 Executing stock video fetch:", synthResponse.query, synthResponse.suggestedName);
+      
+      // Add immediate feedback message
+      const fetchingMessage: Message = {
+        id: Date.now().toString(),
+        content: `Fetching stock videos: ${synthResponse.query}`,
+        isUser: false,
+        timestamp: new Date(),
+        isSystemMessage: true,
+      };
+      onMessagesChange(prev => [...prev, fetchingMessage]);
+      
+      const fetchResults = await handleFetchRequestInternal(
+        synthResponse.query!, 
+        synthResponse.suggestedName!, 
+        synthResponse.content
+      );
+      
+      return fetchResults; // Only return fetch results, no "Fetching..." message
+      
+    } else if (synthResponse.type === 'edit') {
+      // Edit instructions - send to backend (only show final result)
+      console.log("🎬 Executing edit:", synthResponse.content);
+      await logEditExecution(synthResponse.content);
+      
+      if (onGenerateComposition) {
+        const success = await onGenerateComposition(synthResponse.content, mediaBinItems);
+        await logEditResult(success);
+        
+        const resultMessage = {
+          id: (Date.now() + 1).toString(),
+          content: success ? "Edit implemented successfully!" : "Failed to implement the edit. Please try again.",
+          isUser: false,
+          timestamp: new Date(),
+          isSystemMessage: true,
+        };
+        
+        return [resultMessage]; // Only return final result, no "Applying..." message
       } else {
-        // Fallback for unknown types
         return [{
           id: (Date.now() + 1).toString(),
-          content: synthResponse.content,
+          content: "Edit instructions ready, but no implementation handler available.",
           isUser: false,
           timestamp: new Date(),
+          isSystemMessage: true,
         }];
       }
       
-    } catch (error) {
-      console.error("❌ Conversational synth failed:", error);
-      await logSynthResponse({ error: error instanceof Error ? error.message : String(error) });
+    } else if (synthResponse.type === 'chat') {
+      // Chat response - just display
+      console.log("💬 Executing chat response");
+      await logChatResponse(synthResponse.content);
       
       return [{
         id: (Date.now() + 1).toString(),
-        content: "I'm having trouble processing your message right now. Could you try again?",
+        content: synthResponse.content,
         isUser: false,
         timestamp: new Date(),
       }];
-    } finally {
-      // Save log after each conversation turn
-      await logWorkflowComplete();
+      
+    } else if (synthResponse.type === 'sleep') {
+      // Sleep response - display and mark end of workflow
+      console.log("💤 Executing sleep response");
+      await logChatResponse(synthResponse.content);
+      
+      return [{
+        id: (Date.now() + 1).toString(),
+        content: synthResponse.content,
+        isUser: false,
+        timestamp: new Date(),
+      }];
+      
+    } else {
+      // Fallback for unknown types
+      console.log("❓ Executing fallback for unknown type:", synthResponse.type);
+      
+      return [{
+        id: (Date.now() + 1).toString(),
+        content: synthResponse.content,
+        isUser: false,
+        timestamp: new Date(),
+      }];
     }
   };
 
@@ -774,10 +1091,11 @@ export function ChatBox({
       timestamp: new Date(),
     };
 
+    // Update messages state
+    const updatedMessages = [...messages, userMessage];
     onMessagesChange(prevMessages => [...prevMessages, userMessage]);
     setInputValue("");
     setMentionedItems([]); // Clear mentioned items after sending
-    setIsTyping(true);
 
     // Reset textarea height
     if (inputRef.current) {
@@ -790,20 +1108,9 @@ export function ChatBox({
       if (isStandalonePreview) {
         console.log("🎬 Standalone preview mode - using conversational synth");
         
-        const aiMessages = await handleConversationalMessage(messageContent);
-        // Use functional update to get the current messages at the time of the update
-        onMessagesChange(prevMessages => {
-          // Update any analyzing messages to remove loading state
-          const updatedMessages = prevMessages.map(msg => 
-            msg.isAnalyzing ? { ...msg, isAnalyzing: false } : msg
-          );
-          return [...updatedMessages, ...aiMessages];
-        });
+        // Pass the updated messages directly to avoid async state issues
+        await handleConversationalMessageWithUpdatedMessages(messageContent, updatedMessages);
         
-        // Auto-collapse any analysis result messages
-        autoCollapseAnalysisResults(aiMessages);
-        
-        setIsTyping(false);
         return;
       }
 
@@ -879,8 +1186,6 @@ export function ChatBox({
       };
       
       onMessagesChange(prevMessages => [...prevMessages, userMessage, errorMessage]);
-    } finally {
-      setIsTyping(false);
     }
   };
 
@@ -1104,17 +1409,20 @@ export function ChatBox({
               )}
               
               {messages.map((message) => (
-                message.isAnalyzing ? (
-                  // Render analyzing messages as plain text without bubble
-                  <div key={message.id} className="px-3 py-1 text-xs text-muted-foreground italic">
-                    <div className="flex items-center gap-2">
-                      <span>{formatMessageText(message.content)}</span>
-                      <div className="flex space-x-1">
-                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
-                      </div>
-                    </div>
+                message.isSystemMessage ? (
+                  // Render system messages as raw text
+                  <div key={message.id} className="px-3 py-1 text-xs text-muted-foreground">
+                    {message.content}
+                    {message.hasRetryButton && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-2 text-xs h-6"
+                        onClick={() => handleRetry(message)}
+                      >
+                        Retry
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div
@@ -1136,7 +1444,7 @@ export function ChatBox({
                       onClick={message.isAnalysisResult ? () => toggleMessageCollapsed(message.id) : undefined}
                     >
                     <div className="flex items-start gap-2">
-                      {!message.isUser && !message.isAnalyzing && (
+                      {!message.isUser && (
                         <Bot className={`h-3 w-3 mt-0.5 shrink-0 ${
                           message.isExplanationMode
                             ? "text-green-600 dark:text-green-400"
@@ -1148,7 +1456,7 @@ export function ChatBox({
                       <div className="flex-1 min-w-0">
                         {message.isExplanationMode && (
                           <div className="text-xs font-medium text-green-700 dark:text-green-300 mb-1">
-                            📝 Changes made:
+                            Changes made:
                           </div>
                         )}
                         {message.isAnalysisResult ? (
@@ -1174,6 +1482,45 @@ export function ChatBox({
                             {formatMessageText(message.content)}
                           </p>
                         )}
+
+                        {/* Video Selection UI */}
+                        {message.isVideoSelection && message.videoOptions && (
+                          <div className="mt-3 grid grid-cols-1 gap-2">
+                            {message.videoOptions.map((video) => (
+                              <div
+                                key={video.id}
+                                className="border border-gray-300 dark:border-gray-600 rounded-lg p-3 cursor-pointer hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                onClick={() => {
+                                  // Open video preview modal
+                                  setPreviewVideo(video);
+                                }}
+                              >
+                                <div className="flex gap-3 items-center">
+                                  {/* Video Thumbnail - Fixed size */}
+                                  <div className="flex-shrink-0">
+                                    <img
+                                      src={video.thumbnailUrl}
+                                      alt={video.title}
+                                      className="w-16 h-9 object-cover rounded border bg-gray-100 dark:bg-gray-800 block"
+                                    />
+                                  </div>
+                                  {/* Video Info - Constrained */}
+                                  <div className="flex-1 min-w-0 overflow-hidden">
+                                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                      {video.title}
+                                    </div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                      Duration: {video.duration}
+                                    </div>
+                                    <div className="text-xs text-gray-600 dark:text-gray-300 mt-0.5 line-clamp-2">
+                                      {video.description}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         <span className="text-xs opacity-70 mt-1 block">
                           {formatTime(message.timestamp)}
                         </span>
@@ -1187,24 +1534,27 @@ export function ChatBox({
                 )
               ))}
 
+              {/* Simple loading indicator while in synth loop */}
+              {isInSynthLoop && (
+                <div className="px-3 py-2 flex items-center gap-2">
+                  <div className="flex items-start gap-2">
+                    <Bot className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
+                    <div className="flex items-center gap-1 pt-1">
+                      <div className="flex space-x-1">
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Invisible element to scroll to */}
               <div ref={messagesEndRef} />
             </div>
 
-            {isWaitingForResponse && (
-              <div className="px-3 py-2 flex items-center gap-2">
-                <div className="flex items-start gap-2">
-                  <Bot className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground" />
-                  <div className="flex items-center gap-1 pt-1">
-                    <div className="flex space-x-1">
-                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                      <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Loading indicator removed - clean UI */}
 
             {/* Mentions popup */}
             {showMentions && (
@@ -1304,7 +1654,6 @@ export function ChatBox({
                 placeholder="Ask Screenwrite to create or edit your video..."
                 className="w-full resize-none border-0 bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-0 pr-12 overflow-hidden"
                 style={{ height: `${textareaHeight}px` }}
-                disabled={isWaitingForResponse}
               />
               
               <div className="absolute right-2 bottom-1 flex items-center gap-1">
@@ -1317,7 +1666,6 @@ export function ChatBox({
                       e.stopPropagation();
                       setShowSendOptions(!showSendOptions);
                     }}
-                    disabled={isWaitingForResponse}
                   >
                     <ChevronDown className="h-3 w-3" />
                   </Button>
@@ -1328,7 +1676,7 @@ export function ChatBox({
                   size="sm"
                   className="h-7 w-7 p-0 text-primary hover:text-primary/80 hover:bg-primary/10"
                   onClick={() => handleSendMessage(sendWithMedia)}
-                  disabled={(!inputValue.trim() && mentionedItems.length === 0) || isWaitingForResponse}
+                  disabled={!inputValue.trim() && mentionedItems.length === 0}
                 >
                   <Send className="h-3 w-3" />
                 </Button>
@@ -1365,6 +1713,63 @@ export function ChatBox({
           </div>
         </div>
       </div>
+
+      {/* Video Preview Modal */}
+      {previewVideo && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Video Preview - {previewVideo.title}
+              </h3>
+              <button
+                onClick={() => setPreviewVideo(null)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            {/* Video Player */}
+            <div className="mb-4">
+              <video
+                controls
+                autoPlay
+                className="w-full rounded-lg"
+                src={`http://localhost:8001${previewVideo.downloadUrl}`}
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+            
+            {/* Video Info */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Duration:</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{previewVideo.duration}</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Description:</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{previewVideo.description}</span>
+              </div>
+              {previewVideo.pexelsUrl && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Source:</span>
+                  <a 
+                    href={previewVideo.pexelsUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                  >
+                    View on Pexels
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

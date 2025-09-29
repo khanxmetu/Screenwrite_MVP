@@ -11,6 +11,7 @@ dependencies = [
     "anthropic>=0.40.0",
     "uvicorn>=0.34.3",
     "google-cloud-aiplatform>=1.111.0",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
