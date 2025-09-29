@@ -323,11 +323,11 @@ ${ERROR_HANDLING_GUIDELINES}`;
       return "";
     }
     
-    // Take the most recent 8 messages in chronological order
-    const recent = context.messages.slice(-8);
+    // Take the most recent 25 messages in chronological order
+    const recent = context.messages.slice(-25);
     const conversationParts: string[] = [];
     
-    conversationParts.push("=== CONVERSATION UP TO NOW (LAST 8 MESSAGES) ===");
+    conversationParts.push("=== CONVERSATION UP TO NOW (LAST 25 MESSAGES) ===");
     conversationParts.push("This is the complete conversation history truncated to the most recent messages:");
     conversationParts.push("");
     
