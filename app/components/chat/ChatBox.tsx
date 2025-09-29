@@ -623,11 +623,10 @@ export function ChatBox({
       console.log(`🎨 Generated file URL:`, generatedAsset.file_url);
 
       // Create the MediaBinItem for the generated content
-      // Make sure the URL points to the correct FastAPI server
-      const fastApiBaseUrl = getApiBaseUrl(true); // true for FastAPI
+      // Make sure the URL points to the correct FastAPI server using apiUrl function
       const mediaUrl = generatedAsset.file_url.startsWith('http') 
         ? generatedAsset.file_url 
-        : `${fastApiBaseUrl}${generatedAsset.file_url}`;
+        : apiUrl(generatedAsset.file_url, true);
       
       console.log(`🎨 Final ${contentType} URL:`, mediaUrl);
 
@@ -728,15 +727,12 @@ export function ChatBox({
 
       // Add all fetched videos to the media library automatically
       if (onAddGeneratedImage) {
-        // Get FastAPI base URL for media files
-        const fastApiBaseUrl = getApiBaseUrl(true); // true for FastAPI
-        
         for (let index = 0; index < result.videos.length; index++) {
           const video = result.videos[index];
-          // Create the full URL for the video
+          // Create the full URL for the video using apiUrl function
           const videoUrl = video.download_url.startsWith('http') 
             ? video.download_url 
-            : `${fastApiBaseUrl}${video.download_url}`;
+            : apiUrl(video.download_url, true);
             
           console.log(`🎬 Video URL: ${video.download_url} -> ${videoUrl}`);
 
@@ -1737,7 +1733,9 @@ export function ChatBox({
                 controls
                 autoPlay
                 className="w-full rounded-lg"
-                src={`http://localhost:8001${previewVideo.downloadUrl}`}
+                src={previewVideo.downloadUrl.startsWith('http') 
+                  ? previewVideo.downloadUrl 
+                  : apiUrl(previewVideo.downloadUrl, true)}
               >
                 Your browser does not support the video tag.
               </video>
